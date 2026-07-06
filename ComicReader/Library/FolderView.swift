@@ -24,7 +24,7 @@ struct FolderView: View {
     var body: some View {
         ScrollView {
             if books.isEmpty {
-                ContentUnavailableView("Empty folder",
+                ContentUnavailableView("Empty collection",
                                        systemImage: "folder",
                                        description: Text("Move comics here from their menu."))
                     .padding(.top, 80)
@@ -43,7 +43,7 @@ struct FolderView: View {
                     context.delete(folder)
                     try? context.save()
                 } label: {
-                    Label("Delete Folder", systemImage: "trash")
+                    Label("Delete Collection", systemImage: "trash")
                 }
             }
         }

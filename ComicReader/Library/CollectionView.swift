@@ -56,7 +56,7 @@ struct CollectionView: View {
         .fileImporter(isPresented: $showImporter,
                       allowedContentTypes: ComicUTType.all,
                       allowsMultipleSelection: true, onCompletion: handleImport)
-        .alert("New Folder", isPresented: $showNewFolder) {
+        .alert("New Collection", isPresented: $showNewFolder) {
             TextField("Name", text: $newFolderName)
             Button("Cancel", role: .cancel) { newFolderName = "" }
             Button("Create") { createFolder() }
@@ -80,7 +80,7 @@ struct CollectionView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button { showImporter = true } label: { Label("Import", systemImage: "square.and.arrow.down") }
-                Button { showNewFolder = true } label: { Label("New Folder", systemImage: "folder.badge.plus") }
+                Button { showNewFolder = true } label: { Label("New Collection", systemImage: "folder.badge.plus") }
                 Divider()
                 Picker("View", selection: $listMode) {
                     Label("Gallery", systemImage: "square.grid.2x2").tag(false)
@@ -123,25 +123,30 @@ private struct FolderSection: View {
     let folders: [Folder]
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Folders")
+            Text("Collections")
                 .font(.title3.bold())
                 .foregroundStyle(.secondary)
-            ForEach(folders) { folder in
-                NavigationLink {
-                    FolderView(folder: folder)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "folder.fill").foregroundStyle(Color.accentColor)
-                        Text(folder.name).foregroundStyle(.primary)
-                        Spacer()
-                        Text("\(folder.books.count)").foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            VStack(spacing: 0) {
+                ForEach(Array(folders.enumerated()), id: \.element.id) { index, folder in
+                    NavigationLink {
+                        FolderView(folder: folder)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "folder.fill").foregroundStyle(Color.accentColor)
+                            Text(folder.name).foregroundStyle(.primary)
+                            Spacer()
+                            Text("\(folder.books.count)").foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
+                    if index < folders.count - 1 {
+                        Divider()
+                    }
                 }
-                Divider()
             }
+            .libraryCard(padding: 12)
         }
     }
 }

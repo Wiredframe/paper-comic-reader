@@ -13,6 +13,11 @@
 import UIKit
 
 /// The fixed mapping between collection-view slots and page indices.
+///
+/// Edge cases (double mode), all verified: a 1-page comic → 1 slot `[0]`; a 2-page
+/// comic → `[0]`, `[1]` (the cover, then page 2 alone); an even page count leaves a
+/// lone final page in its own slot (`pages(inSlot:)` returns just `[left]`). Every
+/// slot therefore holds 1 or 2 pages and is always in range.
 struct ReaderPaging {
     let pageCount: Int
     let double: Bool          // true = spreads (cover alone, then pairs)
@@ -95,7 +100,7 @@ final class ReaderCollectionController: UIViewController,
         collectionView.register(ReaderPageCell.self, forCellWithReuseIdentifier: ReaderPageCell.reuseID)
         view.addSubview(collectionView)
 
-        store.prefetch(around: currentPage, maxPixel: ReaderPageCell.displayMaxPixel)
+        prefetchNeighbours(of: currentPage)
     }
 
     override func viewDidLayoutSubviews() {
@@ -169,7 +174,7 @@ final class ReaderCollectionController: UIViewController,
             collectionView.setContentOffset(offset, animated: false)
         }
         onPageChanged?(target)
-        store.prefetch(around: target, maxPixel: ReaderPageCell.displayMaxPixel)
+        prefetchNeighbours(of: target)
     }
 
     // MARK: Navigation
@@ -191,7 +196,7 @@ final class ReaderCollectionController: UIViewController,
             collectionView.setContentOffset(offset, animated: false)
         }
         onPageChanged?(currentPage)
-        store.prefetch(around: currentPage, maxPixel: ReaderPageCell.displayMaxPixel)
+        prefetchNeighbours(of: currentPage)
     }
 
     private func offset(forSlot slot: Int, width: CGFloat? = nil) -> CGPoint? {
@@ -202,6 +207,16 @@ final class ReaderCollectionController: UIViewController,
 
     private func clampPage(_ page: Int) -> Int { min(max(page, 0), max(pageCount - 1, 0)) }
     private func wantsDouble(for size: CGSize) -> Bool { settings.doublePage && size.width > size.height }
+
+    /// Warm the neighbouring pages. In double-page mode we also prefetch around the
+    /// spread's right half so the *next* spread arrives with both pages ready —
+    /// otherwise its right page would fade in on the swipe.
+    private func prefetchNeighbours(of page: Int) {
+        store.prefetch(around: page, maxPixel: ReaderPageCell.displayMaxPixel)
+        if isDouble, let right = paging.pages(inSlot: paging.slot(forPage: page)).last, right != page {
+            store.prefetch(around: right, maxPixel: ReaderPageCell.displayMaxPixel)
+        }
+    }
 
     // MARK: Data source
 
@@ -243,7 +258,7 @@ final class ReaderCollectionController: UIViewController,
         guard landed != currentPage else { return }
         currentPage = landed
         onPageChanged?(landed)
-        store.prefetch(around: landed, maxPixel: ReaderPageCell.displayMaxPixel)
+        prefetchNeighbours(of: landed)
     }
 
     // MARK: ReaderPageCellDelegate

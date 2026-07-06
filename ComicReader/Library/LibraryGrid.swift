@@ -42,7 +42,7 @@ struct LibraryGrid: View {
 /// Shared cover-grid spacing so Recents / Collection / Bookmarks stay identical and
 /// the gap between columns is clearly visible (equal horizontally and vertically).
 enum LibraryGridMetrics {
-    static let spacing: CGFloat = 22
+    static let spacing: CGFloat = 30
 }
 
 extension View {

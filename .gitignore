@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Xcode / build
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.moved-aside
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# XcodeGen generates ComicReader.xcodeproj from project.yml.
+# Keep it out of git so project.yml stays the source of truth.
+ComicReader.xcodeproj/
+
+# Personal reference screenshots (Chunky UI mockups) — not part of the app.
+IMG_*.PNG
+IMG_*.png

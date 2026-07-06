@@ -1,0 +1,113 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.99608,0.94510,0.17647,1.00000",
+      "display-p3:1.00000,0.80403,0.10897,1.00000"
+    ],
+    "orientation" : {
+      "start" : {
+        "x" : 0.5,
+        "y" : 0
+      },
+      "stop" : {
+        "x" : 0.5,
+        "y" : 0.7
+      }
+    }
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill" : {
+            "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+          },
+          "image-name" : "speech-bubble-19-svgrepo-com 2.svg",
+          "name" : "speech-bubble-19-svgrepo-com 2",
+          "position" : {
+            "scale" : 0.9,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "automatic-gradient" : "srgb:0.99608,0.94510,0.17647,1.00000"
+          },
+          "hidden" : true,
+          "image-name" : "exclamation-svgrepo-com.svg",
+          "name" : "exclamation-svgrepo-com",
+          "position" : {
+            "scale" : 0.7,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+          },
+          "hidden" : true,
+          "image-name" : "speech-bubble-19-svgrepo-com.svg",
+          "name" : "speech-bubble-19-svgrepo-com",
+          "position" : {
+            "scale" : 0.9,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+          },
+          "hidden" : true,
+          "image-name" : "speech-bubble-svgrepo-com.svg",
+          "name" : "speech-bubble-svgrepo-com",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "solid" : "display-p3:1.00000,1.00000,1.00000,1.00000"
+          },
+          "glass" : true,
+          "hidden" : true,
+          "image-name" : "layout-svgrepo-com.svg",
+          "name" : "layout-svgrepo-com",
+          "position" : {
+            "scale" : 0.85,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

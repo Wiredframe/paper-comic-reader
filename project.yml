@@ -1,0 +1,120 @@
+name: ComicReader
+options:
+  bundleIdPrefix: de.wiredframe
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  minimumXcodeGenVersion: "2.40.0"
+
+packages:
+  # CBZ (ZIP) reading — pure-Swift, added via SPM.
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: "0.9.19"
+
+# Explicit shared scheme so `xcodebuild -scheme ComicReader` always works after a
+# regenerate (otherwise it only exists as an auto-created per-user scheme).
+schemes:
+  ComicReader:
+    build:
+      targets:
+        ComicReader: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Local, account-free builds (fine for Simulator + your own device).
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    # Link the Core Image Metal kernel library as CI kernels.
+    MTLLINKER_FLAGS: "-cikernel"
+
+targets:
+  ComicReader:
+    type: application
+    platform: iOS
+    dependencies:
+      - package: ZIPFoundation
+    sources:
+      # App sources. The Metal kernel needs a per-file flag (below), so it is
+      # excluded here.
+      - path: ComicReader
+        excludes:
+          - "PaperEffect/PaperKernels.metal"
+      # The Core Image Metal kernel is compiled with -fcikernel.
+      - path: ComicReader/PaperEffect/PaperKernels.metal
+        compilerFlags: "-fcikernel"
+      # App icon — Icon Composer (.icon) file, referenced directly from the source
+      # folder so re-exports are picked up automatically. Compiled by actool via
+      # ASSETCATALOG_COMPILER_APPICON_NAME below. `type: file` keeps the bundle a
+      # single reference instead of a recursed group.
+      - path: AppIcon/AppIcon.icon
+        type: file
+        buildPhase: resources
+      # Vendored UnrarKit (CBR/RAR). CBR has no clean SPM package, so the source
+      # is vendored flat under Vendor/UnrarKit. The unrar C++ engine compiles with
+      # -DSILENT -DRARDLL and warning suppression (mirrors UnrarKit.podspec). The
+      # excluded .cpp files are #included by other translation units and must NOT
+      # be compiled on their own (list = every unrar .cpp not in the podspec's
+      # unrar-lib source_files, computed against tag 2.10).
+      - path: Vendor/UnrarKit
+        compilerFlags: "-DSILENT -DRARDLL -Wno-return-type -Wno-logical-op-parentheses -Wno-conversion -Wno-parentheses -Wno-unused-function -Wno-unused-variable -Wno-switch -Wno-unused-command-line-argument -Wno-strict-prototypes -Wno-conditional-uninitialized"
+        excludes:
+          - "arccmt.cpp"
+          - "blake2s_sse.cpp"
+          - "blake2sp.cpp"
+          - "cmdfilter.cpp"
+          - "cmdmix.cpp"
+          - "coder.cpp"
+          - "crypt1.cpp"
+          - "crypt2.cpp"
+          - "crypt3.cpp"
+          - "crypt5.cpp"
+          - "hardlinks.cpp"
+          - "log.cpp"
+          - "model.cpp"
+          - "rarpch.cpp"
+          - "recvol3.cpp"
+          - "recvol5.cpp"
+          - "suballoc.cpp"
+          - "threadmisc.cpp"
+          - "uicommon.cpp"
+          - "uiconsole.cpp"
+          - "uisilent.cpp"
+          - "ulinks.cpp"
+          - "unpack15.cpp"
+          - "unpack20.cpp"
+          - "unpack30.cpp"
+          - "unpack50.cpp"
+          - "unpack50frag.cpp"
+          - "unpack50mt.cpp"
+          - "unpackinline.cpp"
+          - "uowners.cpp"
+          - "win32acl.cpp"
+          - "win32lnk.cpp"
+          - "win32stm.cpp"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.wiredframe.comicreader
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "Comic Reader"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # Vendored UnrarKit needs ARC (Classes) + libc++/libz, and the unrar
+        # headers are reached via <UnrarKit/…> from Vendor/.
+        CLANG_ENABLE_OBJC_ARC: YES
+        SWIFT_OBJC_BRIDGING_HEADER: "ComicReader/ComicReader-Bridging-Header.h"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor"
+        OTHER_LDFLAGS: "$(inherited) -lz -lc++"

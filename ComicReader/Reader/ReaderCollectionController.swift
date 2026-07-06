@@ -116,31 +116,22 @@ final class ReaderCollectionController: UIViewController,
         super.viewWillTransition(to: size, with: coordinator)
         let page = currentPage
         let newDouble = wantsDouble(for: size)
-        let modeChange = newDouble != isDouble
 
-        // No mode change (e.g. double-page off): the visible page just re-fits the
-        // new orientation, animated alongside the rotation. On a mode change we have
-        // to rebuild the slots, so there's nothing to hand a single cell.
-        let cell = modeChange ? nil
-            : collectionView.cellForItem(at: IndexPath(item: paging.slot(forPage: page), section: 0)) as? ReaderPageCell
-        cell?.beginRotation()
-
+        // Keep this minimal: let UIKit resize the collection view and re-fit the
+        // cells (each cell re-fits in its own layoutSubviews, inside the rotation
+        // animation — see ReaderPageCell). Here we only rebuild slots if the layout
+        // mode flips and restore the current page's scroll position for the new
+        // width. Doing less makes the rotation smooth and identical whether the
+        // chrome / status bar is shown or hidden.
         coordinator.animate(alongsideTransition: { [weak self] _ in
             guard let self else { return }
-            if modeChange {
+            if newDouble != self.isDouble {
                 self.isDouble = newDouble
                 self.collectionView.reloadData()
-            } else {
-                self.layout.invalidateLayout()
             }
             if let offset = self.offset(forSlot: self.paging.slot(forPage: page), width: size.width) {
                 self.collectionView.setContentOffset(offset, animated: false)
             }
-            cell?.rotate(to: size)
-            // Resolve the resize/reposition inside the animation so it doesn't snap.
-            self.collectionView.layoutIfNeeded()
-        }, completion: { _ in
-            cell?.endRotation()
         })
     }
 

@@ -25,7 +25,7 @@ struct LibraryGrid: View {
                 }
             }
         } else {
-            LazyVGrid(columns: gridColumns, spacing: 26) {
+            LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
                 ForEach(books) { book in
                     CoverCell(book: book, folders: folders, inRecents: inRecents) { onOpen(book) }
                 }
@@ -34,8 +34,15 @@ struct LibraryGrid: View {
     }
 
     private var gridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 18), count: max(1, columns))
+        Array(repeating: GridItem(.flexible(), spacing: LibraryGridMetrics.spacing),
+              count: max(1, columns))
     }
+}
+
+/// Shared cover-grid spacing so Recents / Collection / Bookmarks stay identical and
+/// the gap between columns is clearly visible (equal horizontally and vertically).
+enum LibraryGridMetrics {
+    static let spacing: CGFloat = 22
 }
 
 extension View {

@@ -47,7 +47,6 @@ final class ReaderPageCell: UICollectionViewCell {
     private var loadToken = 0
     private var fit: Fit = .fitWidth
     private var isDouble = false
-    private var isRotating = false
     private var lastLaidOutBounds: CGSize = .zero
     private var settings: ReaderSettings?
     private weak var delegate: ReaderPageCellDelegate?
@@ -145,21 +144,15 @@ final class ReaderPageCell: UICollectionViewCell {
         layoutIfNeeded()
     }
 
-    // MARK: Rotation (driven by the controller so the re-fit animates)
-
-    func beginRotation() { isRotating = true }
-    func rotate(to size: CGSize) {
-        guard !images.isEmpty else { return }
-        lastLaidOutBounds = size
-        performLayout(in: size)
-    }
-    func endRotation() { isRotating = false }
-
     // MARK: Layout
 
+    // Re-fits on any bounds change. During a device rotation UIKit calls this inside
+    // the rotation's animation transaction, so the image-view frame changes here
+    // animate along with the rotation for free — no manual coordinator work needed,
+    // and it behaves the same whether the chrome (and status bar) is shown or hidden.
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard !images.isEmpty, !isRotating else { return }   // rotate(to:) owns the fit mid-rotation
+        guard !images.isEmpty else { return }
         let bounds = scrollView.bounds.size
         guard bounds.width > 0, bounds != lastLaidOutBounds else { return }
         lastLaidOutBounds = bounds

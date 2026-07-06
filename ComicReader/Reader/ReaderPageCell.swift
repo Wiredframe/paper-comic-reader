@@ -28,12 +28,14 @@ final class ReaderPageCell: UICollectionViewCell {
     static let reuseID = "ReaderPageCell"
     static let displayMaxPixel: CGFloat = 2200
 
-    /// How the slot's page(s) fill the screen.
+    /// How the slot's page(s) fill the screen. Every state keeps content width ==
+    /// bounds width, so the page only ever scrolls *vertically* — horizontal swipes
+    /// always page between slots (the outer collection view), never slosh the page.
     private enum Fit {
         case fitWidth          // single page fills the width (may scroll vertically)
         case fitHeight         // single page fills the height (whole page, letterboxed)
-        case fitSpread         // two pages contained side by side (both fully visible)
-        case focus(Int)        // spread zoomed so the tapped page (0/1) is fit-width
+        case spread            // both pages fill the width side by side (scroll vertically)
+        case focus(Int)        // double: only the tapped page (0/1), filling the width
     }
 
     private let scrollView = UIScrollView()
@@ -111,7 +113,7 @@ final class ReaderPageCell: UICollectionViewCell {
         self.isDouble = isDouble
         self.settings = settings
         self.delegate = delegate
-        self.fit = isDouble ? .fitSpread : .fitWidth
+        self.fit = isDouble ? .spread : .fitWidth
         self.images = Array(repeating: nil, count: pageIndices.count)
         self.lastLaidOutBounds = .zero
         pageViews[1].isHidden = pageIndices.count < 2
@@ -138,7 +140,7 @@ final class ReaderPageCell: UICollectionViewCell {
     /// stuck fit-height / focus state never greets you on the way back.
     func resetToDefault() {
         guard !images.isEmpty else { return }
-        fit = isDouble ? .fitSpread : .fitWidth
+        fit = isDouble ? .spread : .fitWidth
         lastLaidOutBounds = .zero
         setNeedsLayout()
         layoutIfNeeded()
@@ -178,7 +180,7 @@ final class ReaderPageCell: UICollectionViewCell {
         switch fit {
         case .fitWidth:     layoutSingle(fillWidth: true, in: bounds)
         case .fitHeight:    layoutSingle(fillWidth: false, in: bounds)
-        case .fitSpread:    layoutSpread(in: bounds)
+        case .spread:       layoutSpread(in: bounds)
         case .focus(let i): layoutFocus(page: i, in: bounds)
         }
     }
@@ -205,45 +207,45 @@ final class ReaderPageCell: UICollectionViewCell {
             width = height * r
         }
         pageViews[0].frame = CGRect(x: 0, y: 0, width: width, height: height)
+        pageViews[0].isHidden = false
         pageViews[1].isHidden = true
         scrollView.contentSize = CGSize(width: width, height: height)
         center(in: bounds)
         scrollView.contentOffset = topLeftOffset()
     }
 
+    /// Both pages side by side, together filling the width exactly (so the combined
+    /// content width == bounds width → no horizontal scroll, only vertical).
     private func layoutSpread(in bounds: CGSize) {
         let two = pageIndices.count > 1
         let rL = aspect(0)
         let rR = two ? aspect(1) : 0
         let totalAspect = rL + rR                       // combined width / common height
-        let height = min(bounds.height, totalAspect > 0 ? bounds.width / totalAspect : bounds.height)
+        let width = bounds.width
+        let height = totalAspect > 0 ? width / totalAspect : bounds.height
         let wL = height * rL
         let wR = height * rR
         pageViews[0].frame = CGRect(x: 0, y: 0, width: wL, height: height)
+        pageViews[0].isHidden = false
         pageViews[1].isHidden = !two
         if two { pageViews[1].frame = CGRect(x: wL, y: 0, width: wR, height: height) }
-        scrollView.contentSize = CGSize(width: wL + wR, height: height)
+        scrollView.contentSize = CGSize(width: wL + wR, height: height)   // width == bounds.width
         center(in: bounds)
         scrollView.contentOffset = topLeftOffset()
     }
 
+    /// Only the tapped page, filling the width (the other page is hidden) — again
+    /// content width == bounds width, so it only scrolls vertically.
     private func layoutFocus(page i: Int, in bounds: CGSize) {
-        let two = pageIndices.count > 1
-        let height = aspect(i) > 0 ? bounds.width / aspect(i) : bounds.height   // focused page fills width
-        let wL = height * aspect(0)
-        let wR = two ? height * aspect(1) : 0
-        pageViews[0].frame = CGRect(x: 0, y: 0, width: wL, height: height)
-        pageViews[1].isHidden = !two
-        if two { pageViews[1].frame = CGRect(x: wL, y: 0, width: wR, height: height) }
-        scrollView.contentSize = CGSize(width: wL + wR, height: height)
+        let width = bounds.width
+        let height = aspect(i) > 0 ? width / aspect(i) : bounds.height
+        pageViews[i].frame = CGRect(x: 0, y: 0, width: width, height: height)
+        pageViews[i].isHidden = false
+        let other = 1 - i
+        if other >= 0, other < pageViews.count { pageViews[other].isHidden = true }
+        scrollView.contentSize = CGSize(width: width, height: height)
         center(in: bounds)
-        // Horizontally reveal the focused page; vertically start at the top.
-        let pageX = (i == 0) ? 0 : wL
-        let pageW = (i == 0) ? wL : wR
-        let maxX = max(0, scrollView.contentSize.width - bounds.width)
-        let targetX = min(max(pageX + pageW / 2 - bounds.width / 2, 0), maxX)
-        let x = scrollView.contentInset.left > 0 ? -scrollView.contentInset.left : targetX
-        scrollView.contentOffset = CGPoint(x: x, y: -scrollView.contentInset.top)
+        scrollView.contentOffset = topLeftOffset()
     }
 
     private func center(in bounds: CGSize) {
@@ -263,7 +265,7 @@ final class ReaderPageCell: UICollectionViewCell {
         guard !images.isEmpty else { return }
         if isDouble {
             switch fit {
-            case .focus: fit = .fitSpread
+            case .focus: fit = .spread
             default:     fit = .focus(tappedPage(atX: gesture.location(in: self).x))
             }
         } else {
@@ -284,9 +286,10 @@ final class ReaderPageCell: UICollectionViewCell {
 
     @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
         let x = gesture.location(in: self).x
-        // Page-by-page thirds scroll only makes sense on a single, vertically
-        // scrollable page — never in a spread.
-        if !isDouble, settings?.thirdsScroll == true {
+        // Page-by-page thirds scroll works whenever the content is taller than the
+        // screen — single page OR double spread (both are width-fitted, so they only
+        // scroll vertically). At the top/bottom edge it falls through to a page turn.
+        if settings?.thirdsScroll == true {
             if x < bounds.width * 0.25, scrollByThird(forward: false) { return }
             if x > bounds.width * 0.75, scrollByThird(forward: true) { return }
         }

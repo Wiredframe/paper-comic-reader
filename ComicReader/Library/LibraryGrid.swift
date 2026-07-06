@@ -34,7 +34,20 @@ struct LibraryGrid: View {
     }
 
     private var gridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 20), count: max(1, columns))
+        Array(repeating: GridItem(.flexible(), spacing: 18), count: max(1, columns))
+    }
+}
+
+extension View {
+    /// The reference app's grouped look: content on a subtly elevated, rounded
+    /// card so the cover grid reads as a panel with clear gaps instead of floating
+    /// on the black background.
+    func libraryCard(padding: CGFloat = 16) -> some View {
+        self
+            .padding(padding)
+            .frame(maxWidth: .infinity)
+            .background(Color(.secondarySystemBackground),
+                        in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 }
 

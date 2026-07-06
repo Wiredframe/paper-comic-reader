@@ -40,6 +40,7 @@ struct CollectionView: View {
                             .foregroundStyle(.secondary)
                         LibraryGrid(books: books, folders: folders,
                                     columns: columns, listMode: listMode) { openedBook = $0 }
+                            .libraryCard()
                     } else if folders.isEmpty {
                         LibraryEmptyState { showImporter = true }
                             .padding(.top, 80)

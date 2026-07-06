@@ -28,6 +28,7 @@ struct RecentsView: View {
                         .padding(.top, 80)
                 } else {
                     LibraryGrid(books: books, columns: columns, inRecents: true) { openedBook = $0 }
+                        .libraryCard()
                         .padding(.horizontal)
                         .padding(.top, 8)
                 }

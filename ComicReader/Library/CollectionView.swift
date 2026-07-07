@@ -56,7 +56,7 @@ struct CollectionView: View {
         .fileImporter(isPresented: $showImporter,
                       allowedContentTypes: ComicUTType.all,
                       allowsMultipleSelection: true, onCompletion: handleImport)
-        .alert("New Folder", isPresented: $showNewFolder) {
+        .alert("New Collection", isPresented: $showNewFolder) {
             TextField("Name", text: $newFolderName)
             Button("Cancel", role: .cancel) { newFolderName = "" }
             Button("Create") { createFolder() }
@@ -80,7 +80,7 @@ struct CollectionView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button { showImporter = true } label: { Label("Import", systemImage: "square.and.arrow.down") }
-                Button { showNewFolder = true } label: { Label("New Folder", systemImage: "folder.badge.plus") }
+                Button { showNewFolder = true } label: { Label("New Collection", systemImage: "folder.badge.plus") }
                 Divider()
                 Picker("View", selection: $listMode) {
                     Label("Gallery", systemImage: "square.grid.2x2").tag(false)
@@ -121,26 +121,78 @@ struct CollectionView: View {
 
 private struct FolderSection: View {
     let folders: [Folder]
+    @AppStorage("library.columns") private var columns = 2
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Folders")
+            Text("Collections")
                 .font(.title3.bold())
                 .foregroundStyle(.secondary)
-            ForEach(folders) { folder in
-                NavigationLink {
-                    FolderView(folder: folder)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "folder.fill").foregroundStyle(Color.accentColor)
-                        Text(folder.name).foregroundStyle(.primary)
-                        Spacer()
-                        Text("\(folder.books.count)").foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
+                ForEach(folders) { folder in
+                    NavigationLink {
+                        FolderView(folder: folder)
+                    } label: {
+                        CollectionTile(folder: folder)
                     }
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
                 }
-                Divider()
+            }
+        }
+    }
+
+    private var gridColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: LibraryGridMetrics.spacing),
+              count: max(1, columns))
+    }
+}
+
+/// A collection shown as a little stack of cards: the newest cover on top with two
+/// blank cards peeking out behind it, plus the name and comic count.
+private struct CollectionTile: View {
+    let folder: Folder
+
+    private var frontCover: URL? {
+        folder.books.sorted { $0.dateAdded > $1.dateAdded }.first?.coverURL
+    }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 8, style: .continuous) }
+
+    var body: some View {
+        VStack(spacing: 7) {
+            ZStack {
+                // Two progressively narrower cards peeking out above the cover.
+                shape.fill(Color(.tertiarySystemBackground)).padding(.horizontal, 24).offset(y: -13)
+                shape.fill(Color(.secondarySystemBackground)).padding(.horizontal, 12).offset(y: -6)
+                front
+                    .clipShape(shape)
+                    .overlay(shape.stroke(.white.opacity(0.08)))
+            }
+            .aspectRatio(2.0 / 3.0, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
+            .padding(.top, 13)   // reserve room for the peeking cards
+
+            VStack(spacing: 2) {
+                Text(folder.name)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("\(folder.books.count) \(folder.books.count == 1 ? "comic" : "comics")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder private var front: some View {
+        if let frontCover {
+            DiskImage(url: frontCover, contentMode: .fill)
+        } else {
+            ZStack {
+                shape.fill(Color.accentColor.opacity(0.22))
+                Image(systemName: "books.vertical.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(Color.accentColor)
             }
         }
     }

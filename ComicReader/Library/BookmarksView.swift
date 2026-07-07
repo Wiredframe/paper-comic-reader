@@ -29,7 +29,7 @@ struct BookmarksView: View {
                                            description: Text("Tap the bookmark button while reading a comic."))
                         .padding(.top, 80)
                 } else {
-                    LazyVGrid(columns: gridColumns, spacing: 26) {
+                    LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
                         ForEach(validBookmarks) { bookmark in
                             BookmarkCard(bookmark: bookmark) {
                                 if let book = bookmark.book {
@@ -40,6 +40,7 @@ struct BookmarksView: View {
                             }
                         }
                     }
+                    .libraryCard()
                     .padding(.horizontal)
                     .padding(.top, 8)
                 }
@@ -65,7 +66,8 @@ struct BookmarksView: View {
     }
 
     private var gridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 20), count: max(1, columns))
+        Array(repeating: GridItem(.flexible(), spacing: LibraryGridMetrics.spacing),
+              count: max(1, columns))
     }
 
     private func delete(_ bookmark: Bookmark) {

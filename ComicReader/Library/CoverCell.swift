@@ -72,7 +72,7 @@ struct CoverCell: View {
                         Label(folder.name, systemImage: book.folder?.id == folder.id ? "checkmark" : "folder")
                     }
                 }
-            } label: { Label("Move to Folder", systemImage: "folder") }
+            } label: { Label("Move to Collection", systemImage: "folder") }
         }
         Divider()
         Button(role: .destructive) { confirmingDelete = true } label: {

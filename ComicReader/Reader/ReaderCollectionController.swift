@@ -13,6 +13,11 @@
 import UIKit
 
 /// The fixed mapping between collection-view slots and page indices.
+///
+/// Edge cases (double mode), all verified: a 1-page comic → 1 slot `[0]`; a 2-page
+/// comic → `[0]`, `[1]` (the cover, then page 2 alone); an even page count leaves a
+/// lone final page in its own slot (`pages(inSlot:)` returns just `[left]`). Every
+/// slot therefore holds 1 or 2 pages and is always in range.
 struct ReaderPaging {
     let pageCount: Int
     let double: Bool          // true = spreads (cover alone, then pairs)
@@ -95,7 +100,7 @@ final class ReaderCollectionController: UIViewController,
         collectionView.register(ReaderPageCell.self, forCellWithReuseIdentifier: ReaderPageCell.reuseID)
         view.addSubview(collectionView)
 
-        store.prefetch(around: currentPage, maxPixel: ReaderPageCell.displayMaxPixel)
+        prefetchNeighbours(of: currentPage)
     }
 
     override func viewDidLayoutSubviews() {
@@ -116,31 +121,22 @@ final class ReaderCollectionController: UIViewController,
         super.viewWillTransition(to: size, with: coordinator)
         let page = currentPage
         let newDouble = wantsDouble(for: size)
-        let modeChange = newDouble != isDouble
 
-        // No mode change (e.g. double-page off): the visible page just re-fits the
-        // new orientation, animated alongside the rotation. On a mode change we have
-        // to rebuild the slots, so there's nothing to hand a single cell.
-        let cell = modeChange ? nil
-            : collectionView.cellForItem(at: IndexPath(item: paging.slot(forPage: page), section: 0)) as? ReaderPageCell
-        cell?.beginRotation()
-
+        // Keep this minimal: let UIKit resize the collection view and re-fit the
+        // cells (each cell re-fits in its own layoutSubviews, inside the rotation
+        // animation — see ReaderPageCell). Here we only rebuild slots if the layout
+        // mode flips and restore the current page's scroll position for the new
+        // width. Doing less makes the rotation smooth and identical whether the
+        // chrome / status bar is shown or hidden.
         coordinator.animate(alongsideTransition: { [weak self] _ in
             guard let self else { return }
-            if modeChange {
+            if newDouble != self.isDouble {
                 self.isDouble = newDouble
                 self.collectionView.reloadData()
-            } else {
-                self.layout.invalidateLayout()
             }
             if let offset = self.offset(forSlot: self.paging.slot(forPage: page), width: size.width) {
                 self.collectionView.setContentOffset(offset, animated: false)
             }
-            cell?.rotate(to: size)
-            // Resolve the resize/reposition inside the animation so it doesn't snap.
-            self.collectionView.layoutIfNeeded()
-        }, completion: { _ in
-            cell?.endRotation()
         })
     }
 
@@ -178,7 +174,7 @@ final class ReaderCollectionController: UIViewController,
             collectionView.setContentOffset(offset, animated: false)
         }
         onPageChanged?(target)
-        store.prefetch(around: target, maxPixel: ReaderPageCell.displayMaxPixel)
+        prefetchNeighbours(of: target)
     }
 
     // MARK: Navigation
@@ -200,7 +196,7 @@ final class ReaderCollectionController: UIViewController,
             collectionView.setContentOffset(offset, animated: false)
         }
         onPageChanged?(currentPage)
-        store.prefetch(around: currentPage, maxPixel: ReaderPageCell.displayMaxPixel)
+        prefetchNeighbours(of: currentPage)
     }
 
     private func offset(forSlot slot: Int, width: CGFloat? = nil) -> CGPoint? {
@@ -211,6 +207,16 @@ final class ReaderCollectionController: UIViewController,
 
     private func clampPage(_ page: Int) -> Int { min(max(page, 0), max(pageCount - 1, 0)) }
     private func wantsDouble(for size: CGSize) -> Bool { settings.doublePage && size.width > size.height }
+
+    /// Warm the neighbouring pages. In double-page mode we also prefetch around the
+    /// spread's right half so the *next* spread arrives with both pages ready —
+    /// otherwise its right page would fade in on the swipe.
+    private func prefetchNeighbours(of page: Int) {
+        store.prefetch(around: page, maxPixel: ReaderPageCell.displayMaxPixel)
+        if isDouble, let right = paging.pages(inSlot: paging.slot(forPage: page)).last, right != page {
+            store.prefetch(around: right, maxPixel: ReaderPageCell.displayMaxPixel)
+        }
+    }
 
     // MARK: Data source
 
@@ -252,7 +258,7 @@ final class ReaderCollectionController: UIViewController,
         guard landed != currentPage else { return }
         currentPage = landed
         onPageChanged?(landed)
-        store.prefetch(around: landed, maxPixel: ReaderPageCell.displayMaxPixel)
+        prefetchNeighbours(of: landed)
     }
 
     // MARK: ReaderPageCellDelegate

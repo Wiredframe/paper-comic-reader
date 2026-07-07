@@ -43,9 +43,25 @@ struct SettingsView: View {
                     LabeledContent("Storage", value: storageDescription)
                     Button("Clear Cache") { Storage.clearCaches() }
                 }
+
+                Section {
+                } footer: {
+                    Text(appVersion)
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 4)
+                }
             }
             .navigationTitle("Settings")
         }
+    }
+
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return "Comic Reader \(version) (\(build))"
     }
 
     private var storageDescription: String {

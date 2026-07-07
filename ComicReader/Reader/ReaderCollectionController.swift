@@ -45,6 +45,7 @@ struct ReaderPaging {
 
 final class ReaderCollectionController: UIViewController,
                                         UICollectionViewDataSource,
+                                        UICollectionViewDataSourcePrefetching,
                                         UICollectionViewDelegateFlowLayout,
                                         ReaderPageCellDelegate {
 
@@ -90,6 +91,7 @@ final class ReaderCollectionController: UIViewController,
 
         collectionView = UICollectionView(frame: view.bounds, collectionViewLayout: layout)
         collectionView.dataSource = self
+        collectionView.prefetchDataSource = self
         collectionView.delegate = self
         collectionView.isPagingEnabled = true
         collectionView.bounces = false
@@ -252,6 +254,17 @@ final class ReaderCollectionController: UIViewController,
         (cell as? ReaderPageCell)?.resetToDefault()
     }
 
+    /// Warm the images for slots the collection view is about to need, so a tapped
+    /// page turn lands on an already-decoded page (seamless, like a swipe) instead
+    /// of a black flash.
+    func collectionView(_ cv: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
+        for indexPath in indexPaths {
+            for page in paging.pages(inSlot: indexPath.item) {
+                store.requestImage(at: page, maxPixel: ReaderPageCell.displayMaxPixel) { _, _ in }
+            }
+        }
+    }
+
     // MARK: Scroll tracking (user swipes)
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { syncCurrentPage() }
@@ -290,6 +303,7 @@ final class ReaderCollectionController: UIViewController,
         spreadFocus = true
         isDouble = false
         setLayout(scrollingToPage: clampPage(page))
+        zoomPopCurrentCell()
         onPageChanged?(currentPage)
     }
 
@@ -298,6 +312,7 @@ final class ReaderCollectionController: UIViewController,
         spreadFocus = false
         isDouble = wantsDouble(for: collectionView.bounds.size)
         setLayout(scrollingToPage: currentPage)
+        zoomPopCurrentCell()
     }
 
     /// Rebuild the slots for the current `isDouble`/`spreadFocus` and land on `page`.
@@ -309,5 +324,19 @@ final class ReaderCollectionController: UIViewController,
             collectionView.setContentOffset(offset, animated: false)
         }
         prefetchNeighbours(of: page)
+    }
+
+    /// A quick scale-in on the current page — the zoom "pop" when entering or leaving
+    /// the full-width single-page view (the layout swap itself is instant).
+    private func zoomPopCurrentCell() {
+        let slot = paging.slot(forPage: currentPage)
+        guard let cell = collectionView.cellForItem(at: IndexPath(item: slot, section: 0)) else { return }
+        cell.contentView.alpha = 0.5
+        cell.contentView.transform = CGAffineTransform(scaleX: 0.82, y: 0.82)
+        UIView.animate(withDuration: settings.fastAnimations ? 0.22 : 0.32, delay: 0,
+                       options: [.curveEaseOut, .allowUserInteraction]) {
+            cell.contentView.alpha = 1
+            cell.contentView.transform = .identity
+        }
     }
 }

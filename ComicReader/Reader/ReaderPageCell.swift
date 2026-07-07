@@ -8,7 +8,9 @@
 //  and drift-free:
 //
 //    • Single page:  fit-width  ⇄  fit-height
-//    • Spread:       both pages ⇄  the tapped page at fit-width (the other beside it)
+//    • Spread:       both pages fill the width; a double-tap zooms into the tapped
+//                    page — the controller switches to single-page, full-width
+//                    reading so navigation stays page-by-page (double-tap to go back).
 //
 //  Everything is done by sizing the image views inside a plain, non-zooming scroll
 //  view (contentSize > bounds ⇒ pan; contentSize ≤ bounds ⇒ centred, no scroll).
@@ -21,6 +23,10 @@ protocol ReaderPageCellDelegate: AnyObject {
     /// A single tap that wasn't consumed by thirds-scroll — the controller decides
     /// prev / next / toggle-chrome from the tap's horizontal position.
     func pageCell(_ cell: ReaderPageCell, didSingleTapAtX x: CGFloat, width: CGFloat)
+    /// Double-tapped a page in a spread → zoom into that page (single-page mode).
+    func pageCell(_ cell: ReaderPageCell, didRequestFocusOnPage page: Int)
+    /// Double-tapped while zoomed into a spread's page → back to the spread.
+    func pageCellDidRequestExitFocus(_ cell: ReaderPageCell)
 }
 
 final class ReaderPageCell: UICollectionViewCell {
@@ -35,7 +41,6 @@ final class ReaderPageCell: UICollectionViewCell {
         case fitWidth          // single page fills the width (may scroll vertically)
         case fitHeight         // single page fills the height (whole page, letterboxed)
         case spread            // both pages fill the width side by side (scroll vertically)
-        case focus(Int)        // double: only the tapped page (0/1), filling the width
     }
 
     private let scrollView = UIScrollView()
@@ -49,6 +54,7 @@ final class ReaderPageCell: UICollectionViewCell {
     private var loadToken = 0
     private var fit: Fit = .fitWidth
     private var isDouble = false
+    private var isFocusedSingle = false   // single page zoomed out of a spread
     private var lastLaidOutBounds: CGSize = .zero
     private var settings: ReaderSettings?
     private weak var delegate: ReaderPageCellDelegate?
@@ -105,12 +111,13 @@ final class ReaderPageCell: UICollectionViewCell {
 
     // MARK: Configure
 
-    func configure(slotIndex: Int, pageIndices: [Int], isDouble: Bool,
+    func configure(slotIndex: Int, pageIndices: [Int], isDouble: Bool, isFocusedSingle: Bool,
                    store: PageImageStore, settings: ReaderSettings,
                    delegate: ReaderPageCellDelegate) {
         self.slotIndex = slotIndex
         self.pageIndices = pageIndices
         self.isDouble = isDouble
+        self.isFocusedSingle = isFocusedSingle
         self.settings = settings
         self.delegate = delegate
         self.fit = isDouble ? .spread : .fitWidth
@@ -137,7 +144,7 @@ final class ReaderPageCell: UICollectionViewCell {
     }
 
     /// Back to the slot's default fit (called when it scrolls off screen), so a
-    /// stuck fit-height / focus state never greets you on the way back.
+    /// stuck fit-height never greets you on the way back.
     func resetToDefault() {
         guard !images.isEmpty else { return }
         fit = isDouble ? .spread : .fitWidth
@@ -178,11 +185,11 @@ final class ReaderPageCell: UICollectionViewCell {
 
     private func performLayout(in bounds: CGSize) {
         switch fit {
-        case .fitWidth:     layoutSingle(fillWidth: true, in: bounds)
-        case .fitHeight:    layoutSingle(fillWidth: false, in: bounds)
-        case .spread:       layoutSpread(in: bounds)
-        case .focus(let i): layoutFocus(page: i, in: bounds)
+        case .fitWidth:  layoutSingle(fillWidth: true, in: bounds)
+        case .fitHeight: layoutSingle(fillWidth: false, in: bounds)
+        case .spread:    layoutSpread(in: bounds)
         }
+        updateLiveTextEnabled(landscape: bounds.width > bounds.height)
     }
 
     /// Aspect (w/h) of page `i`, falling back to a sibling / typical page while it loads.
@@ -234,20 +241,6 @@ final class ReaderPageCell: UICollectionViewCell {
         scrollView.contentOffset = topLeftOffset()
     }
 
-    /// Only the tapped page, filling the width (the other page is hidden) — again
-    /// content width == bounds width, so it only scrolls vertically.
-    private func layoutFocus(page i: Int, in bounds: CGSize) {
-        let width = bounds.width
-        let height = aspect(i) > 0 ? width / aspect(i) : bounds.height
-        pageViews[i].frame = CGRect(x: 0, y: 0, width: width, height: height)
-        pageViews[i].isHidden = false
-        let other = 1 - i
-        if other >= 0, other < pageViews.count { pageViews[other].isHidden = true }
-        scrollView.contentSize = CGSize(width: width, height: height)
-        center(in: bounds)
-        scrollView.contentOffset = topLeftOffset()
-    }
-
     private func center(in bounds: CGSize) {
         let content = scrollView.contentSize
         let insetX = max(0, (bounds.width - content.width) / 2)
@@ -264,14 +257,19 @@ final class ReaderPageCell: UICollectionViewCell {
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
         guard !images.isEmpty else { return }
         if isDouble {
-            switch fit {
-            case .focus: fit = .spread
-            default:     fit = .focus(tappedPage(atX: gesture.location(in: self).x))
-            }
+            // Spread → zoom into the tapped page as a full-width single page. The
+            // controller drives this so navigation stays page-by-page (no skipping,
+            // no black flash from hiding a page).
+            let index = tappedPage(atX: gesture.location(in: self).x)
+            let page = index < pageIndices.count ? pageIndices[index] : (pageIndices.first ?? 0)
+            delegate?.pageCell(self, didRequestFocusOnPage: page)
+        } else if isFocusedSingle {
+            delegate?.pageCellDidRequestExitFocus(self)
         } else {
+            // A genuine single page (portrait / double-page off) → fit toggle.
             fit = isFitWidth ? .fitHeight : .fitWidth
+            applyLayout(animated: true)
         }
-        applyLayout(animated: true)
     }
 
     private var isFitWidth: Bool {
@@ -321,14 +319,29 @@ final class ReaderPageCell: UICollectionViewCell {
         if pageViews[pos].interactions.contains(where: { $0 === interaction }) == false {
             pageViews[pos].addInteraction(interaction)
         }
-        interaction.preferredInteractionTypes = .textSelection
         interaction.setSupplementaryInterfaceHidden(true, animated: false)
+        updateLiveTextEnabled(landscape: scrollView.bounds.width > scrollView.bounds.height)
         Task { [weak self] in
             guard let self else { return }
             let config = ImageAnalyzer.Configuration([.text])
             if let analysis = try? await self.analyzer.analyze(image, configuration: config) {
                 interaction.analysis = analysis
             }
+        }
+    }
+
+    /// Live Text press-and-hold selection is only offered where a whole page is
+    /// shown at a comfortable size — fit-height in portrait, fit-width in landscape —
+    /// so it never competes with the reading scroll or the spread overview.
+    private func updateLiveTextEnabled(landscape: Bool) {
+        let enabled: Bool
+        switch fit {
+        case .fitHeight: enabled = !landscape
+        case .fitWidth:  enabled = landscape
+        case .spread:    enabled = false
+        }
+        for interaction in liveText {
+            interaction.preferredInteractionTypes = enabled ? .textSelection : []
         }
     }
 }

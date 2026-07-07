@@ -21,8 +21,7 @@ enum Importer {
     /// Imports the archive at `sourceURL` into `context`. Returns the new book.
     @discardableResult
     static func importComic(from sourceURL: URL,
-                            into context: ModelContext,
-                            folder: Folder? = nil) throws -> ComicBook {
+                            into context: ModelContext) throws -> ComicBook {
         // Files from the picker / share sheet are security-scoped.
         let scoped = sourceURL.startAccessingSecurityScopedResource()
         defer { if scoped { sourceURL.stopAccessingSecurityScopedResource() } }
@@ -65,7 +64,6 @@ enum Importer {
         let title = sourceURL.deletingPathExtension().lastPathComponent
         let book = ComicBook(id: id, title: title, fileName: fileName,
                              format: format, pageCount: archive.pageCount, coverName: coverName)
-        book.folder = folder
         context.insert(book)
         try? context.save()
         return book

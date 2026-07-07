@@ -14,18 +14,20 @@ struct SettingsView: View {
     @EnvironmentObject private var reader: ReaderSettings
     @Query private var books: [ComicBook]
 
+    @State private var showTips = false
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     Toggle("Double Page (Landscape)", isOn: $reader.doublePage)
-                    Toggle("Tap for Page-by-Page Reading", isOn: $reader.thirdsScroll)
+                    Toggle("Tap to Navigate", isOn: $reader.tapToNavigate)
                     Toggle("Live Text", isOn: $reader.liveText)
                     Toggle("Fast Animations", isOn: $reader.fastAnimations)
                 } header: {
                     Text("Reader")
                 } footer: {
-                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Page-by-page scrolls a third of the page on each tap, turning the page at the bottom. Live Text lets you select text on a page by pressing and holding.")
+                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Tap to Navigate lets you tap the left/right edges to move through the page a third at a time and turn pages — off by default, so swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
                 }
 
                 Section("Paper Effect") {
@@ -44,6 +46,27 @@ struct SettingsView: View {
                     Button("Clear Cache") { Storage.clearCaches() }
                 }
 
+                Section("Support") {
+                    Button { showTips = true } label: {
+                        Label("Leave a Tip", systemImage: "heart.fill")
+                    }
+                    Button { AppReview.openWriteReview() } label: {
+                        Label("Rate Comic Reader", systemImage: "star.fill")
+                    }
+                }
+
+                Section("About") {
+                    NavigationLink {
+                        LegalTextView(title: "Terms of Use", body_: Legal.terms)
+                    } label: { Label("Terms of Use", systemImage: "doc.text") }
+                    NavigationLink {
+                        LegalTextView(title: "Privacy Policy", body_: Legal.privacy)
+                    } label: { Label("Privacy Policy", systemImage: "hand.raised") }
+                    NavigationLink {
+                        LegalTextView(title: "License", body_: Legal.license)
+                    } label: { Label("License", systemImage: "checkmark.seal") }
+                }
+
                 Section {
                 } footer: {
                     Text(appVersion)
@@ -54,6 +77,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .sheet(isPresented: $showTips) { TipJarView() }
         }
     }
 

@@ -13,6 +13,13 @@ struct PaperSettingsView: View {
 	var body: some View {
 		Form {
 			Section {
+				PaperPreview(params: settings.params, enabled: settings.isEnabled)
+					.frame(maxWidth: .infinity)
+					.listRowInsets(EdgeInsets())
+					.listRowBackground(Color.clear)
+			}
+
+			Section {
 				Toggle("Paper effect", isOn: $settings.isEnabled)
 			}
 
@@ -65,4 +72,36 @@ struct PaperSettingsView: View {
 			)
 		}
 	}
+}
+
+/// A live preview of the paper effect applied to a synthetic sample page. Re-renders
+/// (off the main thread) whenever the params or the on/off state change.
+private struct PaperPreview: View {
+	let params: PaperParams
+	let enabled: Bool
+
+	@State private var rendered: UIImage?
+
+	var body: some View {
+		Image(uiImage: rendered ?? SamplePage.preview)
+			.resizable()
+			.scaledToFit()
+			.frame(maxHeight: 320)
+			.clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+			.overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(.white.opacity(0.08)))
+			.shadow(color: .black.opacity(0.3), radius: 5, y: 3)
+			.padding(.vertical, 6)
+			.task(id: PreviewKey(params: params, enabled: enabled)) { await render() }
+	}
+
+	private func render() async {
+		guard enabled else { rendered = nil; return }
+		let base = SamplePage.preview
+		let p = params
+		rendered = await Task.detached(priority: .userInitiated) {
+			PaperFilter.shared.apply(to: base, params: p)
+		}.value
+	}
+
+	private struct PreviewKey: Equatable { let params: PaperParams; let enabled: Bool }
 }

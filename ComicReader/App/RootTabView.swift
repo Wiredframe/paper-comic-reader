@@ -2,15 +2,16 @@
 //  RootTabView.swift
 //  Comic Reader
 //
-//  App shell: Recents / Collection / Bookmarks / Settings with a floating capsule
+//  App shell: Recents / Library / Bookmarks / Settings with a floating capsule
 //  tab bar (matching the reference app), forced to the dark look.
 //
 
 import SwiftUI
 
 struct RootTabView: View {
-    enum Tab: Hashable { case recents, collection, bookmarks, settings }
-    @State private var tab: Tab = .collection
+    enum Tab: Hashable { case recents, library, bookmarks, settings }
+    @State private var tab: Tab = .library
+    @State private var showTipPrompt = false
 
     var body: some View {
         ZStack {
@@ -22,14 +23,20 @@ struct RootTabView: View {
         }
         .preferredColorScheme(.dark)
         .tint(.accentColor)
+        .sheet(isPresented: $showTipPrompt) { TipJarView() }
+        .onAppear {
+            if TipJar.shouldAutoPrompt() {
+                showTipPrompt = true
+            }
+        }
     }
 
     @ViewBuilder private var content: some View {
         switch tab {
-        case .recents:    RecentsView()
-        case .collection: CollectionView()
-        case .bookmarks:  BookmarksView()
-        case .settings:   SettingsView()
+        case .recents:   RecentsView()
+        case .library:   LibraryView()
+        case .bookmarks: BookmarksView()
+        case .settings:  SettingsView()
         }
     }
 }
@@ -40,7 +47,7 @@ struct FloatingTabBar: View {
     var body: some View {
         HStack(spacing: 2) {
             item(.recents, "Recents", "clock")
-            item(.collection, "Collection", "books.vertical")
+            item(.library, "Library", "books.vertical")
             item(.bookmarks, "Bookmarks", "bookmark")
             item(.settings, "Settings", "gearshape")
         }

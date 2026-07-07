@@ -3,7 +3,7 @@
 //  Comic Reader
 //
 //  Persisted reader preferences (UserDefaults, same pattern as PaperSettings):
-//  the thirds-scroll reading mode, native Live Text, snappy animations, and the
+//  the tap-scroll reading mode, native Live Text, snappy animations, and the
 //  global double-page-in-landscape layout. There is no pinch zoom: the double-tap
 //  fit-width/fit-height toggle replaces it, so there's nothing to "remember".
 //
@@ -14,8 +14,9 @@ import Combine
 @MainActor
 final class ReaderSettings: ObservableObject {
 
-    /// Tap advances by a third of the page, turning the page at the bottom.
-    @Published var thirdsScroll: Bool { didSet { defaults.set(thirdsScroll, forKey: K.thirds) } }
+    /// Tap the left/right edge to move through the page (a half at a time) and turn
+    /// pages. Off by default — when disabled a tap only toggles the chrome.
+    @Published var tapToNavigate: Bool { didSet { defaults.set(tapToNavigate, forKey: K.tapNav) } }
 
     /// Enable native Live Text selection (press-and-hold) on comic pages.
     @Published var liveText: Bool { didSet { defaults.set(liveText, forKey: K.liveText) } }
@@ -29,9 +30,19 @@ final class ReaderSettings: ObservableObject {
     /// Duration to use for reader chrome / overlay animations.
     var uiAnimationDuration: TimeInterval { fastAnimations ? 0.08 : 0.16 }
 
+    /// Both reader movements — the tap page turn and a tap-scroll step — share one snappy
+    /// easeOutBack curve (see EasedScrollAnimator). This is its overshoot strength: 0.8 →
+    /// ~2% past the target before it settles back, which reads as the light bounce.
+    var movementOvershoot: Double { 0.8 }
+    /// Duration of a tap page turn (a full page slide) — snappier with fast animations on.
+    var pageTurnDuration: TimeInterval { fastAnimations ? 0.30 : 0.44 }
+    /// Duration of a tap-scroll step (the shorter vertical half-page move). Kept quicker
+    /// than a full turn so repeated taps stay snappy.
+    var tapScrollDuration: TimeInterval { fastAnimations ? 0.16 : 0.30 }
+
     private let defaults: UserDefaults
     private enum K {
-        static let thirds = "reader.thirdsScroll"
+        static let tapNav = "reader.tapToNavigate"
         static let liveText = "reader.liveText"
         static let fastAnim = "reader.fastAnimations"
         static let double = "reader.doublePage"
@@ -39,7 +50,7 @@ final class ReaderSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        thirdsScroll = defaults.object(forKey: K.thirds) as? Bool ?? false
+        tapToNavigate = defaults.object(forKey: K.tapNav) as? Bool ?? false
         liveText = defaults.object(forKey: K.liveText) as? Bool ?? false
         fastAnimations = defaults.object(forKey: K.fastAnim) as? Bool ?? true
         doublePage = defaults.object(forKey: K.double) as? Bool ?? false

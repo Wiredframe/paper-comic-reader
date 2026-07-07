@@ -21,6 +21,9 @@ schemes:
         ComicReader: all
     run:
       config: Debug
+      # Local IAP testing (the tip jar) without App Store Connect. In Xcode this is
+      # Edit Scheme → Run → Options → StoreKit Configuration.
+      storeKitConfiguration: Tips.storekit
     archive:
       config: Release
 
@@ -118,3 +121,18 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: "ComicReader/ComicReader-Bridging-Header.h"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor"
         OTHER_LDFLAGS: "$(inherited) -lz -lc++"
+    postBuildScripts:
+      # Add CADisableMinimumFrameDurationOnPhone to the (generated) Info.plist so the
+      # page-turn CADisplayLink can run above 60 Hz on ProMotion iPhones — iOS caps
+      # custom animations at 60 Hz without it, which judders next to the 120 Hz drag.
+      # This key has no INFOPLIST_KEY_ build-setting form and GENERATE_INFOPLIST_FILE
+      # ignores a supplied INFOPLIST_FILE, so it's patched in here — after Info.plist
+      # processing, before code signing (the last, implicit step), so the signature
+      # covers it. Runs every build so a regenerated plist always gets the key.
+      - name: "Enable high frame rate (ProMotion)"
+        basedOnDependencyAnalysis: false
+        script: |
+          PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+          if [ -f "$PLIST" ]; then
+            /usr/bin/plutil -replace CADisableMinimumFrameDurationOnPhone -bool YES "$PLIST"
+          fi

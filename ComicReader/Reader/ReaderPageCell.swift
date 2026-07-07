@@ -4,21 +4,27 @@
 //
 //  One "slot" of the reader: a single page (portrait / double-page off) or a
 //  two-page spread (landscape double-page). There is deliberately NO pinch zoom —
-//  a double-tap toggles the fit instead, which keeps the layout 100% predictable
-//  and drift-free:
+//  a double-tap toggles the fit instead:
 //
 //    • Single page:  fit-width  ⇄  fit-height
-//    • Spread:       both pages ⇄  the tapped page at fit-width (the other beside it)
+//    • Spread:       both pages (each half width) ⇄ the tapped page zoomed to full
+//                    width. Both pages stay laid out, so the zoom animates in place
+//                    (no black flash) and you can pan to the other page. The scroll
+//                    view's directional lock keeps vertical reading clean while a
+//                    deliberate horizontal drag pans across.
 //
 //  Everything is done by sizing the image views inside a plain, non-zooming scroll
-//  view (contentSize > bounds ⇒ pan; contentSize ≤ bounds ⇒ centred, no scroll).
+//  view. Pages are centred by their FRAME (not contentInset, which stays zero) inside
+//  a content area of at least the bounds: it stays put when it fits and pans when it
+//  doesn't. Keeping the inset at zero is what makes a rotation smooth — only frames
+//  change, and those animate inside the turn, so nothing snaps.
 //
 
 import UIKit
 import VisionKit
 
 protocol ReaderPageCellDelegate: AnyObject {
-    /// A single tap that wasn't consumed by thirds-scroll — the controller decides
+    /// A single tap that wasn't consumed by tap-scroll — the controller decides
     /// prev / next / toggle-chrome from the tap's horizontal position.
     func pageCell(_ cell: ReaderPageCell, didSingleTapAtX x: CGFloat, width: CGFloat)
 }
@@ -28,20 +34,19 @@ final class ReaderPageCell: UICollectionViewCell {
     static let reuseID = "ReaderPageCell"
     static let displayMaxPixel: CGFloat = 2200
 
-    /// How the slot's page(s) fill the screen. Every state keeps content width ==
-    /// bounds width, so the page only ever scrolls *vertically* — horizontal swipes
-    /// always page between slots (the outer collection view), never slosh the page.
+    /// How the slot's page(s) fill the screen.
     private enum Fit {
         case fitWidth          // single page fills the width (may scroll vertically)
         case fitHeight         // single page fills the height (whole page, letterboxed)
-        case spread            // both pages fill the width side by side (scroll vertically)
-        case focus(Int)        // double: only the tapped page (0/1), filling the width
+        case spread            // both pages fit-width-combined (each half), vertical only
+        case focus(Int)        // both pages at fit-width each, scrolled to page 0 / 1
     }
 
     private let scrollView = UIScrollView()
     private let pageViews = [UIImageView(), UIImageView()]       // [left, right]
     private let liveText = [ImageAnalysisInteraction(), ImageAnalysisInteraction()]
     private let analyzer = ImageAnalyzer()
+    private let tapScroll = EasedScrollAnimator()                // snappy, lightly-bouncing steps
 
     private(set) var slotIndex = -1
     private var pageIndices: [Int] = []          // 1 or 2 global page indices
@@ -50,6 +55,10 @@ final class ReaderPageCell: UICollectionViewCell {
     private var fit: Fit = .fitWidth
     private var isDouble = false
     private var lastLaidOutBounds: CGSize = .zero
+    /// The vertical offset the last tap-scroll aimed at (nil = derive from the live
+    /// offset). Advancing from this — not the mid-animation offset — is what makes
+    /// two fast taps still reach the bottom. Reset on drag / re-layout.
+    private var tapTargetY: CGFloat?
     private var settings: ReaderSettings?
     private weak var delegate: ReaderPageCellDelegate?
 
@@ -68,7 +77,12 @@ final class ReaderPageCell: UICollectionViewCell {
         scrollView.bounces = false
         scrollView.alwaysBounceHorizontal = false
         scrollView.alwaysBounceVertical = false
+        // Reading a zoomed spread: a drag locks to the axis it starts in, so vertical
+        // reading never sloshes sideways, but a deliberate horizontal drag still pans
+        // to the other page.
+        scrollView.isDirectionalLockEnabled = true
         scrollView.backgroundColor = .clear
+        scrollView.delegate = self
         contentView.addSubview(scrollView)
 
         for view in pageViews {
@@ -91,9 +105,11 @@ final class ReaderPageCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         loadToken += 1
+        tapScroll.cancel()
         images = []
         pageIndices = []
         lastLaidOutBounds = .zero
+        tapTargetY = nil
         for (i, view) in pageViews.enumerated() {
             view.image = nil
             view.isHidden = true
@@ -137,7 +153,7 @@ final class ReaderPageCell: UICollectionViewCell {
     }
 
     /// Back to the slot's default fit (called when it scrolls off screen), so a
-    /// stuck fit-height / focus state never greets you on the way back.
+    /// stuck fit-height never greets you on the way back.
     func resetToDefault() {
         guard !images.isEmpty else { return }
         fit = isDouble ? .spread : .fitWidth
@@ -148,10 +164,6 @@ final class ReaderPageCell: UICollectionViewCell {
 
     // MARK: Layout
 
-    // Re-fits on any bounds change. During a device rotation UIKit calls this inside
-    // the rotation's animation transaction, so the image-view frame changes here
-    // animate along with the rotation for free — no manual coordinator work needed,
-    // and it behaves the same whether the chrome (and status bar) is shown or hidden.
     override func layoutSubviews() {
         super.layoutSubviews()
         guard !images.isEmpty else { return }
@@ -178,11 +190,14 @@ final class ReaderPageCell: UICollectionViewCell {
 
     private func performLayout(in bounds: CGSize) {
         switch fit {
-        case .fitWidth:     layoutSingle(fillWidth: true, in: bounds)
-        case .fitHeight:    layoutSingle(fillWidth: false, in: bounds)
-        case .spread:       layoutSpread(in: bounds)
-        case .focus(let i): layoutFocus(page: i, in: bounds)
+        case .fitWidth:     place([fitWidth(0, in: bounds)], in: bounds, focusColumn: nil)
+        case .fitHeight:    place([fitHeight(0, in: bounds)], in: bounds, focusColumn: nil)
+        case .spread:       place(spreadSizes(in: bounds), in: bounds, focusColumn: nil)
+        case .focus(let i): place(focusSizes(in: bounds), in: bounds,
+                                  focusColumn: pageIndices.count > 1 ? i : 0)
         }
+        updateLiveTextEnabled(landscape: bounds.width > bounds.height)
+        tapTargetY = nil          // the scroll position was just reset by the layout
     }
 
     /// Aspect (w/h) of page `i`, falling back to a sibling / typical page while it loads.
@@ -196,67 +211,68 @@ final class ReaderPageCell: UICollectionViewCell {
         return 2.0 / 3.0
     }
 
-    private func layoutSingle(fillWidth: Bool, in bounds: CGSize) {
-        let r = aspect(0)
-        let width: CGFloat, height: CGFloat
-        if fillWidth {
-            width = bounds.width
-            height = r > 0 ? width / r : bounds.height
-        } else {
-            height = bounds.height
-            width = height * r
-        }
-        pageViews[0].frame = CGRect(x: 0, y: 0, width: width, height: height)
-        pageViews[0].isHidden = false
-        pageViews[1].isHidden = true
-        scrollView.contentSize = CGSize(width: width, height: height)
-        center(in: bounds)
-        scrollView.contentOffset = topLeftOffset()
+    /// A page filling the width (fit-width): as tall as its aspect makes it.
+    private func fitWidth(_ i: Int, in bounds: CGSize) -> CGSize {
+        let r = aspect(i)
+        return CGSize(width: bounds.width, height: r > 0 ? bounds.width / r : bounds.height)
     }
 
-    /// Both pages side by side, together filling the width exactly (so the combined
-    /// content width == bounds width → no horizontal scroll, only vertical).
-    private func layoutSpread(in bounds: CGSize) {
+    /// A page filling the height (fit-height): as wide as its aspect makes it.
+    private func fitHeight(_ i: Int, in bounds: CGSize) -> CGSize {
+        let r = aspect(i)
+        return CGSize(width: r > 0 ? bounds.height * r : bounds.width, height: bounds.height)
+    }
+
+    /// Both pages sharing one height so together they fill the width exactly (→ no
+    /// horizontal scroll; only vertical if the spread is taller than the screen).
+    private func spreadSizes(in bounds: CGSize) -> [CGSize] {
         let two = pageIndices.count > 1
         let rL = aspect(0)
         let rR = two ? aspect(1) : 0
-        let totalAspect = rL + rR                       // combined width / common height
-        let width = bounds.width
-        let height = totalAspect > 0 ? width / totalAspect : bounds.height
-        let wL = height * rL
-        let wR = height * rR
-        pageViews[0].frame = CGRect(x: 0, y: 0, width: wL, height: height)
-        pageViews[0].isHidden = false
-        pageViews[1].isHidden = !two
-        if two { pageViews[1].frame = CGRect(x: wL, y: 0, width: wR, height: height) }
-        scrollView.contentSize = CGSize(width: wL + wR, height: height)   // width == bounds.width
-        center(in: bounds)
-        scrollView.contentOffset = topLeftOffset()
+        let total = rL + rR
+        let h = total > 0 ? bounds.width / total : bounds.height
+        var sizes = [CGSize(width: h * rL, height: h)]
+        if two { sizes.append(CGSize(width: h * rR, height: h)) }
+        return sizes
     }
 
-    /// Only the tapped page, filling the width (the other page is hidden) — again
-    /// content width == bounds width, so it only scrolls vertically.
-    private func layoutFocus(page i: Int, in bounds: CGSize) {
-        let width = bounds.width
-        let height = aspect(i) > 0 ? width / aspect(i) : bounds.height
-        pageViews[i].frame = CGRect(x: 0, y: 0, width: width, height: height)
-        pageViews[i].isHidden = false
-        let other = 1 - i
-        if other >= 0, other < pageViews.count { pageViews[other].isHidden = true }
-        scrollView.contentSize = CGSize(width: width, height: height)
-        center(in: bounds)
-        scrollView.contentOffset = topLeftOffset()
+    /// Both pages at fit-width each, side by side — you pan between them.
+    private func focusSizes(in bounds: CGSize) -> [CGSize] {
+        var sizes = [fitWidth(0, in: bounds)]
+        if pageIndices.count > 1 { sizes.append(fitWidth(1, in: bounds)) }
+        return sizes
     }
 
-    private func center(in bounds: CGSize) {
-        let content = scrollView.contentSize
-        let insetX = max(0, (bounds.width - content.width) / 2)
-        let insetY = max(0, (bounds.height - content.height) / 2)
-        scrollView.contentInset = UIEdgeInsets(top: insetY, left: insetX, bottom: insetY, right: insetX)
-    }
+    /// Lay the page view(s) out in a horizontal row and centre the row in `bounds` on
+    /// whichever axis it's smaller. The scroll content is at least the bounds — so it
+    /// stays put when it fits and pans when it doesn't — and `contentInset` stays ZERO.
+    /// That's the point: on a rotation only the frames change, which animate inside the
+    /// turn, so there's no inset/offset snap (smooth regardless of the chrome). A
+    /// `focusColumn` scrolls that page to the left edge (spread focus); else it centres.
+    private func place(_ sizes: [CGSize], in bounds: CGSize, focusColumn: Int?) {
+        let rowWidth = sizes.reduce(0) { $0 + $1.width }
+        let rowHeight = sizes.map(\.height).max() ?? bounds.height
+        let contentW = max(rowWidth, bounds.width)
+        let contentH = max(rowHeight, bounds.height)
+        let startX = (contentW - rowWidth) / 2
 
-    private func topLeftOffset() -> CGPoint {
-        CGPoint(x: -scrollView.contentInset.left, y: -scrollView.contentInset.top)
+        var x = startX
+        for (i, size) in sizes.enumerated() {
+            pageViews[i].frame = CGRect(x: x, y: (contentH - size.height) / 2,
+                                        width: size.width, height: size.height)
+            pageViews[i].isHidden = false
+            x += size.width
+        }
+        for i in sizes.count..<pageViews.count { pageViews[i].isHidden = true }
+
+        scrollView.contentInset = .zero
+        scrollView.contentSize = CGSize(width: contentW, height: contentH)
+        if let focusColumn, focusColumn < sizes.count {
+            let colX = startX + sizes.prefix(focusColumn).reduce(0) { $0 + $1.width }
+            scrollView.contentOffset = CGPoint(x: min(colX, contentW - bounds.width), y: 0)
+        } else {
+            scrollView.contentOffset = CGPoint(x: (contentW - bounds.width) / 2, y: 0)
+        }
     }
 
     // MARK: Gestures
@@ -264,6 +280,8 @@ final class ReaderPageCell: UICollectionViewCell {
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
         guard !images.isEmpty else { return }
         if isDouble {
+            // Spread ⇄ zoom the tapped page to full width, animated in place (both
+            // pages stay laid out → smooth zoom, no black flash, pan to the other).
             switch fit {
             case .focus: fit = .spread
             default:     fit = .focus(tappedPage(atX: gesture.location(in: self).x))
@@ -286,30 +304,80 @@ final class ReaderPageCell: UICollectionViewCell {
 
     @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
         let x = gesture.location(in: self).x
-        // Page-by-page thirds scroll works whenever the content is taller than the
-        // screen — single page OR double spread (both are width-fitted, so they only
-        // scroll vertically). At the top/bottom edge it falls through to a page turn.
-        if settings?.thirdsScroll == true {
-            if x < bounds.width * 0.25, scrollByThird(forward: false) { return }
-            if x > bounds.width * 0.75, scrollByThird(forward: true) { return }
+        // Tap-to-navigate (opt-in): step down / up the page a half at a time. In a
+        // zoomed spread it also steps left→right across the two pages before turning.
+        // At the very edge it falls through to the controller (prev / next / chrome).
+        // When disabled, every tap falls through (→ the controller toggles the chrome).
+        if settings?.tapToNavigate == true {
+            if x < bounds.width * 0.25, tapScroll(forward: false) { return }
+            if x > bounds.width * 0.75, tapScroll(forward: true) { return }
         }
         delegate?.pageCell(self, didSingleTapAtX: x, width: bounds.width)
     }
 
-    private func scrollByThird(forward: Bool) -> Bool {
-        let visible = scrollView.bounds.height
-        let content = scrollView.contentSize.height
-        guard content > visible + 1 else { return false }
-        let maxY = content - visible
-        let step = content / 3
-        let y = scrollView.contentOffset.y
-        if forward {
-            guard y < maxY - 1 else { return false }
-            scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: min(maxY, y + step)), animated: true)
-        } else {
-            guard y > 1 else { return false }
-            scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: max(0, y - step)), animated: true)
+    /// One tap-navigation step. Returns false at the very end so the controller turns
+    /// the page. A zoomed spread steps across both pages (fit-width) before that.
+    private func tapScroll(forward: Bool) -> Bool {
+        if case .focus(let column) = fit, pageIndices.count > 1 {
+            return focusTapScroll(forward: forward, column: column)
         }
+        return scrollColumn(forward: forward, columnX: scrollView.contentOffset.x)
+    }
+
+    /// Scrolls the current column up / down by exactly one half of its *scrollable*
+    /// range, so the true top / bottom is always reached in exactly two taps — even
+    /// when tapping fast, because it advances from the last committed target rather
+    /// than the (possibly mid-animation) live offset. Two, not three, because the top
+    /// portion is already on screen at rest. Returns false at the edge, so the
+    /// controller turns the page.
+    private func scrollColumn(forward: Bool, columnX: CGFloat) -> Bool {
+        let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+        guard maxY > 1 else { return false }              // page fits → no vertical scroll
+        let step = maxY / 2
+        let base = tapTargetY ?? scrollView.contentOffset.y
+        let index = (base / step).rounded()               // which half we're on (0…2)
+        let target: CGFloat
+        if forward {
+            guard index < 1.5 else { return false }        // at the bottom → turn the page
+            target = index + 1 >= 2 ? maxY : (index + 1) * step
+        } else {
+            guard index > 0.5 else { return false }        // at the top → turn the page
+            target = (index - 1) * step
+        }
+        tapTargetY = target
+        animateTapScroll(to: CGPoint(x: columnX, y: target))
+        return true
+    }
+
+    /// Animate a tap-scroll step with the same snappy, lightly-bouncing easeOutBack curve
+    /// as the page turn (see EasedScrollAnimator), just on a quicker duration. Restarting
+    /// from the live offset means two fast taps chain straight through to the page end.
+    private func animateTapScroll(to offset: CGPoint) {
+        tapScroll.animate(scrollView, to: offset,
+                          duration: settings?.tapScrollDuration ?? 0.30,
+                          overshoot: settings?.movementOvershoot ?? 0.8) { }
+    }
+
+    /// Tap-scroll inside a zoomed spread: scroll the focused page; at its bottom cross
+    /// to the OTHER page at fit-width (keeping the zoom); only past the last page does
+    /// it return false, so the controller turns to the next / previous spread — which
+    /// resets the zoom. `column` is the focused page (0 = left, 1 = right).
+    private func focusTapScroll(forward: Bool, column: Int) -> Bool {
+        let pageWidth = bounds.width
+        if scrollColumn(forward: forward, columnX: CGFloat(column) * pageWidth) { return true }
+        let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+        if forward {
+            guard column == 0 else { return false }        // right page finished → next spread
+            fit = .focus(1)
+            tapTargetY = 0
+            animateTapScroll(to: CGPoint(x: pageWidth, y: 0))
+        } else {
+            guard column == 1 else { return false }        // left page top → previous spread
+            fit = .focus(0)
+            tapTargetY = maxY
+            animateTapScroll(to: CGPoint(x: 0, y: maxY))
+        }
+        updateLiveTextEnabled(landscape: bounds.width > bounds.height)
         return true
     }
 
@@ -321,8 +389,8 @@ final class ReaderPageCell: UICollectionViewCell {
         if pageViews[pos].interactions.contains(where: { $0 === interaction }) == false {
             pageViews[pos].addInteraction(interaction)
         }
-        interaction.preferredInteractionTypes = .textSelection
         interaction.setSupplementaryInterfaceHidden(true, animated: false)
+        updateLiveTextEnabled(landscape: scrollView.bounds.width > scrollView.bounds.height)
         Task { [weak self] in
             guard let self else { return }
             let config = ImageAnalyzer.Configuration([.text])
@@ -330,5 +398,30 @@ final class ReaderPageCell: UICollectionViewCell {
                 interaction.analysis = analysis
             }
         }
+    }
+
+    /// Live Text press-and-hold selection is only offered where a whole page is
+    /// shown at a comfortable size — fit-height in portrait, fit-width in landscape —
+    /// so it never competes with the reading scroll or the spread overview.
+    private func updateLiveTextEnabled(landscape: Bool) {
+        let enabled: Bool
+        switch fit {
+        case .fitHeight: enabled = !landscape
+        case .fitWidth:  enabled = landscape
+        case .focus:     enabled = landscape   // pages are at fit-width here
+        case .spread:    enabled = false
+        }
+        for interaction in liveText {
+            interaction.preferredInteractionTypes = enabled ? .textSelection : []
+        }
+    }
+}
+
+extension ReaderPageCell: UIScrollViewDelegate {
+    /// A manual drag takes over from any in-flight tap-scroll and invalidates the
+    /// tap-scroll target, so the next tap picks up from wherever the user left the page.
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        tapScroll.cancel()
+        tapTargetY = nil
     }
 }

@@ -10,9 +10,9 @@ import StoreKit
 import UIKit
 
 enum AppInfo {
-    /// The app's numeric App Store ID. Fill this in once the app has a listing —
-    /// until then the store links just won't resolve.
-    static let appStoreID = "0000000000"
+    /// The app's numeric App Store ID (from App Store Connect). Drives the
+    /// "Rate on the App Store" link and the write-review URL in Settings.
+    static let appStoreID = "6788421253"
 
     static var appStoreURL: URL { URL(string: "https://apps.apple.com/app/id\(appStoreID)")! }
     static var writeReviewURL: URL {

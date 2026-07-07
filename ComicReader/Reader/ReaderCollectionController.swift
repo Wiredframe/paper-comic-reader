@@ -56,9 +56,6 @@ final class ReaderCollectionController: UIViewController,
     private(set) var currentPage: Int
 
     private var isDouble = false
-    /// Reading a single spread page zoomed to full width: we temporarily drop to
-    /// single-page slots so navigation is page-by-page. Cleared on rotation.
-    private var spreadFocus = false
     private var isProgrammaticScroll = false
     private var pendingInitialScroll = true
 
@@ -126,8 +123,6 @@ final class ReaderCollectionController: UIViewController,
         super.viewWillTransition(to: size, with: coordinator)
         let page = currentPage
         let newDouble = wantsDouble(for: size)
-        // A rotation ends any single-page "focus" — go back to the natural layout.
-        let rebuild = newDouble != isDouble || spreadFocus
 
         // Keep this minimal: let UIKit resize the collection view and re-fit the
         // cells (each cell re-fits in its own layoutSubviews, inside the rotation
@@ -137,8 +132,7 @@ final class ReaderCollectionController: UIViewController,
         // chrome / status bar is shown or hidden.
         coordinator.animate(alongsideTransition: { [weak self] _ in
             guard let self else { return }
-            if rebuild {
-                self.spreadFocus = false
+            if newDouble != self.isDouble {
                 self.isDouble = newDouble
                 self.collectionView.reloadData()
             }
@@ -152,9 +146,7 @@ final class ReaderCollectionController: UIViewController,
 
     /// Re-evaluate single vs double layout (e.g. the user toggled double-page).
     func syncLayoutMode() {
-        // While zoomed into a spread page (single-page focus) the single layout is
-        // intentional — don't let a routine update snap it back to spreads.
-        guard let cv = collectionView, cv.bounds.width > 0, !spreadFocus else { return }
+        guard let cv = collectionView, cv.bounds.width > 0 else { return }
         let want = wantsDouble(for: cv.bounds.size)
         guard want != isDouble else { return }
         let page = currentPage
@@ -237,7 +229,6 @@ final class ReaderCollectionController: UIViewController,
         cell.configure(slotIndex: indexPath.item,
                        pageIndices: paging.pages(inSlot: indexPath.item),
                        isDouble: isDouble,
-                       isFocusedSingle: spreadFocus,
                        store: store, settings: settings, delegate: self)
         return cell
     }
@@ -297,50 +288,6 @@ final class ReaderCollectionController: UIViewController,
             go(toSlot: slot + 1, animated: true)
         } else {
             onToggleChrome?()
-        }
-    }
-
-    /// Zoom into a spread's page: drop to single-page slots at that page so reading
-    /// is page-by-page and full-width (double-tap again returns to the spread).
-    func pageCell(_ cell: ReaderPageCell, didRequestFocusOnPage page: Int) {
-        guard isDouble else { return }
-        spreadFocus = true
-        isDouble = false
-        setLayout(scrollingToPage: clampPage(page))
-        zoomPopCurrentCell()
-        onPageChanged?(currentPage)
-    }
-
-    func pageCellDidRequestExitFocus(_ cell: ReaderPageCell) {
-        guard spreadFocus else { return }
-        spreadFocus = false
-        isDouble = wantsDouble(for: collectionView.bounds.size)
-        setLayout(scrollingToPage: currentPage)
-        zoomPopCurrentCell()
-    }
-
-    /// Rebuild the slots for the current `isDouble`/`spreadFocus` and land on `page`.
-    private func setLayout(scrollingToPage page: Int) {
-        currentPage = page
-        collectionView.reloadData()
-        collectionView.layoutIfNeeded()
-        if let offset = offset(forSlot: paging.slot(forPage: page)) {
-            collectionView.setContentOffset(offset, animated: false)
-        }
-        prefetchNeighbours(of: page)
-    }
-
-    /// A quick scale-in on the current page — the zoom "pop" when entering or leaving
-    /// the full-width single-page view (the layout swap itself is instant).
-    private func zoomPopCurrentCell() {
-        let slot = paging.slot(forPage: currentPage)
-        guard let cell = collectionView.cellForItem(at: IndexPath(item: slot, section: 0)) else { return }
-        cell.contentView.alpha = 0.5
-        cell.contentView.transform = CGAffineTransform(scaleX: 0.82, y: 0.82)
-        UIView.animate(withDuration: settings.fastAnimations ? 0.22 : 0.32, delay: 0,
-                       options: [.curveEaseOut, .allowUserInteraction]) {
-            cell.contentView.alpha = 1
-            cell.contentView.transform = .identity
         }
     }
 }

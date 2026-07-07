@@ -124,12 +124,17 @@ final class ReaderCollectionController: UIViewController,
         let page = currentPage
         let newDouble = wantsDouble(for: size)
 
-        // Keep this minimal: let UIKit resize the collection view and re-fit the
-        // cells (each cell re-fits in its own layoutSubviews, inside the rotation
-        // animation — see ReaderPageCell). Here we only rebuild slots if the layout
-        // mode flips and restore the current page's scroll position for the new
-        // width. Doing less makes the rotation smooth and identical whether the
-        // chrome / status bar is shown or hidden.
+        // Ask the visible cells to animate their re-fit for this rotation. UIKit
+        // resizes the collection view and each cell re-fits in its own layoutSubviews,
+        // but a SwiftUI-hosted controller doesn't reliably wrap that bounds change in
+        // the rotation animation (notably with the status bar hidden), so we drive it
+        // with an explicit, guaranteed duration — consistent whether chrome is shown
+        // or hidden. We only rebuild slots if the layout mode flips, and restore the
+        // current page's scroll position for the new width.
+        let duration = max(coordinator.transitionDuration, 0.3)
+        for case let cell as ReaderPageCell in collectionView.visibleCells {
+            cell.prepareForRotation(duration: duration)
+        }
         coordinator.animate(alongsideTransition: { [weak self] _ in
             guard let self else { return }
             if newDouble != self.isDouble {

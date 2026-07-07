@@ -5,9 +5,12 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 @main
 struct ComicReaderApp: App {
+
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     /// The SwiftData store for the library (books, folders, bookmarks).
     let modelContainer: ModelContainer = {
@@ -33,5 +36,33 @@ struct ComicReaderApp: App {
                 }
         }
         .modelContainer(modelContainer)
+    }
+}
+
+/// Orientation policy lives here: the app as a whole is portrait-only; the reader
+/// opts into landscape while it's on screen (see `OrientationGate`).
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    static var mask: UIInterfaceOrientationMask = .portrait
+
+    func application(_ application: UIApplication,
+                     supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        AppDelegate.mask
+    }
+}
+
+/// Lets the reader — and only the reader — rotate. The library, bookmarks and
+/// settings stay in portrait.
+enum OrientationGate {
+    /// Allow landscape (called when the reader appears).
+    static func unlock() { AppDelegate.mask = .allButUpsideDown }
+
+    /// Back to portrait-only, and rotate the device back if it's currently landscape
+    /// (called when the reader closes).
+    static func lockPortrait() {
+        AppDelegate.mask = .portrait
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in }
+        scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
     }
 }

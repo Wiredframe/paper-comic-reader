@@ -21,6 +21,9 @@ schemes:
         ComicReader: all
     run:
       config: Debug
+      # Local IAP testing (the tip jar) without App Store Connect. In Xcode this is
+      # Edit Scheme → Run → Options → StoreKit Configuration.
+      storeKitConfiguration: Tips.storekit
     archive:
       config: Release
 

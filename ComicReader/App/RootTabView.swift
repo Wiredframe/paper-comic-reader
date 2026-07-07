@@ -11,6 +11,7 @@ import SwiftUI
 struct RootTabView: View {
     enum Tab: Hashable { case recents, collection, bookmarks, settings }
     @State private var tab: Tab = .collection
+    @State private var showTipPrompt = false
 
     var body: some View {
         ZStack {
@@ -22,6 +23,12 @@ struct RootTabView: View {
         }
         .preferredColorScheme(.dark)
         .tint(.accentColor)
+        .sheet(isPresented: $showTipPrompt) { TipJarView() }
+        .onAppear {
+            if TipJar.shouldAutoPrompt() {
+                showTipPrompt = true
+            }
+        }
     }
 
     @ViewBuilder private var content: some View {

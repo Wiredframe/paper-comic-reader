@@ -70,7 +70,11 @@ struct ReaderView: View {
         }
         .statusBarHidden(!chromeVisible)
         .onAppear(perform: setup)
-        .onDisappear { autoHide?.cancel() }
+        .onDisappear {
+            autoHide?.cancel()
+            OrientationGate.lockPortrait()
+            AppReview.registerReaderOpen()   // may ask for a rating after enough reading
+        }
         .onChange(of: currentPage) { _, page in
             saveProgress(page)
         }
@@ -193,6 +197,7 @@ struct ReaderView: View {
     // MARK: Actions
 
     private func setup() {
+        OrientationGate.unlock()   // the reader may rotate; the rest of the app can't
         if store == nil {
             store = PageImageStore(book: book, paperEnabled: paper.isEnabled, paperParams: paper.params)
         }

@@ -34,8 +34,8 @@ struct CoverCell: View {
                 Text(book.title)
                     .font(.subheadline)
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 HStack(spacing: 5) {
                     Text("\(book.pageCount) pages")

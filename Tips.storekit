@@ -1,0 +1,60 @@
+{
+  "identifier" : "3B0C6F41-1A2B-4C3D-9E4F-5A6B7C8D9E0F",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "1.99",
+      "familyShareable" : false,
+      "internalID" : "100000001",
+      "localizations" : [
+        {
+          "description" : "A small thank-you",
+          "displayName" : "Small Tip",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "de.wiredframe.comicreader.tip.small",
+      "referenceName" : "Small Tip",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "4.20",
+      "familyShareable" : false,
+      "internalID" : "100000002",
+      "localizations" : [
+        {
+          "description" : "A generous tip",
+          "displayName" : "Medium Tip",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "de.wiredframe.comicreader.tip.medium",
+      "referenceName" : "Medium Tip",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "6.90",
+      "familyShareable" : false,
+      "internalID" : "100000003",
+      "localizations" : [
+        {
+          "description" : "A very kind tip",
+          "displayName" : "Large Tip",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "de.wiredframe.comicreader.tip.large",
+      "referenceName" : "Large Tip",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_storefront" : "DEU",
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

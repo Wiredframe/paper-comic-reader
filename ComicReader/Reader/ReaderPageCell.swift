@@ -295,31 +295,67 @@ final class ReaderPageCell: UICollectionViewCell {
 
     @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
         let x = gesture.location(in: self).x
-        // Tap-to-navigate (opt-in): step through the page a third at a time whenever
-        // the content is taller than the screen (single page OR spread). At the
-        // top/bottom edge it falls through to a page turn. When disabled, the tap
-        // just falls through to the controller, which toggles the chrome.
+        // Tap-to-navigate (opt-in): step down / up the page a third at a time. In a
+        // zoomed spread it also steps left→right across the two pages before turning.
+        // At the very edge it falls through to the controller (prev / next / chrome).
+        // When disabled, every tap falls through (→ the controller toggles the chrome).
         if settings?.tapToNavigate == true {
-            if x < bounds.width * 0.25, scrollByThird(forward: false) { return }
-            if x > bounds.width * 0.75, scrollByThird(forward: true) { return }
+            if x < bounds.width * 0.25, tapScroll(forward: false) { return }
+            if x > bounds.width * 0.75, tapScroll(forward: true) { return }
         }
         delegate?.pageCell(self, didSingleTapAtX: x, width: bounds.width)
     }
 
-    private func scrollByThird(forward: Bool) -> Bool {
-        let visible = scrollView.bounds.height
-        let content = scrollView.contentSize.height
-        guard content > visible + 1 else { return false }
-        let maxY = content - visible
-        let step = content / 3
+    /// One tap-navigation step. Returns false at the very end so the controller turns
+    /// the page. A zoomed spread steps across both pages (fit-width) before that.
+    private func tapScroll(forward: Bool) -> Bool {
+        if case .focus(let column) = fit, pageIndices.count > 1 {
+            return focusTapScroll(forward: forward, column: column)
+        }
+        return scrollColumn(forward: forward, columnX: scrollView.contentOffset.x)
+    }
+
+    /// Scrolls the current column up / down in thirds of its *scrollable* range,
+    /// snapping exactly to the top / bottom on the final step (so no sliver is left,
+    /// at any page height — the true end is reached in at most three taps). Returns
+    /// false when already at that edge (nothing to scroll → let the page turn).
+    private func scrollColumn(forward: Bool, columnX: CGFloat) -> Bool {
+        let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+        guard maxY > 1 else { return false }              // page fits → no vertical scroll
+        let step = maxY / 3
         let y = scrollView.contentOffset.y
+        let target: CGFloat
         if forward {
             guard y < maxY - 1 else { return false }
-            scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: min(maxY, y + step)), animated: true)
+            let next = ((y / step + 0.01).rounded(.down) + 1) * step
+            target = next >= maxY - 1 ? maxY : next
         } else {
             guard y > 1 else { return false }
-            scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: max(0, y - step)), animated: true)
+            let prev = ((y / step - 0.01).rounded(.up) - 1) * step
+            target = prev <= 1 ? 0 : prev
         }
+        scrollView.setContentOffset(CGPoint(x: columnX, y: target), animated: true)
+        return true
+    }
+
+    /// Tap-scroll inside a zoomed spread: scroll the focused page; at its bottom cross
+    /// to the OTHER page at fit-width (keeping the zoom); only past the last page does
+    /// it return false, so the controller turns to the next / previous spread — which
+    /// resets the zoom. `column` is the focused page (0 = left, 1 = right).
+    private func focusTapScroll(forward: Bool, column: Int) -> Bool {
+        let pageWidth = bounds.width
+        if scrollColumn(forward: forward, columnX: CGFloat(column) * pageWidth) { return true }
+        let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+        if forward {
+            guard column == 0 else { return false }        // right page finished → next spread
+            fit = .focus(1)
+            scrollView.setContentOffset(CGPoint(x: pageWidth, y: 0), animated: true)
+        } else {
+            guard column == 1 else { return false }        // left page top → previous spread
+            fit = .focus(0)
+            scrollView.setContentOffset(CGPoint(x: 0, y: maxY), animated: true)
+        }
+        updateLiveTextEnabled(landscape: bounds.width > bounds.height)
         return true
     }
 

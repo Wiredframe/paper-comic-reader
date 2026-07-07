@@ -14,6 +14,8 @@ struct SettingsView: View {
     @EnvironmentObject private var reader: ReaderSettings
     @Query private var books: [ComicBook]
 
+    @State private var showTips = false
+
     var body: some View {
         NavigationStack {
             Form {
@@ -44,6 +46,27 @@ struct SettingsView: View {
                     Button("Clear Cache") { Storage.clearCaches() }
                 }
 
+                Section("Support") {
+                    Button { showTips = true } label: {
+                        Label("Leave a Tip", systemImage: "heart.fill")
+                    }
+                    Button { AppReview.openWriteReview() } label: {
+                        Label("Rate Comic Reader", systemImage: "star.fill")
+                    }
+                }
+
+                Section("About") {
+                    NavigationLink {
+                        LegalTextView(title: "Terms of Use", body_: Legal.terms)
+                    } label: { Label("Terms of Use", systemImage: "doc.text") }
+                    NavigationLink {
+                        LegalTextView(title: "Privacy Policy", body_: Legal.privacy)
+                    } label: { Label("Privacy Policy", systemImage: "hand.raised") }
+                    NavigationLink {
+                        LegalTextView(title: "License", body_: Legal.license)
+                    } label: { Label("License", systemImage: "checkmark.seal") }
+                }
+
                 Section {
                 } footer: {
                     Text(appVersion)
@@ -54,6 +77,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .sheet(isPresented: $showTips) { TipJarView() }
         }
     }
 

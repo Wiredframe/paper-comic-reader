@@ -1,4 +1,4 @@
-# Comic Reader (iOS)
+# Paper Comic Reader
 
 A lean, performant native comic reader for iPhone & iPad (SwiftUI + Core Image /
 Metal). It opens **CBZ and CBR** archives, keeps a library with reading progress

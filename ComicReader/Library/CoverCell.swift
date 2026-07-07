@@ -3,7 +3,7 @@
 //  Comic Reader
 //
 //  One comic in the gallery grid: cover + title + page count + progress pie,
-//  with a context menu to move it between folders or delete it.
+//  with a context menu to read, remove from Recents, or delete it.
 //
 
 import SwiftUI
@@ -11,7 +11,6 @@ import SwiftData
 
 struct CoverCell: View {
     let book: ComicBook
-    var folders: [Folder] = []
     var inRecents: Bool = false
     let onOpen: () -> Void
 
@@ -62,27 +61,10 @@ struct CoverCell: View {
                 Label("Remove from Recents", systemImage: "clock.badge.xmark")
             }
         }
-        if !folders.isEmpty {
-            Menu {
-                Button { move(to: nil) } label: {
-                    Label("None", systemImage: book.folder == nil ? "checkmark" : "tray")
-                }
-                ForEach(folders) { folder in
-                    Button { move(to: folder) } label: {
-                        Label(folder.name, systemImage: book.folder?.id == folder.id ? "checkmark" : "folder")
-                    }
-                }
-            } label: { Label("Move to Collection", systemImage: "folder") }
-        }
         Divider()
         Button(role: .destructive) { confirmingDelete = true } label: {
             Label("Delete", systemImage: "trash")
         }
-    }
-
-    private func move(to folder: Folder?) {
-        book.folder = folder
-        try? context.save()
     }
 
     /// Drops the comic from the Recents tab without touching the library or its

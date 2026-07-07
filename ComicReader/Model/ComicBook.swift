@@ -22,8 +22,6 @@ final class ComicBook {
     var lastReadPage: Int       // 0-based, for resume
     var coverName: String?      // cover file in Storage.covers
 
-    var folder: Folder?
-
     @Relationship(deleteRule: .cascade, inverse: \Bookmark.book)
     var bookmarks: [Bookmark] = []
 

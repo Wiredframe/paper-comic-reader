@@ -30,8 +30,8 @@ only need XcodeGen when you change `project.yml`. Signing is `Sign to Run Locall
 ComicReader/
   App/            ComicReaderApp (@main, SwiftData container) · RootTabView (floating tab bar)
   Archive/        ComicArchive protocol + ZipComicArchive (ZIPFoundation) / RarComicArchive (UnrarKit)
-  Model/          SwiftData models (ComicBook, Bookmark, Folder) · Storage · ImageDownsampler · Importer
-  Library/        Recents / Collection / Bookmarks tabs, cover grid, folders, gallery/list, import
+  Model/          SwiftData models (ComicBook, Bookmark) · Storage · ImageDownsampler · Importer
+  Library/        Recents / Library / Bookmarks tabs, cover grid, gallery/list, import
   Reader/         UIKit paged, zoomable reader core + SwiftUI chrome, page grid, bookmarks
   PaperEffect/    Platform-neutral paper engine (PaperFilter + PaperKernels.metal) + settings
   Settings/       Reader / paper / library settings
@@ -85,7 +85,7 @@ efficiently and battery-friendly as possible.
    then guided zoom. Don't over-zoom: the priority is only that the target panel is
    in view, and *equally* that the comic fills the **full screen width** whenever
    possible. Adjustable min/max, hysteresis; detection downscaled on a background queue.
-4. **Random comic** — ✅ surprise-me picker (Collection & Bookmarks toolbars).
+4. **Random comic** — ✅ surprise-me picker (Library & Bookmarks toolbars).
 5. **Double-page (landscape) layout** — ✅ global toggle, fixed pairing.
 
 Feature status: reader foundation ✅ · paper effect ✅ · Live Text setting ✅ ·

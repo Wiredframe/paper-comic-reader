@@ -12,12 +12,25 @@ struct ComicReaderApp: App {
 
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    /// The SwiftData store for the library (books, folders, bookmarks).
+    /// The SwiftData store for the library (books + bookmarks).
     let modelContainer: ModelContainer = {
+        let schema = Schema([ComicBook.self, Bookmark.self])
+        let config = ModelConfiguration(schema: schema)
         do {
-            return try ModelContainer(for: ComicBook.self, Folder.self, Bookmark.self)
+            return try ModelContainer(for: schema, configurations: config)
         } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
+            // The store predates a schema change (e.g. the Collections/Folders feature
+            // was removed) and couldn't migrate automatically. Drop it and start fresh
+            // rather than crash on launch — the comic archives on disk are untouched and
+            // can be re-imported. Only fires when automatic migration can't reconcile.
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: config.url.path + suffix))
+            }
+            do {
+                return try ModelContainer(for: schema, configurations: config)
+            } catch {
+                fatalError("Failed to create ModelContainer: \(error)")
+            }
         }
     }()
 

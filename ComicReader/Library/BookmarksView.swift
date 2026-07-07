@@ -40,7 +40,6 @@ struct BookmarksView: View {
                             }
                         }
                     }
-                    .libraryCard()
                     .padding(.horizontal)
                     .padding(.top, 8)
                 }

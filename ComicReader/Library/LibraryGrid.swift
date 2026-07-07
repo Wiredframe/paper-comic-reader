@@ -3,14 +3,13 @@
 //  Comic Reader
 //
 //  Reusable cover grid / list of comics. No ScrollView of its own so callers can
-//  compose it with folder sections in a single scroll view.
+//  drop it into their own scroll view.
 //
 
 import SwiftUI
 
 struct LibraryGrid: View {
     let books: [ComicBook]
-    var folders: [Folder] = []
     var columns: Int = 2
     var listMode: Bool = false
     var inRecents: Bool = false
@@ -27,7 +26,7 @@ struct LibraryGrid: View {
         } else {
             LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
                 ForEach(books) { book in
-                    CoverCell(book: book, folders: folders, inRecents: inRecents) { onOpen(book) }
+                    CoverCell(book: book, inRecents: inRecents) { onOpen(book) }
                 }
             }
         }
@@ -39,23 +38,10 @@ struct LibraryGrid: View {
     }
 }
 
-/// Shared cover-grid spacing so Recents / Collection / Bookmarks stay identical and
+/// Shared cover-grid spacing so Recents / Library / Bookmarks stay identical and
 /// the gap between columns is clearly visible (equal horizontally and vertically).
 enum LibraryGridMetrics {
     static let spacing: CGFloat = 30
-}
-
-extension View {
-    /// The reference app's grouped look: content on a subtly elevated, rounded
-    /// card so the cover grid reads as a panel with clear gaps instead of floating
-    /// on the black background.
-    func libraryCard(padding: CGFloat = 16) -> some View {
-        self
-            .padding(padding)
-            .frame(maxWidth: .infinity)
-            .background(Color(.secondarySystemBackground),
-                        in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-    }
 }
 
 private struct LibraryRow: View {

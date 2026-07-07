@@ -54,6 +54,10 @@ final class ReaderPageCell: UICollectionViewCell {
     private var fit: Fit = .fitWidth
     private var isDouble = false
     private var lastLaidOutBounds: CGSize = .zero
+    /// The vertical offset the last tap-scroll aimed at (nil = derive from the live
+    /// offset). Advancing from this — not the mid-animation offset — is what makes
+    /// three fast taps still reach the bottom. Reset on drag / re-layout.
+    private var tapTargetY: CGFloat?
     private var settings: ReaderSettings?
     private weak var delegate: ReaderPageCellDelegate?
 
@@ -77,6 +81,7 @@ final class ReaderPageCell: UICollectionViewCell {
         // to the other page.
         scrollView.isDirectionalLockEnabled = true
         scrollView.backgroundColor = .clear
+        scrollView.delegate = self
         contentView.addSubview(scrollView)
 
         for view in pageViews {
@@ -102,6 +107,7 @@ final class ReaderPageCell: UICollectionViewCell {
         images = []
         pageIndices = []
         lastLaidOutBounds = .zero
+        tapTargetY = nil
         for (i, view) in pageViews.enumerated() {
             view.image = nil
             view.isHidden = true
@@ -189,6 +195,7 @@ final class ReaderPageCell: UICollectionViewCell {
                                   focusColumn: pageIndices.count > 1 ? i : 0)
         }
         updateLiveTextEnabled(landscape: bounds.width > bounds.height)
+        tapTargetY = nil          // the scroll position was just reset by the layout
     }
 
     /// Aspect (w/h) of page `i`, falling back to a sibling / typical page while it loads.
@@ -315,25 +322,26 @@ final class ReaderPageCell: UICollectionViewCell {
         return scrollColumn(forward: forward, columnX: scrollView.contentOffset.x)
     }
 
-    /// Scrolls the current column up / down in thirds of its *scrollable* range,
-    /// snapping exactly to the top / bottom on the final step (so no sliver is left,
-    /// at any page height — the true end is reached in at most three taps). Returns
-    /// false when already at that edge (nothing to scroll → let the page turn).
+    /// Scrolls the current column up / down by exactly one third of its *scrollable*
+    /// range, so the true top / bottom is always reached in exactly three taps — even
+    /// when tapping fast, because it advances from the last committed target rather
+    /// than the (possibly mid-animation) live offset. Returns false at the edge, so
+    /// the controller turns the page.
     private func scrollColumn(forward: Bool, columnX: CGFloat) -> Bool {
         let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
         guard maxY > 1 else { return false }              // page fits → no vertical scroll
         let step = maxY / 3
-        let y = scrollView.contentOffset.y
+        let base = tapTargetY ?? scrollView.contentOffset.y
+        let index = (base / step).rounded()               // which third we're on (0…3)
         let target: CGFloat
         if forward {
-            guard y < maxY - 1 else { return false }
-            let next = ((y / step + 0.01).rounded(.down) + 1) * step
-            target = next >= maxY - 1 ? maxY : next
+            guard index < 2.5 else { return false }        // at the bottom → turn the page
+            target = index + 1 >= 3 ? maxY : (index + 1) * step
         } else {
-            guard y > 1 else { return false }
-            let prev = ((y / step - 0.01).rounded(.up) - 1) * step
-            target = prev <= 1 ? 0 : prev
+            guard index > 0.5 else { return false }        // at the top → turn the page
+            target = (index - 1) * step
         }
+        tapTargetY = target
         scrollView.setContentOffset(CGPoint(x: columnX, y: target), animated: true)
         return true
     }
@@ -349,10 +357,12 @@ final class ReaderPageCell: UICollectionViewCell {
         if forward {
             guard column == 0 else { return false }        // right page finished → next spread
             fit = .focus(1)
+            tapTargetY = 0
             scrollView.setContentOffset(CGPoint(x: pageWidth, y: 0), animated: true)
         } else {
             guard column == 1 else { return false }        // left page top → previous spread
             fit = .focus(0)
+            tapTargetY = maxY
             scrollView.setContentOffset(CGPoint(x: 0, y: maxY), animated: true)
         }
         updateLiveTextEnabled(landscape: bounds.width > bounds.height)
@@ -392,5 +402,13 @@ final class ReaderPageCell: UICollectionViewCell {
         for interaction in liveText {
             interaction.preferredInteractionTypes = enabled ? .textSelection : []
         }
+    }
+}
+
+extension ReaderPageCell: UIScrollViewDelegate {
+    /// A manual drag invalidates the tap-scroll target, so the next tap picks up from
+    /// wherever the user left the page.
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        tapTargetY = nil
     }
 }

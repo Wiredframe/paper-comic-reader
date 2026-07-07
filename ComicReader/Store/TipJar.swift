@@ -12,12 +12,11 @@ import StoreKit
 @MainActor
 final class TipJar: ObservableObject {
 
-    /// Product IDs, smallest to largest. Prices are defined in App Store Connect /
-    /// Tips.storekit (roughly €1.99 / €4.20 / €6.90).
+    /// The single one-time tip product. Its price lives in App Store Connect (≈ €4.99
+    /// / $3.99) and, for local testing, in Tips.storekit. The `.small` suffix is the
+    /// original, immutable product ID — it is now the only tip.
     static let productIDs = [
         "de.wiredframe.comicreader.tip.small",
-        "de.wiredframe.comicreader.tip.medium",
-        "de.wiredframe.comicreader.tip.large",
     ]
 
     @Published private(set) var products: [Product] = []

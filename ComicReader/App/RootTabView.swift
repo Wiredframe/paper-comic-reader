@@ -10,8 +10,20 @@ import SwiftUI
 
 struct RootTabView: View {
     enum Tab: Hashable { case recents, library, bookmarks, settings }
-    @State private var tab: Tab = .library
+    @State private var tab: Tab = Self.initialTab
     @State private var showTipPrompt = false
+
+    private static var initialTab: Tab {
+        #if DEBUG
+        switch ScreenshotSupport.initialTab {
+        case "recents":   return .recents
+        case "bookmarks": return .bookmarks
+        case "settings":  return .settings
+        default:          break
+        }
+        #endif
+        return .library
+    }
 
     var body: some View {
         ZStack {
@@ -28,6 +40,9 @@ struct RootTabView: View {
             if TipJar.shouldAutoPrompt() {
                 showTipPrompt = true
             }
+            #if DEBUG
+            if ScreenshotSupport.showTips { showTipPrompt = true }
+            #endif
         }
     }
 

@@ -3,48 +3,18 @@
   "nonRenewingSubscriptions" : [],
   "products" : [
     {
-      "displayPrice" : "1.99",
+      "displayPrice" : "4.99",
       "familyShareable" : false,
       "internalID" : "100000001",
       "localizations" : [
         {
-          "description" : "A small thank-you",
-          "displayName" : "Small Tip",
+          "description" : "A one-time thank-you",
+          "displayName" : "Tip",
           "locale" : "en_US"
         }
       ],
       "productID" : "de.wiredframe.comicreader.tip.small",
-      "referenceName" : "Small Tip",
-      "type" : "Consumable"
-    },
-    {
-      "displayPrice" : "4.20",
-      "familyShareable" : false,
-      "internalID" : "100000002",
-      "localizations" : [
-        {
-          "description" : "A generous tip",
-          "displayName" : "Medium Tip",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "de.wiredframe.comicreader.tip.medium",
-      "referenceName" : "Medium Tip",
-      "type" : "Consumable"
-    },
-    {
-      "displayPrice" : "6.90",
-      "familyShareable" : false,
-      "internalID" : "100000003",
-      "localizations" : [
-        {
-          "description" : "A very kind tip",
-          "displayName" : "Large Tip",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "de.wiredframe.comicreader.tip.large",
-      "referenceName" : "Large Tip",
+      "referenceName" : "Tip",
       "type" : "Consumable"
     }
   ],

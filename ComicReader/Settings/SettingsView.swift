@@ -51,7 +51,7 @@ struct SettingsView: View {
                         Label("Leave a Tip", systemImage: "heart.fill")
                     }
                     Button { AppReview.openWriteReview() } label: {
-                        Label("Rate Comic Reader", systemImage: "star.fill")
+                        Label("Rate Paper Comic Reader", systemImage: "star.fill")
                     }
                 }
 
@@ -65,6 +65,9 @@ struct SettingsView: View {
                     NavigationLink {
                         LegalTextView(title: "License", body_: Legal.license)
                     } label: { Label("License", systemImage: "checkmark.seal") }
+                    NavigationLink {
+                        LegalTextView(title: "Acknowledgements", body_: Legal.acknowledgements)
+                    } label: { Label("Acknowledgements", systemImage: "text.book.closed") }
                 }
 
                 Section {
@@ -85,7 +88,7 @@ struct SettingsView: View {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "—"
         let build = info?["CFBundleVersion"] as? String ?? "—"
-        return "Comic Reader \(version) (\(build))"
+        return "Paper Comic Reader \(version) (\(build))"
     }
 
     private var storageDescription: String {

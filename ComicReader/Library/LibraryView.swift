@@ -21,6 +21,7 @@ struct LibraryView: View {
     @State private var showImporter = false
     @State private var importError: String?
     @State private var openedBook: ComicBook?
+    @State private var didAutoOpen = false
 
     var body: some View {
         NavigationStack {
@@ -48,6 +49,21 @@ struct LibraryView: View {
         .fullScreenCover(item: $openedBook) { book in
             ReaderView(book: book)
         }
+        #if DEBUG
+        // Screenshot mode: once the seeded comic lands, open it in the reader.
+        .onChange(of: books.count) { _, count in
+            if ScreenshotSupport.shouldOpenReader, !didAutoOpen, count > 0 {
+                didAutoOpen = true
+                openedBook = books.first
+            }
+        }
+        .onAppear {
+            if ScreenshotSupport.shouldOpenReader, !didAutoOpen, let first = books.first {
+                didAutoOpen = true
+                openedBook = first
+            }
+        }
+        #endif
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {

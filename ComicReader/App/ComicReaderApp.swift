@@ -47,6 +47,9 @@ struct ComicReaderApp: App {
                     // Files opened via the share sheet ("Open in Comic Reader").
                     _ = try? Importer.importComic(from: url, into: modelContainer.mainContext)
                 }
+                #if DEBUG
+                .task { ScreenshotSupport.seedIfRequested(into: modelContainer.mainContext) }
+                #endif
         }
         .modelContainer(modelContainer)
     }

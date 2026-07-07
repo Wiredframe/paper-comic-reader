@@ -32,11 +32,11 @@ enum Legal {
     static let terms = """
     Terms of Use
 
-    Comic Reader is a personal comic-reading app. By downloading, installing or using \
+    Paper Comic Reader is a personal comic-reading app. By downloading, installing or using \
     it, you agree to these terms. If you do not agree, do not use the app.
 
     The App
-    Comic Reader lets you import and read comic files you already own. You are \
+    Paper Comic Reader lets you import and read comic files you already own. You are \
     responsible for the files you add and for having the right to use them. The app \
     does not provide, sell or distribute any comics.
 
@@ -65,7 +65,7 @@ enum Legal {
     static let privacy = """
     Privacy Policy
 
-    Short version: Comic Reader collects nothing.
+    Short version: Paper Comic Reader collects nothing.
 
     No data collection
     The app has no analytics, no tracking, no accounts and no ads. The developer does \
@@ -110,4 +110,40 @@ enum Legal {
         SOFTWARE.
         """
     }
+
+    /// Third-party open-source components. The unrar paragraph below is reproduced
+    /// verbatim as its licence requires (must include the full paragraph starting
+    /// from "UnRAR source code").
+    static let acknowledgements = """
+    Acknowledgements
+
+    Paper Comic Reader is built with the following open-source components. Thank you to \
+    their authors.
+
+    ZIPFoundation — MIT License
+    Copyright (c) 2017-2025 Thomas Zoechling
+    Reads CBZ (ZIP) comic archives.
+
+    UnrarKit — BSD 2-Clause License
+    Copyright (c) Abbey Code (Christopher Anderson) and contributors
+    An Objective-C wrapper for reading CBR (RAR) comic archives.
+
+    unrar — UnRAR License
+    All copyrights to RAR and the utility UnRAR are exclusively owned by the author, \
+    Alexander Roshal. Paper Comic Reader includes unrar source code to decode RAR archives. \
+    Per its licence:
+
+    UnRAR source code may be used in any software to handle RAR archives without \
+    limitations free of charge, but cannot be used to develop RAR (WinRAR) compatible \
+    archiver and to re-create RAR compression algorithm, which is proprietary. \
+    Distribution of modified UnRAR source code in separate form or as a part of other \
+    software is permitted, provided that full text of this paragraph, starting from \
+    "UnRAR source code" words, is included in license, or in documentation if license \
+    is not available, and in source code comments of resulting package.
+
+    The RAR archiver and the UnRAR utility are distributed "as is". No warranty of any \
+    kind is expressed or implied.
+
+    Full license texts are available from each project's repository.
+    """
 }

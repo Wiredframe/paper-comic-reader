@@ -19,8 +19,10 @@ xcodebuild -project ComicReader.xcodeproj -scheme ComicReader \
 ```
 
 The generated `.xcodeproj` can be opened directly in Xcode without XcodeGen — you
-only need XcodeGen when you change `project.yml`. Signing is `Sign to Run Locally`
-(`-`), so no Apple account is required for the Simulator.
+only need XcodeGen when you change `project.yml`. Signing is **automatic** with the
+developer team (`DEVELOPMENT_TEAM` in `project.yml`): Simulator builds need no
+profile; device/archive builds create one via your Apple ID (Xcode → Settings →
+Accounts). App Store submission steps live in `AppStore/GoLive.md`.
 
 - **Deployment target:** iOS 18 · **Bundle id:** `de.wiredframe.comicreader`
 

@@ -43,6 +43,21 @@ struct ReaderPaging {
     }
 }
 
+/// A paging flow layout that keeps the *current page* aligned across bounds changes
+/// (rotation, status-bar show/hide). A plain flow layout keeps its raw pixel offset
+/// when the item width changes, so a rotation lands on a different page (and then
+/// snaps back) — this override hands back the page-aligned offset for the new bounds,
+/// so the collection view can never show the wrong page mid-rotation.
+final class PagingFlowLayout: UICollectionViewFlowLayout {
+    /// Supplied by the controller: the slot to keep on screen.
+    var currentSlot: () -> Int = { 0 }
+
+    override func targetContentOffset(forProposedContentOffset proposedContentOffset: CGPoint) -> CGPoint {
+        guard let cv = collectionView, cv.bounds.width > 0 else { return proposedContentOffset }
+        return CGPoint(x: CGFloat(currentSlot()) * cv.bounds.width, y: proposedContentOffset.y)
+    }
+}
+
 final class ReaderCollectionController: UIViewController,
                                         UICollectionViewDataSource,
                                         UICollectionViewDataSourcePrefetching,
@@ -67,7 +82,7 @@ final class ReaderCollectionController: UIViewController,
     /// again shortly after.
     var onWillRotate: (() -> Void)?
 
-    private let layout = UICollectionViewFlowLayout()
+    private let layout = PagingFlowLayout()
     private var collectionView: UICollectionView!
 
     private var paging: ReaderPaging { ReaderPaging(pageCount: pageCount, double: isDouble) }
@@ -90,6 +105,10 @@ final class ReaderCollectionController: UIViewController,
         layout.minimumLineSpacing = 0
         layout.minimumInteritemSpacing = 0
         layout.sectionInset = .zero
+        layout.currentSlot = { [weak self] in
+            guard let self else { return 0 }
+            return self.paging.slot(forPage: self.currentPage)
+        }
 
         collectionView = UICollectionView(frame: view.bounds, collectionViewLayout: layout)
         collectionView.dataSource = self
@@ -126,30 +145,29 @@ final class ReaderCollectionController: UIViewController,
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        let page = currentPage
         let newDouble = wantsDouble(for: size)
         isRotating = true
         // Reveal the chrome (and status bar) so the rotation resizes under a stable
         // safe area and animates smoothly; it auto-hides again a couple seconds later.
         onWillRotate?()
 
-        // Flip single<->double (which needs a reloadData) BEFORE the turn animates,
-        // never inside the coordinator: a reloadData mid-rotation rebuilds every
-        // visible cell (re-reading pages) and snaps the animation. The new slots then
-        // just re-fit to the new size within the animation like any other rotation.
+        // A single<->double change needs a reloadData; do it once, up front (never
+        // mid-animation, which would rebuild every cell and snap the turn), and
+        // restore the current slot's offset since reloadData resets it to zero.
         if newDouble != isDouble {
             isDouble = newDouble
             collectionView.reloadData()
             collectionView.layoutIfNeeded()
-        }
-        coordinator.animate(alongsideTransition: { [weak self] _ in
-            guard let self else { return }
-            if let offset = self.offset(forSlot: self.paging.slot(forPage: page), width: size.width) {
-                self.collectionView.setContentOffset(offset, animated: false)
+            if let offset = offset(forSlot: paging.slot(forPage: currentPage)) {
+                collectionView.contentOffset = offset
             }
-        }, completion: { [weak self] _ in
+        }
+        // The offset for the NEW width is supplied by PagingFlowLayout's
+        // targetContentOffset as the bounds change, so the turn animates straight to
+        // the right page — no manual, after-the-fact correction that snaps.
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
             self?.isRotating = false
-        })
+        }
     }
 
     // MARK: Public

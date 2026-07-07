@@ -58,31 +58,41 @@ final class PagingFlowLayout: UICollectionViewFlowLayout {
     }
 }
 
-/// Animates a paging scroll for a tap-triggered page turn so the outgoing AND incoming
-/// pages both stay on screen for the turn — a plain `UIView.animate` on `contentOffset`
-/// sets the *model* offset to the destination at once, so the collection view recycles
-/// the old page and only the new one slides in over black. Interpolating the model
-/// `contentOffset` each frame keeps both cells laid out, exactly like a finger drag,
-/// while honouring our own duration (unlike the fixed `setContentOffset(_:animated:)`).
-final class PageTurnAnimator {
+/// Animates a scroll view's `contentOffset` along a snappy easeOutBack curve — a fast
+/// ease-out with a small terminal overshoot that reads as a light bounce. The curve is
+/// closed-form, evaluated at each frame's presentation time, so the motion (and the
+/// bounce) is identical at 60 or 120 Hz, and the display link is invalidated the instant
+/// it ends so it never holds ProMotion at a high refresh rate afterwards.
+///
+/// Shared by the two reader movements: the tap PAGE TURN (on the collection view) and a
+/// tap-SCROLL step (on a page's own scroll view). Driving the *model* `contentOffset`
+/// each frame — rather than a `UIView.animate` that jumps the model offset to the
+/// destination at once — is also what keeps BOTH pages laid out through a turn (the
+/// collection view would otherwise recycle the outgoing page and slide the new one in
+/// over black). The overshoot lands on neighbouring content mid-way and on the black
+/// background at the ends, so it always looks like natural momentum.
+final class EasedScrollAnimator {
     private var link: CADisplayLink?
     private weak var scrollView: UIScrollView?
     private var from: CGPoint = .zero
     private var to: CGPoint = .zero
     private var startTime: CFTimeInterval = -1     // set on the first frame
     private var duration: CFTimeInterval = 0
+    private var overshoot: CGFloat = 0             // easeOutBack strength (0 = plain ease-out)
     private var completion: (() -> Void)?
 
     var isRunning: Bool { link != nil }
 
-    /// Starts (or restarts, from the live offset) a turn to `target`.
+    /// Starts (or restarts, from the live offset) a turn to `target` over `duration`,
+    /// with `overshoot` controlling the size of the terminal bounce.
     func animate(_ scrollView: UIScrollView, to target: CGPoint,
-                 duration: CFTimeInterval, completion: @escaping () -> Void) {
+                 duration: CFTimeInterval, overshoot: Double, completion: @escaping () -> Void) {
         cancel()
         self.scrollView = scrollView
         self.from = scrollView.contentOffset
         self.to = target
         self.duration = duration
+        self.overshoot = CGFloat(overshoot)
         self.startTime = -1
         self.completion = completion
         let link = CADisplayLink(target: self, selector: #selector(step(_:)))
@@ -103,22 +113,26 @@ final class PageTurnAnimator {
     @objc private func step(_ link: CADisplayLink) {
         guard let scrollView else { cancel(); return }
         if startTime < 0 { startTime = link.timestamp }
-        // Interpolate to where the frame will actually be shown (targetTimestamp), not
-        // to "now" — that's what keeps the motion jitter-free on a variable-rate display.
+        // Evaluate at the frame's own presentation time (targetTimestamp), not "now", so
+        // the motion stays jitter-free on a variable-rate display.
         let t = duration > 0 ? min(1, (link.targetTimestamp - startTime) / duration) : 1
-        let e = Self.easeInOut(CGFloat(t))
+        let e = Self.easeOutBack(CGFloat(t), overshoot: overshoot)
         scrollView.contentOffset = CGPoint(x: from.x + (to.x - from.x) * e,
                                            y: from.y + (to.y - from.y) * e)
         if t >= 1 {
+            scrollView.contentOffset = to
             let done = completion
             cancel()
             done?()
         }
     }
 
-    /// Quadratic ease-in-out — matches the feel of the old `.curveEaseInOut` turn.
-    private static func easeInOut(_ t: CGFloat) -> CGFloat {
-        t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+    /// Ease-out with a small overshoot past 1 near the end, settling back to exactly 1 at
+    /// t = 1 — a snappy start and one light bounce. `c1` scales the overshoot (~0.8 ≈ 2%).
+    private static func easeOutBack(_ t: CGFloat, overshoot c1: CGFloat) -> CGFloat {
+        let c3 = c1 + 1
+        let p = t - 1
+        return 1 + c3 * p * p * p + c1 * p * p
     }
 }
 
@@ -144,7 +158,7 @@ final class ReaderCollectionController: UIViewController,
 
     private let layout = PagingFlowLayout()
     private var collectionView: UICollectionView!
-    private let pageTurn = PageTurnAnimator()
+    private let pageTurn = EasedScrollAnimator()
 
     private var paging: ReaderPaging { ReaderPaging(pageCount: pageCount, double: isDouble) }
 
@@ -298,10 +312,13 @@ final class ReaderCollectionController: UIViewController,
         guard target != paging.slot(forPage: currentPage), let offset = offset(forSlot: target) else { return }
         currentPage = paging.pages(inSlot: target).first ?? currentPage
         if animated {
-            // Interpolate the offset each frame (not a UIView.animate to the destination)
-            // so both pages slide, like a drag — see PageTurnAnimator.
+            // Ease the offset each frame (not a UIView.animate to the destination) so
+            // both pages glide, like a drag, with a snappy, lightly-bouncing settle —
+            // see EasedScrollAnimator.
             isProgrammaticScroll = true
-            pageTurn.animate(collectionView, to: offset, duration: settings.pageAnimationDuration) { [weak self] in
+            pageTurn.animate(collectionView, to: offset,
+                             duration: settings.pageTurnDuration,
+                             overshoot: settings.movementOvershoot) { [weak self] in
                 self?.isProgrammaticScroll = false
             }
         } else {

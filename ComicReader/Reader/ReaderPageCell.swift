@@ -46,6 +46,7 @@ final class ReaderPageCell: UICollectionViewCell {
     private let pageViews = [UIImageView(), UIImageView()]       // [left, right]
     private let liveText = [ImageAnalysisInteraction(), ImageAnalysisInteraction()]
     private let analyzer = ImageAnalyzer()
+    private let tapScroll = EasedScrollAnimator()                // snappy, lightly-bouncing steps
 
     private(set) var slotIndex = -1
     private var pageIndices: [Int] = []          // 1 or 2 global page indices
@@ -104,6 +105,7 @@ final class ReaderPageCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         loadToken += 1
+        tapScroll.cancel()
         images = []
         pageIndices = []
         lastLaidOutBounds = .zero
@@ -347,15 +349,13 @@ final class ReaderPageCell: UICollectionViewCell {
         return true
     }
 
-    /// Animate a tap-scroll step. Interruptible so two fast taps chain straight through
-    /// to the page end, and it shares the page-turn timing (see pageAnimationDuration)
-    /// so scrolling within a page and turning to the next feel like one motion.
+    /// Animate a tap-scroll step with the same snappy, lightly-bouncing easeOutBack curve
+    /// as the page turn (see EasedScrollAnimator), just on a quicker duration. Restarting
+    /// from the live offset means two fast taps chain straight through to the page end.
     private func animateTapScroll(to offset: CGPoint) {
-        let duration = settings?.pageAnimationDuration ?? 0.28
-        UIView.animate(withDuration: duration, delay: 0,
-                       options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
-            self.scrollView.contentOffset = offset
-        }
+        tapScroll.animate(scrollView, to: offset,
+                          duration: settings?.tapScrollDuration ?? 0.30,
+                          overshoot: settings?.movementOvershoot ?? 0.8) { }
     }
 
     /// Tap-scroll inside a zoomed spread: scroll the focused page; at its bottom cross
@@ -418,9 +418,10 @@ final class ReaderPageCell: UICollectionViewCell {
 }
 
 extension ReaderPageCell: UIScrollViewDelegate {
-    /// A manual drag invalidates the tap-scroll target, so the next tap picks up from
-    /// wherever the user left the page.
+    /// A manual drag takes over from any in-flight tap-scroll and invalidates the
+    /// tap-scroll target, so the next tap picks up from wherever the user left the page.
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        tapScroll.cancel()
         tapTargetY = nil
     }
 }

@@ -30,9 +30,15 @@ final class ReaderSettings: ObservableObject {
     /// Duration to use for reader chrome / overlay animations.
     var uiAnimationDuration: TimeInterval { fastAnimations ? 0.08 : 0.16 }
 
-    /// Duration for in-page movement — page turns AND tap-scroll steps. They share one
-    /// timing so a tap that scrolls and a tap that flips the page feel like one motion.
-    var pageAnimationDuration: TimeInterval { fastAnimations ? 0.14 : 0.28 }
+    /// Both reader movements — the tap page turn and a tap-scroll step — share one snappy
+    /// easeOutBack curve (see EasedScrollAnimator). This is its overshoot strength: 0.8 →
+    /// ~2% past the target before it settles back, which reads as the light bounce.
+    var movementOvershoot: Double { 0.8 }
+    /// Duration of a tap page turn (a full page slide) — snappier with fast animations on.
+    var pageTurnDuration: TimeInterval { fastAnimations ? 0.30 : 0.44 }
+    /// Duration of a tap-scroll step (the shorter vertical half-page move). Kept quicker
+    /// than a full turn so repeated taps stay snappy.
+    var tapScrollDuration: TimeInterval { fastAnimations ? 0.16 : 0.30 }
 
     private let defaults: UserDefaults
     private enum K {

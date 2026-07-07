@@ -24,7 +24,7 @@ import UIKit
 import VisionKit
 
 protocol ReaderPageCellDelegate: AnyObject {
-    /// A single tap that wasn't consumed by thirds-scroll — the controller decides
+    /// A single tap that wasn't consumed by tap-scroll — the controller decides
     /// prev / next / toggle-chrome from the tap's horizontal position.
     func pageCell(_ cell: ReaderPageCell, didSingleTapAtX x: CGFloat, width: CGFloat)
 }
@@ -56,7 +56,7 @@ final class ReaderPageCell: UICollectionViewCell {
     private var lastLaidOutBounds: CGSize = .zero
     /// The vertical offset the last tap-scroll aimed at (nil = derive from the live
     /// offset). Advancing from this — not the mid-animation offset — is what makes
-    /// three fast taps still reach the bottom. Reset on drag / re-layout.
+    /// two fast taps still reach the bottom. Reset on drag / re-layout.
     private var tapTargetY: CGFloat?
     private var settings: ReaderSettings?
     private weak var delegate: ReaderPageCellDelegate?
@@ -302,7 +302,7 @@ final class ReaderPageCell: UICollectionViewCell {
 
     @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
         let x = gesture.location(in: self).x
-        // Tap-to-navigate (opt-in): step down / up the page a third at a time. In a
+        // Tap-to-navigate (opt-in): step down / up the page a half at a time. In a
         // zoomed spread it also steps left→right across the two pages before turning.
         // At the very edge it falls through to the controller (prev / next / chrome).
         // When disabled, every tap falls through (→ the controller toggles the chrome).
@@ -322,28 +322,40 @@ final class ReaderPageCell: UICollectionViewCell {
         return scrollColumn(forward: forward, columnX: scrollView.contentOffset.x)
     }
 
-    /// Scrolls the current column up / down by exactly one third of its *scrollable*
-    /// range, so the true top / bottom is always reached in exactly three taps — even
+    /// Scrolls the current column up / down by exactly one half of its *scrollable*
+    /// range, so the true top / bottom is always reached in exactly two taps — even
     /// when tapping fast, because it advances from the last committed target rather
-    /// than the (possibly mid-animation) live offset. Returns false at the edge, so
-    /// the controller turns the page.
+    /// than the (possibly mid-animation) live offset. Two, not three, because the top
+    /// portion is already on screen at rest. Returns false at the edge, so the
+    /// controller turns the page.
     private func scrollColumn(forward: Bool, columnX: CGFloat) -> Bool {
         let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
         guard maxY > 1 else { return false }              // page fits → no vertical scroll
-        let step = maxY / 3
+        let step = maxY / 2
         let base = tapTargetY ?? scrollView.contentOffset.y
-        let index = (base / step).rounded()               // which third we're on (0…3)
+        let index = (base / step).rounded()               // which half we're on (0…2)
         let target: CGFloat
         if forward {
-            guard index < 2.5 else { return false }        // at the bottom → turn the page
-            target = index + 1 >= 3 ? maxY : (index + 1) * step
+            guard index < 1.5 else { return false }        // at the bottom → turn the page
+            target = index + 1 >= 2 ? maxY : (index + 1) * step
         } else {
             guard index > 0.5 else { return false }        // at the top → turn the page
             target = (index - 1) * step
         }
         tapTargetY = target
-        scrollView.setContentOffset(CGPoint(x: columnX, y: target), animated: true)
+        animateTapScroll(to: CGPoint(x: columnX, y: target))
         return true
+    }
+
+    /// Animate a tap-scroll step. Interruptible so two fast taps chain straight through
+    /// to the page end, and it shares the page-turn timing (see pageAnimationDuration)
+    /// so scrolling within a page and turning to the next feel like one motion.
+    private func animateTapScroll(to offset: CGPoint) {
+        let duration = settings?.pageAnimationDuration ?? 0.28
+        UIView.animate(withDuration: duration, delay: 0,
+                       options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
+            self.scrollView.contentOffset = offset
+        }
     }
 
     /// Tap-scroll inside a zoomed spread: scroll the focused page; at its bottom cross
@@ -358,12 +370,12 @@ final class ReaderPageCell: UICollectionViewCell {
             guard column == 0 else { return false }        // right page finished → next spread
             fit = .focus(1)
             tapTargetY = 0
-            scrollView.setContentOffset(CGPoint(x: pageWidth, y: 0), animated: true)
+            animateTapScroll(to: CGPoint(x: pageWidth, y: 0))
         } else {
             guard column == 1 else { return false }        // left page top → previous spread
             fit = .focus(0)
             tapTargetY = maxY
-            scrollView.setContentOffset(CGPoint(x: 0, y: maxY), animated: true)
+            animateTapScroll(to: CGPoint(x: 0, y: maxY))
         }
         updateLiveTextEnabled(landscape: bounds.width > bounds.height)
         return true

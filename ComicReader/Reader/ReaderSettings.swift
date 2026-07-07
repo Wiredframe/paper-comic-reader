@@ -3,7 +3,7 @@
 //  Comic Reader
 //
 //  Persisted reader preferences (UserDefaults, same pattern as PaperSettings):
-//  the thirds-scroll reading mode, native Live Text, snappy animations, and the
+//  the tap-scroll reading mode, native Live Text, snappy animations, and the
 //  global double-page-in-landscape layout. There is no pinch zoom: the double-tap
 //  fit-width/fit-height toggle replaces it, so there's nothing to "remember".
 //
@@ -14,7 +14,7 @@ import Combine
 @MainActor
 final class ReaderSettings: ObservableObject {
 
-    /// Tap the left/right edge to move through the page (a third at a time) and turn
+    /// Tap the left/right edge to move through the page (a half at a time) and turn
     /// pages. Off by default — when disabled a tap only toggles the chrome.
     @Published var tapToNavigate: Bool { didSet { defaults.set(tapToNavigate, forKey: K.tapNav) } }
 
@@ -29,6 +29,10 @@ final class ReaderSettings: ObservableObject {
 
     /// Duration to use for reader chrome / overlay animations.
     var uiAnimationDuration: TimeInterval { fastAnimations ? 0.08 : 0.16 }
+
+    /// Duration for in-page movement — page turns AND tap-scroll steps. They share one
+    /// timing so a tap that scrolls and a tap that flips the page feel like one motion.
+    var pageAnimationDuration: TimeInterval { fastAnimations ? 0.14 : 0.28 }
 
     private let defaults: UserDefaults
     private enum K {

@@ -77,10 +77,6 @@ final class ReaderCollectionController: UIViewController,
 
     var onPageChanged: ((Int) -> Void)?
     var onToggleChrome: (() -> Void)?
-    /// Fired at the start of a device rotation. The chrome (and with it the status
-    /// bar) is revealed for the turn so the resize animates smoothly; it auto-hides
-    /// again shortly after.
-    var onWillRotate: (() -> Void)?
 
     private let layout = PagingFlowLayout()
     private var collectionView: UICollectionView!
@@ -147,27 +143,31 @@ final class ReaderCollectionController: UIViewController,
         super.viewWillTransition(to: size, with: coordinator)
         let newDouble = wantsDouble(for: size)
         isRotating = true
-        // Reveal the chrome (and status bar) so the rotation resizes under a stable
-        // safe area and animates smoothly; it auto-hides again a couple seconds later.
-        onWillRotate?()
 
-        // A single<->double change needs a reloadData; do it once, up front (never
-        // mid-animation, which would rebuild every cell and snap the turn), and
-        // restore the current slot's offset since reloadData resets it to zero.
         if newDouble != isDouble {
+            // Single <-> spread changes the slot structure, so it needs a reloadData.
+            // Cross-dissolve it, so the second page fades in / out (instead of snapping
+            // in) while the 90° turn animates underneath. This only ever fires with
+            // double-page on. reloadData resets the offset, so restore the slot; the
+            // NEW width is then applied by PagingFlowLayout.targetContentOffset.
             isDouble = newDouble
-            collectionView.reloadData()
-            collectionView.layoutIfNeeded()
-            if let offset = offset(forSlot: paging.slot(forPage: currentPage)) {
-                collectionView.contentOffset = offset
+            let slot = paging.slot(forPage: currentPage)
+            UIView.transition(with: collectionView, duration: coordinator.transitionDuration,
+                              options: [.transitionCrossDissolve, .allowUserInteraction]) {
+                self.collectionView.reloadData()
+                self.collectionView.layoutIfNeeded()
+                self.collectionView.contentOffset = CGPoint(x: CGFloat(slot) * self.collectionView.bounds.width, y: 0)
             }
         }
-        // The offset for the NEW width is supplied by PagingFlowLayout's
-        // targetContentOffset as the bounds change, so the turn animates straight to
-        // the right page — no manual, after-the-fact correction that snaps.
-        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+        // Re-fit the pages to the new size *inside* the turn: invalidating here runs the
+        // relayout (and each cell's own layoutSubviews re-fit) within the rotation
+        // animation, and targetContentOffset keeps the current page aligned to the new
+        // width — so nothing snaps, whether the chrome is shown or hidden.
+        coordinator.animate(alongsideTransition: { [weak self] _ in
+            self?.collectionView.collectionViewLayout.invalidateLayout()
+        }, completion: { [weak self] _ in
             self?.isRotating = false
-        }
+        })
     }
 
     // MARK: Public

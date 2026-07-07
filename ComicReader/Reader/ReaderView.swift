@@ -54,8 +54,7 @@ struct ReaderView: View {
                            currentPage: $currentPage,
                            paperVersion: paperVersion,
                            jumpTarget: $jumpTarget,
-                           onToggleChrome: toggleChrome,
-                           onWillRotate: showChrome)
+                           onToggleChrome: toggleChrome)
                     .ignoresSafeArea()
             } else {
                 ProgressView().tint(.white)

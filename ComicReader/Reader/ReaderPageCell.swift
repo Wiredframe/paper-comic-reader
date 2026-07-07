@@ -14,7 +14,10 @@
 //                    deliberate horizontal drag pans across.
 //
 //  Everything is done by sizing the image views inside a plain, non-zooming scroll
-//  view (contentSize > bounds ⇒ pan; contentSize ≤ bounds ⇒ centred, no scroll).
+//  view. Pages are centred by their FRAME (not contentInset, which stays zero) inside
+//  a content area of at least the bounds: it stays put when it fits and pans when it
+//  doesn't. Keeping the inset at zero is what makes a rotation smooth — only frames
+//  change, and those animate inside the turn, so nothing snaps.
 //
 
 import UIKit
@@ -179,10 +182,11 @@ final class ReaderPageCell: UICollectionViewCell {
 
     private func performLayout(in bounds: CGSize) {
         switch fit {
-        case .fitWidth:     layoutSingle(fillWidth: true, in: bounds)
-        case .fitHeight:    layoutSingle(fillWidth: false, in: bounds)
-        case .spread:       layoutSpread(in: bounds)
-        case .focus(let i): layoutFocus(page: i, in: bounds)
+        case .fitWidth:     place([fitWidth(0, in: bounds)], in: bounds, focusColumn: nil)
+        case .fitHeight:    place([fitHeight(0, in: bounds)], in: bounds, focusColumn: nil)
+        case .spread:       place(spreadSizes(in: bounds), in: bounds, focusColumn: nil)
+        case .focus(let i): place(focusSizes(in: bounds), in: bounds,
+                                  focusColumn: pageIndices.count > 1 ? i : 0)
         }
         updateLiveTextEnabled(landscape: bounds.width > bounds.height)
     }
@@ -198,76 +202,68 @@ final class ReaderPageCell: UICollectionViewCell {
         return 2.0 / 3.0
     }
 
-    private func layoutSingle(fillWidth: Bool, in bounds: CGSize) {
-        let r = aspect(0)
-        let width: CGFloat, height: CGFloat
-        if fillWidth {
-            width = bounds.width
-            height = r > 0 ? width / r : bounds.height
-        } else {
-            height = bounds.height
-            width = height * r
-        }
-        pageViews[0].frame = CGRect(x: 0, y: 0, width: width, height: height)
-        pageViews[0].isHidden = false
-        pageViews[1].isHidden = true
-        scrollView.contentSize = CGSize(width: width, height: height)
-        center(in: bounds)
-        scrollView.contentOffset = topLeftOffset()
+    /// A page filling the width (fit-width): as tall as its aspect makes it.
+    private func fitWidth(_ i: Int, in bounds: CGSize) -> CGSize {
+        let r = aspect(i)
+        return CGSize(width: bounds.width, height: r > 0 ? bounds.width / r : bounds.height)
     }
 
-    /// Both pages side by side, together filling the width exactly (so the combined
-    /// content width == bounds width → no horizontal scroll, only vertical).
-    private func layoutSpread(in bounds: CGSize) {
+    /// A page filling the height (fit-height): as wide as its aspect makes it.
+    private func fitHeight(_ i: Int, in bounds: CGSize) -> CGSize {
+        let r = aspect(i)
+        return CGSize(width: r > 0 ? bounds.height * r : bounds.width, height: bounds.height)
+    }
+
+    /// Both pages sharing one height so together they fill the width exactly (→ no
+    /// horizontal scroll; only vertical if the spread is taller than the screen).
+    private func spreadSizes(in bounds: CGSize) -> [CGSize] {
         let two = pageIndices.count > 1
         let rL = aspect(0)
         let rR = two ? aspect(1) : 0
-        let totalAspect = rL + rR                       // combined width / common height
-        let width = bounds.width
-        let height = totalAspect > 0 ? width / totalAspect : bounds.height
-        let wL = height * rL
-        let wR = height * rR
-        pageViews[0].frame = CGRect(x: 0, y: 0, width: wL, height: height)
-        pageViews[0].isHidden = false
-        pageViews[1].isHidden = !two
-        if two { pageViews[1].frame = CGRect(x: wL, y: 0, width: wR, height: height) }
-        scrollView.contentSize = CGSize(width: wL + wR, height: height)   // width == bounds.width
-        center(in: bounds)
-        scrollView.contentOffset = topLeftOffset()
+        let total = rL + rR
+        let h = total > 0 ? bounds.width / total : bounds.height
+        var sizes = [CGSize(width: h * rL, height: h)]
+        if two { sizes.append(CGSize(width: h * rR, height: h)) }
+        return sizes
     }
 
-    /// Both pages at fit-width each, side by side, scrolled to the focused page. No
-    /// page is hidden, so double-tapping to/from here is a smooth in-place zoom with
-    /// no black flash; `isDirectionalLockEnabled` keeps vertical reading clean while
-    /// a horizontal drag pans to the other page.
-    private func layoutFocus(page i: Int, in bounds: CGSize) {
-        let two = pageIndices.count > 1
-        let width = bounds.width
-        let hL = aspect(0) > 0 ? width / aspect(0) : bounds.height
-        let hR = two ? (aspect(1) > 0 ? width / aspect(1) : bounds.height) : 0
-        pageViews[0].frame = CGRect(x: 0, y: 0, width: width, height: hL)
-        pageViews[0].isHidden = false
-        if two {
-            pageViews[1].frame = CGRect(x: width, y: 0, width: width, height: hR)
-            pageViews[1].isHidden = false
-        } else {
-            pageViews[1].isHidden = true
+    /// Both pages at fit-width each, side by side — you pan between them.
+    private func focusSizes(in bounds: CGSize) -> [CGSize] {
+        var sizes = [fitWidth(0, in: bounds)]
+        if pageIndices.count > 1 { sizes.append(fitWidth(1, in: bounds)) }
+        return sizes
+    }
+
+    /// Lay the page view(s) out in a horizontal row and centre the row in `bounds` on
+    /// whichever axis it's smaller. The scroll content is at least the bounds — so it
+    /// stays put when it fits and pans when it doesn't — and `contentInset` stays ZERO.
+    /// That's the point: on a rotation only the frames change, which animate inside the
+    /// turn, so there's no inset/offset snap (smooth regardless of the chrome). A
+    /// `focusColumn` scrolls that page to the left edge (spread focus); else it centres.
+    private func place(_ sizes: [CGSize], in bounds: CGSize, focusColumn: Int?) {
+        let rowWidth = sizes.reduce(0) { $0 + $1.width }
+        let rowHeight = sizes.map(\.height).max() ?? bounds.height
+        let contentW = max(rowWidth, bounds.width)
+        let contentH = max(rowHeight, bounds.height)
+        let startX = (contentW - rowWidth) / 2
+
+        var x = startX
+        for (i, size) in sizes.enumerated() {
+            pageViews[i].frame = CGRect(x: x, y: (contentH - size.height) / 2,
+                                        width: size.width, height: size.height)
+            pageViews[i].isHidden = false
+            x += size.width
         }
-        scrollView.contentSize = CGSize(width: two ? width * 2 : width, height: max(hL, hR))
-        center(in: bounds)
-        let x = CGFloat(i) * width - scrollView.contentInset.left
-        scrollView.contentOffset = CGPoint(x: max(0, x), y: -scrollView.contentInset.top)
-    }
+        for i in sizes.count..<pageViews.count { pageViews[i].isHidden = true }
 
-    private func center(in bounds: CGSize) {
-        let content = scrollView.contentSize
-        let insetX = max(0, (bounds.width - content.width) / 2)
-        let insetY = max(0, (bounds.height - content.height) / 2)
-        scrollView.contentInset = UIEdgeInsets(top: insetY, left: insetX, bottom: insetY, right: insetX)
-    }
-
-    private func topLeftOffset() -> CGPoint {
-        CGPoint(x: -scrollView.contentInset.left, y: -scrollView.contentInset.top)
+        scrollView.contentInset = .zero
+        scrollView.contentSize = CGSize(width: contentW, height: contentH)
+        if let focusColumn, focusColumn < sizes.count {
+            let colX = startX + sizes.prefix(focusColumn).reduce(0) { $0 + $1.width }
+            scrollView.contentOffset = CGPoint(x: min(colX, contentW - bounds.width), y: 0)
+        } else {
+            scrollView.contentOffset = CGPoint(x: (contentW - bounds.width) / 2, y: 0)
+        }
     }
 
     // MARK: Gestures

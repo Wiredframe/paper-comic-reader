@@ -286,6 +286,10 @@ final class ReaderCollectionController: UIViewController,
     // MARK: ReaderPageCellDelegate
 
     func pageCell(_ cell: ReaderPageCell, didSingleTapAtX x: CGFloat, width: CGFloat) {
+        // Tap-to-navigate is opt-in (off by default): unless it's enabled, a tap
+        // anywhere just toggles the chrome and never turns the page. This applies to
+        // every view (single, spread, focus) since all taps funnel through here.
+        guard settings.tapToNavigate else { onToggleChrome?(); return }
         let slot = paging.slot(forPage: currentPage)
         if x < width * 0.25 {
             go(toSlot: slot - 1, animated: true)

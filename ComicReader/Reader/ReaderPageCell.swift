@@ -284,10 +284,11 @@ final class ReaderPageCell: UICollectionViewCell {
 
     @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
         let x = gesture.location(in: self).x
-        // Page-by-page thirds scroll works whenever the content is taller than the
-        // screen — single page OR double spread (both are width-fitted, so they only
-        // scroll vertically). At the top/bottom edge it falls through to a page turn.
-        if settings?.thirdsScroll == true {
+        // Tap-to-navigate (opt-in): step through the page a third at a time whenever
+        // the content is taller than the screen (single page OR spread). At the
+        // top/bottom edge it falls through to a page turn. When disabled, the tap
+        // just falls through to the controller, which toggles the chrome.
+        if settings?.tapToNavigate == true {
             if x < bounds.width * 0.25, scrollByThird(forward: false) { return }
             if x > bounds.width * 0.75, scrollByThird(forward: true) { return }
         }

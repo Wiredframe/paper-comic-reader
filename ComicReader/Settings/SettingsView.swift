@@ -19,13 +19,13 @@ struct SettingsView: View {
             Form {
                 Section {
                     Toggle("Double Page (Landscape)", isOn: $reader.doublePage)
-                    Toggle("Tap for Page-by-Page Reading", isOn: $reader.thirdsScroll)
+                    Toggle("Tap to Navigate", isOn: $reader.tapToNavigate)
                     Toggle("Live Text", isOn: $reader.liveText)
                     Toggle("Fast Animations", isOn: $reader.fastAnimations)
                 } header: {
                     Text("Reader")
                 } footer: {
-                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Page-by-page scrolls a third of the page on each tap, turning the page at the bottom. Live Text lets you select text on a page by pressing and holding.")
+                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Tap to Navigate lets you tap the left/right edges to move through the page a third at a time and turn pages — off by default, so swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
                 }
 
                 Section("Paper Effect") {

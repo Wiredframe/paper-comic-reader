@@ -162,6 +162,21 @@ final class ReaderPageCell: UICollectionViewCell {
         layoutIfNeeded()
     }
 
+    /// Drive one endpoint of the portrait⇄landscape rotation morph on a spread cell.
+    /// `.focus` is the PORTRAIT look — the reader's page fills the width with its partner
+    /// waiting exactly one screen-width off the adjoining edge — and `.spread` is the
+    /// settled LANDSCAPE spread. The controller flips between the two *inside* the rotation
+    /// animation, so the page slides into (or grows out of) its half while the partner
+    /// glides in / out, instead of the single page and the spread cross-dissolving.
+    /// `focusPos` is the page's side in the pair (0 = left, 1 = right); a lone page (cover
+    /// or an unpaired last page) has no partner, so both endpoints simply fit the width.
+    func setRotationSpread(_ spread: Bool, focusPos: Int) {
+        fit = spread ? .spread : .focus(focusPos)
+        lastLaidOutBounds = .zero
+        setNeedsLayout()
+        layoutIfNeeded()
+    }
+
     // MARK: Layout
 
     override func layoutSubviews() {

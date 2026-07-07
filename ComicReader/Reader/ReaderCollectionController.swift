@@ -231,21 +231,31 @@ final class ReaderCollectionController: UIViewController,
         isRotating = true
         let newDouble = wantsDouble(for: size)
         let modeFlip = newDouble != isDouble
-        isDouble = newDouble
-        let slot = paging.slot(forPage: currentPage)
 
-        if modeFlip {
-            // Single <-> spread changes the slot structure, so it needs a reloadData.
-            // Cross-dissolve it so the second page fades in / out (instead of snapping)
-            // while the coordinator animation below widens the frame and re-fits the
-            // spread in step — this only ever fires with double-page on. Reload at the
-            // CURRENT width; the coordinator then re-aligns the slot to the new width.
-            UIView.transition(with: collectionView, duration: coordinator.transitionDuration,
-                              options: [.transitionCrossDissolve, .allowUserInteraction]) {
-                self.collectionView.reloadData()
-                self.collectionView.layoutIfNeeded()
-                self.collectionView.contentOffset = CGPoint(x: CGFloat(slot) * self.collectionView.bounds.width, y: 0)
-            }
+        // The reader's page and where it sits in its spread pair (0 = left half, 1 = right
+        // half). The morph PIVOTS on this page: it's the one that fills the width on the
+        // portrait side and settles into — or grows out of — its half, so it always lands
+        // on the correct side of the spread. A lone page (the cover, or a last unpaired
+        // page) has no partner, so `.focus` and `.spread` both just fit the width — the
+        // morph then degrades to the plain single-page re-fit, exactly as before.
+        let doublePaging = ReaderPaging(pageCount: pageCount, double: true)
+        let doubleSlot = doublePaging.slot(forPage: currentPage)
+        let focusPos = doublePaging.pages(inSlot: doubleSlot).firstIndex(of: currentPage) ?? 0
+
+        if modeFlip && newDouble {
+            // PORTRAIT single → LANDSCAPE spread. Rebuild the slots as spreads NOW, at the
+            // current (~portrait) width, and lay the reader's slot out as `.focus`: the
+            // page fills the width with its partner waiting one screen-width off the
+            // adjoining edge — pixel-identical to the single page it replaces, so this swap
+            // is invisible. The `.spread` settle inside the turn (below) then slides the
+            // partner in and eases the page into its half. The page MORPHS into the spread;
+            // it doesn't cross-dissolve into it.
+            isDouble = true
+            collectionView.reloadData()
+            collectionView.layoutIfNeeded()
+            collectionView.contentOffset = CGPoint(x: CGFloat(doubleSlot) * collectionView.bounds.width, y: 0)
+            collectionView.layoutIfNeeded()          // realise the slot's cell at that offset
+            morphReaderCell(atSlot: doubleSlot, toSpread: false, focusPos: focusPos)
         }
 
         // Drive the resize AND the page re-fit ourselves, inside the coordinator's
@@ -258,12 +268,46 @@ final class ReaderCollectionController: UIViewController,
             self.collectionView.frame = CGRect(origin: .zero, size: size)
             self.layout.invalidateLayout()
             self.collectionView.layoutIfNeeded()
+            let slot: Int
+            if modeFlip && newDouble {
+                // Settle focus → spread: the partner glides in, the page eases into its half.
+                self.morphReaderCell(atSlot: doubleSlot, toSpread: true, focusPos: focusPos)
+                slot = doubleSlot
+            } else if modeFlip {
+                // LANDSCAPE spread → PORTRAIT single: reverse it on the still-live spread
+                // cell (the page grows back to full width, the partner glides out); the
+                // completion reload then swaps in the single-page slots behind the now-
+                // identical, full-width frame. The structure stays double until then, so
+                // the partner is available to animate out.
+                self.morphReaderCell(atSlot: doubleSlot, toSpread: false, focusPos: focusPos)
+                slot = doubleSlot
+            } else {
+                slot = self.paging.slot(forPage: self.currentPage)
+            }
             self.collectionView.contentOffset = CGPoint(x: CGFloat(slot) * size.width, y: 0)
         }, completion: { [weak self] _ in
             guard let self else { return }
+            if modeFlip && !newDouble {
+                // Settle the real single-page structure behind the morphed (full-width)
+                // page — invisible, because its partner is already off screen.
+                self.isDouble = false
+                let slot = self.paging.slot(forPage: self.currentPage)
+                self.collectionView.reloadData()
+                self.collectionView.layoutIfNeeded()
+                self.collectionView.contentOffset = CGPoint(x: CGFloat(slot) * self.collectionView.bounds.width, y: 0)
+            }
             self.isRotating = false
             self.collectionView.frame = self.view.bounds   // reconcile any drift
         })
+    }
+
+    /// Set a rotation-morph endpoint (`.focus` ⇄ `.spread`) on the cell that owns `slot`,
+    /// if it's on screen. Called inside the coordinator animation so the frame changes
+    /// tween; see `viewWillTransition` and `ReaderPageCell.setRotationSpread`.
+    private func morphReaderCell(atSlot slot: Int, toSpread: Bool, focusPos: Int) {
+        let indexPath = IndexPath(item: slot, section: 0)
+        (collectionView.cellForItem(at: indexPath) as? ReaderPageCell)?
+            .setRotationSpread(toSpread, focusPos: focusPos)
     }
 
     // MARK: Public

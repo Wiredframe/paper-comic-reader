@@ -35,6 +35,7 @@ struct ReaderView: View {
     @State private var jumpTarget: Int?
     @State private var showGrid = false
     @State private var bookmarkTick = 0   // nudges the view when bookmarks change
+    @State private var autoHide: DispatchWorkItem?
 
     private var pageCount: Int { store?.pageCount ?? book.pageCount }
     private var isBookmarked: Bool {
@@ -53,7 +54,8 @@ struct ReaderView: View {
                            currentPage: $currentPage,
                            paperVersion: paperVersion,
                            jumpTarget: $jumpTarget,
-                           onToggleChrome: { withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible.toggle() } })
+                           onToggleChrome: toggleChrome,
+                           onWillRotate: showChrome)
                     .ignoresSafeArea()
             } else {
                 ProgressView().tint(.white)
@@ -69,6 +71,7 @@ struct ReaderView: View {
         }
         .statusBarHidden(!chromeVisible)
         .onAppear(perform: setup)
+        .onDisappear { autoHide?.cancel() }
         .onChange(of: currentPage) { _, page in
             saveProgress(page)
         }
@@ -159,6 +162,35 @@ struct ReaderView: View {
         }
     }
 
+    // MARK: Chrome visibility
+
+    /// Reveal the chrome and (re)arm the auto-hide. Also used on rotation so the
+    /// status bar is present while the turn animates.
+    private func showChrome() {
+        withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible = true }
+        scheduleAutoHide()
+    }
+
+    /// Hide the chrome now and cancel any pending auto-hide.
+    private func hideChrome() {
+        autoHide?.cancel()
+        autoHide = nil
+        withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible = false }
+    }
+
+    private func toggleChrome() { chromeVisible ? hideChrome() : showChrome() }
+
+    /// Fade the chrome out after a short idle so the controls never linger. Re-armed
+    /// every time it's shown (tap, first open, rotation).
+    private func scheduleAutoHide() {
+        autoHide?.cancel()
+        let work = DispatchWorkItem {
+            withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible = false }
+        }
+        autoHide = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
     // MARK: Actions
 
     private func setup() {
@@ -168,6 +200,7 @@ struct ReaderView: View {
         currentPage = clampedStart(store?.pageCount ?? 1)
         book.dateOpened = .now
         try? context.save()
+        scheduleAutoHide()   // the chrome starts visible, then fades after a moment
     }
 
     private func clampedStart(_ count: Int) -> Int {
@@ -187,6 +220,7 @@ struct ReaderView: View {
     }
 
     private func toggleBookmark() {
+        scheduleAutoHide()   // keep the chrome up while the user is acting on it
         if let existing = book.bookmarks.first(where: { $0.pageIndex == currentPage }) {
             try? Storage.fm.removeItem(at: existing.thumbURL)
             context.delete(existing)

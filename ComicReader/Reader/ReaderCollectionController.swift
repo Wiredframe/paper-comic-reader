@@ -62,6 +62,10 @@ final class ReaderCollectionController: UIViewController,
 
     var onPageChanged: ((Int) -> Void)?
     var onToggleChrome: (() -> Void)?
+    /// Fired at the start of a device rotation. The chrome (and with it the status
+    /// bar) is revealed for the turn so the resize animates smoothly; it auto-hides
+    /// again shortly after.
+    var onWillRotate: (() -> Void)?
 
     private let layout = UICollectionViewFlowLayout()
     private var collectionView: UICollectionView!
@@ -125,6 +129,9 @@ final class ReaderCollectionController: UIViewController,
         let page = currentPage
         let newDouble = wantsDouble(for: size)
         isRotating = true
+        // Reveal the chrome (and status bar) so the rotation resizes under a stable
+        // safe area and animates smoothly; it auto-hides again a couple seconds later.
+        onWillRotate?()
 
         // Flip single<->double (which needs a reloadData) BEFORE the turn animates,
         // never inside the coordinator: a reloadData mid-rotation rebuilds every

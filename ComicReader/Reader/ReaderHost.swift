@@ -17,6 +17,7 @@ struct ReaderHost: UIViewControllerRepresentable {
     var paperVersion: Int
     @Binding var jumpTarget: Int?
     var onToggleChrome: () -> Void
+    var onWillRotate: () -> Void
 
     func makeUIViewController(context: Context) -> ReaderCollectionController {
         let controller = ReaderCollectionController(store: store, settings: settings, startIndex: startIndex)
@@ -24,6 +25,7 @@ struct ReaderHost: UIViewControllerRepresentable {
             if currentPage != index { currentPage = index }
         }
         controller.onToggleChrome = onToggleChrome
+        controller.onWillRotate = onWillRotate
         context.coordinator.controller = controller
         context.coordinator.lastPaperVersion = paperVersion
         return controller

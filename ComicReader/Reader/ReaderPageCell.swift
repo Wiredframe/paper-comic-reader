@@ -51,7 +51,6 @@ final class ReaderPageCell: UICollectionViewCell {
     private var fit: Fit = .fitWidth
     private var isDouble = false
     private var lastLaidOutBounds: CGSize = .zero
-    private var rotationFitDuration: TimeInterval?   // set for the one re-fit during a rotation
     private var settings: ReaderSettings?
     private weak var delegate: ReaderPageCellDelegate?
 
@@ -154,28 +153,13 @@ final class ReaderPageCell: UICollectionViewCell {
 
     // MARK: Layout
 
-    /// The controller calls this just before a device rotation so the *next* re-fit
-    /// animates explicitly (see `layoutSubviews`). A SwiftUI-hosted controller doesn't
-    /// reliably wrap the cell's bounds change in the rotation animation — especially
-    /// with the status bar hidden — so the page would otherwise snap while everything
-    /// else animates. Animating it ourselves makes rotation consistent either way.
-    func prepareForRotation(duration: TimeInterval) { rotationFitDuration = duration }
-
     override func layoutSubviews() {
         super.layoutSubviews()
         guard !images.isEmpty else { return }
         let bounds = scrollView.bounds.size
         guard bounds.width > 0, bounds != lastLaidOutBounds else { return }
         lastLaidOutBounds = bounds
-        if let duration = rotationFitDuration {
-            rotationFitDuration = nil
-            UIView.animate(withDuration: duration, delay: 0,
-                           options: [.curveEaseInOut, .beginFromCurrentState]) {
-                self.performLayout(in: bounds)
-            }
-        } else {
-            performLayout(in: bounds)
-        }
+        performLayout(in: bounds)
     }
 
     private func applyLayout(animated: Bool) {

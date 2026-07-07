@@ -56,6 +56,7 @@ final class ReaderCollectionController: UIViewController,
     private(set) var currentPage: Int
 
     private var isDouble = false
+    private var isRotating = false
     private var isProgrammaticScroll = false
     private var pendingInitialScroll = true
 
@@ -123,27 +124,24 @@ final class ReaderCollectionController: UIViewController,
         super.viewWillTransition(to: size, with: coordinator)
         let page = currentPage
         let newDouble = wantsDouble(for: size)
+        isRotating = true
 
-        // Ask the visible cells to animate their re-fit for this rotation. UIKit
-        // resizes the collection view and each cell re-fits in its own layoutSubviews,
-        // but a SwiftUI-hosted controller doesn't reliably wrap that bounds change in
-        // the rotation animation (notably with the status bar hidden), so we drive it
-        // with an explicit, guaranteed duration — consistent whether chrome is shown
-        // or hidden. We only rebuild slots if the layout mode flips, and restore the
-        // current page's scroll position for the new width.
-        let duration = max(coordinator.transitionDuration, 0.3)
-        for case let cell as ReaderPageCell in collectionView.visibleCells {
-            cell.prepareForRotation(duration: duration)
+        // Flip single<->double (which needs a reloadData) BEFORE the turn animates,
+        // never inside the coordinator: a reloadData mid-rotation rebuilds every
+        // visible cell (re-reading pages) and snaps the animation. The new slots then
+        // just re-fit to the new size within the animation like any other rotation.
+        if newDouble != isDouble {
+            isDouble = newDouble
+            collectionView.reloadData()
+            collectionView.layoutIfNeeded()
         }
         coordinator.animate(alongsideTransition: { [weak self] _ in
             guard let self else { return }
-            if newDouble != self.isDouble {
-                self.isDouble = newDouble
-                self.collectionView.reloadData()
-            }
             if let offset = self.offset(forSlot: self.paging.slot(forPage: page), width: size.width) {
                 self.collectionView.setContentOffset(offset, animated: false)
             }
+        }, completion: { [weak self] _ in
+            self?.isRotating = false
         })
     }
 
@@ -151,7 +149,9 @@ final class ReaderCollectionController: UIViewController,
 
     /// Re-evaluate single vs double layout (e.g. the user toggled double-page).
     func syncLayoutMode() {
-        guard let cv = collectionView, cv.bounds.width > 0 else { return }
+        // Not during a rotation — viewWillTransition already rebuilds the slots then,
+        // and a second reloadData mid-rotation would re-read pages and snap the turn.
+        guard let cv = collectionView, cv.bounds.width > 0, !isRotating else { return }
         let want = wantsDouble(for: cv.bounds.size)
         guard want != isDouble else { return }
         let page = currentPage

@@ -58,6 +58,70 @@ final class PagingFlowLayout: UICollectionViewFlowLayout {
     }
 }
 
+/// Animates a paging scroll for a tap-triggered page turn so the outgoing AND incoming
+/// pages both stay on screen for the turn — a plain `UIView.animate` on `contentOffset`
+/// sets the *model* offset to the destination at once, so the collection view recycles
+/// the old page and only the new one slides in over black. Interpolating the model
+/// `contentOffset` each frame keeps both cells laid out, exactly like a finger drag,
+/// while honouring our own duration (unlike the fixed `setContentOffset(_:animated:)`).
+final class PageTurnAnimator {
+    private var link: CADisplayLink?
+    private weak var scrollView: UIScrollView?
+    private var from: CGPoint = .zero
+    private var to: CGPoint = .zero
+    private var startTime: CFTimeInterval = -1     // set on the first frame
+    private var duration: CFTimeInterval = 0
+    private var completion: (() -> Void)?
+
+    var isRunning: Bool { link != nil }
+
+    /// Starts (or restarts, from the live offset) a turn to `target`.
+    func animate(_ scrollView: UIScrollView, to target: CGPoint,
+                 duration: CFTimeInterval, completion: @escaping () -> Void) {
+        cancel()
+        self.scrollView = scrollView
+        self.from = scrollView.contentOffset
+        self.to = target
+        self.duration = duration
+        self.startTime = -1
+        self.completion = completion
+        let link = CADisplayLink(target: self, selector: #selector(step(_:)))
+        // Run at the display's rate (up to 120 Hz on ProMotion) so the turn is as smooth
+        // as a drag; the range lets the system throttle for power when it needs to.
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    /// Stops the turn where it is, dropping the completion (used when a drag takes over).
+    func cancel() {
+        link?.invalidate()
+        link = nil
+        completion = nil
+    }
+
+    @objc private func step(_ link: CADisplayLink) {
+        guard let scrollView else { cancel(); return }
+        if startTime < 0 { startTime = link.timestamp }
+        // Interpolate to where the frame will actually be shown (targetTimestamp), not
+        // to "now" — that's what keeps the motion jitter-free on a variable-rate display.
+        let t = duration > 0 ? min(1, (link.targetTimestamp - startTime) / duration) : 1
+        let e = Self.easeInOut(CGFloat(t))
+        scrollView.contentOffset = CGPoint(x: from.x + (to.x - from.x) * e,
+                                           y: from.y + (to.y - from.y) * e)
+        if t >= 1 {
+            let done = completion
+            cancel()
+            done?()
+        }
+    }
+
+    /// Quadratic ease-in-out — matches the feel of the old `.curveEaseInOut` turn.
+    private static func easeInOut(_ t: CGFloat) -> CGFloat {
+        t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+    }
+}
+
 final class ReaderCollectionController: UIViewController,
                                         UICollectionViewDataSource,
                                         UICollectionViewDataSourcePrefetching,
@@ -80,6 +144,7 @@ final class ReaderCollectionController: UIViewController,
 
     private let layout = PagingFlowLayout()
     private var collectionView: UICollectionView!
+    private let pageTurn = PageTurnAnimator()
 
     private var paging: ReaderPaging { ReaderPaging(pageCount: pageCount, double: isDouble) }
 
@@ -118,7 +183,11 @@ final class ReaderCollectionController: UIViewController,
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.showsVerticalScrollIndicator = false
         collectionView.contentInsetAdjustmentBehavior = .never
-        collectionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        // Deliberately NO autoresizingMask: the controller owns the collection view's
+        // frame (see viewDidLayoutSubviews / viewWillTransition). With autoresizing on,
+        // SwiftUI resizes it in its own layout pass, which only lines up with the
+        // rotation animation while the chrome (and status bar) is also animating — that
+        // stray, un-animated resize was the "rebuild / snap" rotation jank.
         collectionView.register(ReaderPageCell.self, forCellWithReuseIdentifier: ReaderPageCell.reuseID)
         view.addSubview(collectionView)
 
@@ -127,6 +196,10 @@ final class ReaderCollectionController: UIViewController,
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        // Own the frame for every NON-rotation layout (initial size, safe-area / split
+        // changes). During a rotation the coordinator block below drives it instead, so
+        // we leave it alone and let the turn animate the resize in one piece.
+        if !isRotating { collectionView.frame = view.bounds }
         guard collectionView.bounds.width > 0, pageCount > 0 else { return }
         if pendingInitialScroll {
             isDouble = wantsDouble(for: collectionView.bounds.size)
@@ -141,17 +214,18 @@ final class ReaderCollectionController: UIViewController,
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        let newDouble = wantsDouble(for: size)
         isRotating = true
+        let newDouble = wantsDouble(for: size)
+        let modeFlip = newDouble != isDouble
+        isDouble = newDouble
+        let slot = paging.slot(forPage: currentPage)
 
-        if newDouble != isDouble {
+        if modeFlip {
             // Single <-> spread changes the slot structure, so it needs a reloadData.
-            // Cross-dissolve it, so the second page fades in / out (instead of snapping
-            // in) while the 90° turn animates underneath. This only ever fires with
-            // double-page on. reloadData resets the offset, so restore the slot; the
-            // NEW width is then applied by PagingFlowLayout.targetContentOffset.
-            isDouble = newDouble
-            let slot = paging.slot(forPage: currentPage)
+            // Cross-dissolve it so the second page fades in / out (instead of snapping)
+            // while the coordinator animation below widens the frame and re-fits the
+            // spread in step — this only ever fires with double-page on. Reload at the
+            // CURRENT width; the coordinator then re-aligns the slot to the new width.
             UIView.transition(with: collectionView, duration: coordinator.transitionDuration,
                               options: [.transitionCrossDissolve, .allowUserInteraction]) {
                 self.collectionView.reloadData()
@@ -159,14 +233,22 @@ final class ReaderCollectionController: UIViewController,
                 self.collectionView.contentOffset = CGPoint(x: CGFloat(slot) * self.collectionView.bounds.width, y: 0)
             }
         }
-        // Re-fit the pages to the new size *inside* the turn: invalidating here runs the
-        // relayout (and each cell's own layoutSubviews re-fit) within the rotation
-        // animation, and targetContentOffset keeps the current page aligned to the new
-        // width — so nothing snaps, whether the chrome is shown or hidden.
+
+        // Drive the resize AND the page re-fit ourselves, inside the coordinator's
+        // animation, so the whole turn is a single animation — smooth whether the chrome
+        // (and status bar) is shown or hidden. layoutIfNeeded forces the cells to re-fit
+        // to the new width right here, within the turn, instead of on a later, possibly
+        // un-synced layout pass; then we re-align the current page to the new width.
         coordinator.animate(alongsideTransition: { [weak self] _ in
-            self?.collectionView.collectionViewLayout.invalidateLayout()
+            guard let self else { return }
+            self.collectionView.frame = CGRect(origin: .zero, size: size)
+            self.layout.invalidateLayout()
+            self.collectionView.layoutIfNeeded()
+            self.collectionView.contentOffset = CGPoint(x: CGFloat(slot) * size.width, y: 0)
         }, completion: { [weak self] _ in
-            self?.isRotating = false
+            guard let self else { return }
+            self.isRotating = false
+            self.collectionView.frame = self.view.bounds   // reconcile any drift
         })
     }
 
@@ -216,15 +298,14 @@ final class ReaderCollectionController: UIViewController,
         guard target != paging.slot(forPage: currentPage), let offset = offset(forSlot: target) else { return }
         currentPage = paging.pages(inSlot: target).first ?? currentPage
         if animated {
-            let duration = settings.fastAnimations ? 0.14 : 0.28
+            // Interpolate the offset each frame (not a UIView.animate to the destination)
+            // so both pages slide, like a drag — see PageTurnAnimator.
             isProgrammaticScroll = true
-            UIView.animate(withDuration: duration, delay: 0,
-                           options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]) {
-                self.collectionView.setContentOffset(offset, animated: false)
-            } completion: { _ in
-                self.isProgrammaticScroll = false
+            pageTurn.animate(collectionView, to: offset, duration: settings.pageAnimationDuration) { [weak self] in
+                self?.isProgrammaticScroll = false
             }
         } else {
+            pageTurn.cancel()
             collectionView.setContentOffset(offset, animated: false)
         }
         onPageChanged?(currentPage)
@@ -287,6 +368,14 @@ final class ReaderCollectionController: UIViewController,
     }
 
     // MARK: Scroll tracking (user swipes)
+
+    /// A finger on the page takes over from an in-flight tap turn: stop interpolating
+    /// and hand control back to the scroll view so the drag (and its page sync) is clean.
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        guard pageTurn.isRunning else { return }
+        pageTurn.cancel()
+        isProgrammaticScroll = false
+    }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { syncCurrentPage() }
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {

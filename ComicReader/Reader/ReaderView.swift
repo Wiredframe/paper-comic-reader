@@ -167,8 +167,8 @@ struct ReaderView: View {
 
     // MARK: Chrome visibility
 
-    /// Reveal the chrome and (re)arm the auto-hide. Also used on rotation so the
-    /// status bar is present while the turn animates.
+    /// Reveal the chrome and (re)arm the auto-hide. Rotation no longer depends on this
+    /// — the reader re-fits the page inside the turn itself (see viewWillTransition).
     private func showChrome() {
         withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible = true }
         scheduleAutoHide()

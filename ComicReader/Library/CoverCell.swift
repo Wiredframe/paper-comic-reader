@@ -39,6 +39,9 @@ struct CoverCell: View {
                 HStack(spacing: 5) {
                     Text("\(book.pageCount) pages")
                     if book.progress > 0 { ProgressPie(progress: book.progress) }
+                    // "Read" is independent of progress (browsing never overwrites it),
+                    // so it gets its own indicator next to the pie.
+                    if book.isRead { ReadCheck() }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

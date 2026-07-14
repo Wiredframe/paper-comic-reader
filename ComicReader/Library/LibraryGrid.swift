@@ -59,6 +59,7 @@ private struct LibraryRow: View {
                     HStack(spacing: 5) {
                         Text("\(book.pageCount) pages")
                         if book.progress > 0 { ProgressPie(progress: book.progress, size: 13) }
+                        if book.isRead { ReadCheck(size: 13) }
                     }
                     .font(.caption).foregroundStyle(.secondary)
                 }

@@ -20,6 +20,19 @@ struct ProgressPie: View {
     }
 }
 
+/// The "read" badge shown beside the progress pie. Deliberately separate from the pie:
+/// `isRead` is a manual/last-page flag that browsing never overwrites, so it carries its
+/// own always-visible mark (a filled green check) rather than riding on read progress.
+struct ReadCheck: View {
+    var size: CGFloat = 15
+
+    var body: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: size))
+            .foregroundStyle(.green)
+    }
+}
+
 private struct PieWedge: Shape {
     let progress: Double
     func path(in rect: CGRect) -> Path {

@@ -30,6 +30,7 @@ struct RecentsView: View {
                     LibraryGrid(books: books, columns: columns, inRecents: true) { openedBook = $0 }
                         .padding(.horizontal)
                         .padding(.top, 8)
+                        .padding(.bottom, FloatingTabBar.reservedSpace)
                 }
             }
             .navigationTitle("Recents")

@@ -31,7 +31,7 @@ struct RootTabView: View {
             Color(.systemBackground).ignoresSafeArea()
             content
                 .safeAreaInset(edge: .bottom) {
-                    FloatingTabBar(selection: $tab).padding(.bottom, 2)
+                    FloatingTabBar(selection: $tab).padding(.bottom, FloatingTabBar.bottomOffset)
                 }
         }
         .preferredColorScheme(AppAppearance.from(appearanceRaw).colorScheme)
@@ -58,6 +58,17 @@ struct FloatingTabBar: View {
     @Binding var selection: RootTabView.Tab
     @Environment(\.colorScheme) private var scheme
 
+    // Layout constants, shared so scroll screens can reserve matching bottom space.
+    static let itemHeight: CGFloat = 48
+    static let capsulePadding: CGFloat = 6
+    /// Gap between the capsule and the bottom safe area (see RootTabView).
+    static let bottomOffset: CGFloat = 2
+    /// Bottom content inset the grid/reading screens add so their last row clears the
+    /// floating bar. `.safeAreaInset` places the bar but that inset doesn't reach a
+    /// ScrollView nested inside a NavigationStack, so each screen reserves the space:
+    /// the capsule height, its bottom offset, and a small breathing gap.
+    static var reservedSpace: CGFloat { itemHeight + capsulePadding * 2 + bottomOffset + 12 }
+
     var body: some View {
         HStack(spacing: 2) {
             item(.recents, "Recents", "clock")
@@ -65,7 +76,7 @@ struct FloatingTabBar: View {
             item(.bookmarks, "Bookmarks", "bookmark")
             item(.settings, "Settings", "gearshape")
         }
-        .padding(6)
+        .padding(Self.capsulePadding)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().stroke(.white.opacity(0.08)))
         .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
@@ -85,7 +96,7 @@ struct FloatingTabBar: View {
                 Text(title).font(.caption2)
             }
             .foregroundStyle(active ? Color.accentColor : inactiveColor)
-            .frame(width: 82, height: 48)
+            .frame(width: 82, height: Self.itemHeight)
             .background {
                 if active { Capsule().fill(Color.accentColor.opacity(scheme == .dark ? 0.16 : 0.18)) }
             }

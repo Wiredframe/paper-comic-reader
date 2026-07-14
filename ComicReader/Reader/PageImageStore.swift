@@ -17,7 +17,10 @@ final class PageImageStore {
     private let archive: ComicArchive?
     private let work = DispatchQueue(label: "de.wiredframe.comicreader.page-decode", qos: .userInitiated)
     private let cache = NSCache<NSNumber, UIImage>()
-    private let thumbCache = NSCache<NSNumber, UIImage>()
+    // Keyed by page index AND target size: the page grid asks for small (260px)
+    // thumbnails, a bookmark for a full-size (1200px) shot. Keying by index alone let
+    // a bookmark receive a previously-cached grid thumbnail — a blurry bookmark card.
+    private let thumbCache = NSCache<NSString, UIImage>()
 
     private var paperEnabled: Bool
     private var paperParams: PaperParams
@@ -82,13 +85,14 @@ final class PageImageStore {
     // MARK: Thumbnails (no paper — for the page grid / bookmarks)
 
     func thumbnail(at index: Int, maxPixel: CGFloat = 260, completion: @escaping (UIImage?) -> Void) {
-        if let cached = thumbCache.object(forKey: NSNumber(value: index)) {
+        let key = "\(index)#\(Int(maxPixel))" as NSString
+        if let cached = thumbCache.object(forKey: key) {
             completion(cached)
             return
         }
         work.async { [weak self] in
             let image = (self?.archive?.pageData(at: index)).flatMap { ImageDownsampler.downsample($0, maxPixel: maxPixel) }
-            if let image { self?.thumbCache.setObject(image, forKey: NSNumber(value: index)) }
+            if let image { self?.thumbCache.setObject(image, forKey: key) }
             DispatchQueue.main.async { completion(image) }
         }
     }

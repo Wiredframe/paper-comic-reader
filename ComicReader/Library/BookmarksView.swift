@@ -42,6 +42,7 @@ struct BookmarksView: View {
                     }
                     .padding(.horizontal)
                     .padding(.top, 8)
+                    .padding(.bottom, FloatingTabBar.reservedSpace)
                 }
             }
             .navigationTitle("Bookmarks")

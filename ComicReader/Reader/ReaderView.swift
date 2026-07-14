@@ -125,6 +125,12 @@ struct ReaderView: View {
         .sheet(isPresented: $showGrid) {
             if let store {
                 PageGridView(store: store, pageCount: store.pageCount, current: currentPage) { page in
+                    // Persist the selection here (a clean user event) and update the
+                    // counter. The scroll itself is driven by jumpTarget inside
+                    // updateUIViewController, where a state change wouldn't reliably fire
+                    // onChange — so resume-on-reopen would otherwise miss a grid jump.
+                    saveProgress(page)
+                    currentPage = page
                     jumpTarget = page
                     showGrid = false
                 }

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/appicon.png" alt="Paper Comic Reader app icon" width="116">
+</p>
+
 # Paper Comic Reader
 
 A lean, native comic reader for iPhone and iPad that makes pages read like ink on paper instead of a backlit screen.
@@ -5,7 +9,7 @@ A lean, native comic reader for iPhone and iPad that makes pages read like ink o
 [![Download](https://img.shields.io/badge/Download-.ipa-2563eb?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![Platform](https://img.shields.io/badge/iOS-18%2B-1d4ed8?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![License](https://img.shields.io/badge/License-MIT-64748b?style=for-the-badge)](LICENSE)
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="Paper Comic Reader on iPhone" width="260">
+  <img src="docs/screenshot.jpg" alt="Paper Comic Reader on iPhone" width="260">
 </p>
 
 Paper Comic Reader opens **CBZ and CBR** archives, keeps a library with reading progress and bookmarks, and can render every page with a realistic **paper effect** (ported from the Simple Comic fork) — a warm tonal remap plus a fine paper grain, so pages read like they were printed.

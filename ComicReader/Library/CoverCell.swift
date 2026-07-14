@@ -12,6 +12,8 @@ import SwiftData
 struct CoverCell: View {
     let book: ComicBook
     var inRecents: Bool = false
+    var selectionMode: Bool = false
+    var isSelected: Bool = false
     let onOpen: () -> Void
 
     @Environment(\.modelContext) private var context
@@ -26,8 +28,10 @@ struct CoverCell: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(.white.opacity(0.08))
+                            .stroke(isSelected ? Color.accentColor : .white.opacity(0.08),
+                                    lineWidth: isSelected ? 3 : 1)
                     )
+                    .overlay(alignment: .topTrailing) { selectionBadge }
                     .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
 
                 Text(book.title)
@@ -48,12 +52,26 @@ struct CoverCell: View {
             }
         }
         .buttonStyle(.plain)
-        .contextMenu { menu }
+        // No per-item context menu while selecting — the toolbar carries the batch actions.
+        .contextMenu { if !selectionMode { menu } }
         .confirmationDialog("Delete “\(book.title)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { Importer.delete(book, from: context) }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes the comic and its bookmarks from your library.")
+        }
+    }
+
+    /// The corner check shown in selection mode — filled accent when picked, a hollow ring
+    /// otherwise (standard iOS multi-select affordance).
+    @ViewBuilder private var selectionBadge: some View {
+        if selectionMode {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, Color.accentColor)
+                .shadow(color: .black.opacity(0.4), radius: 2)
+                .padding(8)
         }
     }
 

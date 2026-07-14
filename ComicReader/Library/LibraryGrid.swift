@@ -13,23 +13,34 @@ struct LibraryGrid: View {
     var columns: Int = 2
     var listMode: Bool = false
     var inRecents: Bool = false
+    // Multi-select: when on, a tap toggles selection (via onToggleSelect) rather than
+    // opening the comic. Off by default, so Recents / other callers are unaffected.
+    var selectionMode: Bool = false
+    var selectedIDs: Set<UUID> = []
+    var onToggleSelect: (ComicBook) -> Void = { _ in }
     let onOpen: (ComicBook) -> Void
 
     var body: some View {
         if listMode {
             LazyVStack(spacing: 0) {
                 ForEach(books) { book in
-                    LibraryRow(book: book) { onOpen(book) }
+                    LibraryRow(book: book, selectionMode: selectionMode,
+                               isSelected: selectedIDs.contains(book.id)) { tap(book) }
                     Divider().padding(.leading, 76)
                 }
             }
         } else {
             LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
                 ForEach(books) { book in
-                    CoverCell(book: book, inRecents: inRecents) { onOpen(book) }
+                    CoverCell(book: book, inRecents: inRecents, selectionMode: selectionMode,
+                              isSelected: selectedIDs.contains(book.id)) { tap(book) }
                 }
             }
         }
+    }
+
+    private func tap(_ book: ComicBook) {
+        if selectionMode { onToggleSelect(book) } else { onOpen(book) }
     }
 
     private var gridColumns: [GridItem] {
@@ -46,11 +57,20 @@ enum LibraryGridMetrics {
 
 private struct LibraryRow: View {
     let book: ComicBook
+    var selectionMode: Bool = false
+    var isSelected: Bool = false
     let onOpen: () -> Void
 
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: 12) {
+                if selectionMode {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(isSelected ? .white : Color.secondary,
+                                         isSelected ? Color.accentColor : .clear)
+                }
                 DiskImage(url: book.coverURL, contentMode: .fill, maxPixel: 260)
                     .frame(width: 44, height: 62)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))

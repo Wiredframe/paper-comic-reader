@@ -10,7 +10,6 @@ import Foundation
 import SwiftData
 import UIKit
 
-@MainActor
 enum Importer {
 
     /// Longest side (device pixels) of the stored cover thumbnail. Shared with the
@@ -19,10 +18,22 @@ enum Importer {
 
     enum ImportError: Error { case unsupported, copyFailed, empty }
 
-    /// Imports the archive at `sourceURL` into `context`. Returns the new book.
-    @discardableResult
-    static func importComic(from sourceURL: URL,
-                            into context: ModelContext) throws -> ComicBook {
+    /// Everything a new library entry needs, computed off the archive — no SwiftData,
+    /// so it can be produced on a background thread (see `prepare`).
+    struct Prepared {
+        let id: UUID
+        let title: String
+        let fileName: String
+        let format: ComicFormat
+        let pageCount: Int
+        let coverName: String?
+    }
+
+    /// The heavy half of an import — copy the file into storage, read the archive and
+    /// render its cover. Deliberately NOT main-actor: it does all the slow work off the
+    /// main thread so the UI stays responsive (and can show progress) during a batch
+    /// import. Throws on unsupported / copy failure / empty archive.
+    static func prepare(from sourceURL: URL) throws -> Prepared {
         // Files from the picker / share sheet are security-scoped.
         let scoped = sourceURL.startAccessingSecurityScopedResource()
         defer { if scoped { sourceURL.stopAccessingSecurityScopedResource() } }
@@ -63,15 +74,34 @@ enum Importer {
         }
 
         let title = sourceURL.deletingPathExtension().lastPathComponent
-        let book = ComicBook(id: id, title: title, fileName: fileName,
-                             format: format, pageCount: archive.pageCount, coverName: coverName)
+        return Prepared(id: id, title: title, fileName: fileName,
+                        format: format, pageCount: archive.pageCount, coverName: coverName)
+    }
+
+    /// The light half — insert a prepared import into the store. Main-actor: SwiftData's
+    /// `ModelContext` is bound to the thread that owns it (the view's main context).
+    @MainActor @discardableResult
+    static func commit(_ prepared: Prepared, into context: ModelContext) -> ComicBook {
+        let book = ComicBook(id: prepared.id, title: prepared.title, fileName: prepared.fileName,
+                             format: prepared.format, pageCount: prepared.pageCount,
+                             coverName: prepared.coverName)
         context.insert(book)
         try? context.save()
         return book
     }
 
+    /// Imports the archive at `sourceURL` into `context` synchronously. Kept for the
+    /// single-file paths (a comic opened from Files / "Open With", DEBUG seeding); the
+    /// batch picker import runs `prepare` off-main and `commit` on-main itself so it can
+    /// report progress (see LibraryView).
+    @MainActor @discardableResult
+    static func importComic(from sourceURL: URL,
+                            into context: ModelContext) throws -> ComicBook {
+        commit(try prepare(from: sourceURL), into: context)
+    }
+
     /// Removes a book and its on-disk files.
-    static func delete(_ book: ComicBook, from context: ModelContext) {
+    @MainActor static func delete(_ book: ComicBook, from context: ModelContext) {
         try? Storage.fm.removeItem(at: book.archiveURL)
         if let cover = book.coverURL { try? Storage.fm.removeItem(at: cover) }
         for bookmark in book.bookmarks {

@@ -27,10 +27,10 @@ schemes:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.1.0"
+    MARKETING_VERSION: "1.1.1"
     # Distributed via GitHub Releases (sideload), not the App Store, so the build
     # number is cosmetic — bump it with each tagged release if you like.
-    CURRENT_PROJECT_VERSION: "2"
+    CURRENT_PROJECT_VERSION: "3"
     # App Store distribution: automatic signing with the team. Xcode manages the
     # Apple Development / Apple Distribution certificates and provisioning profiles
     # (the account must be added in Xcode → Settings → Accounts). Simulator builds

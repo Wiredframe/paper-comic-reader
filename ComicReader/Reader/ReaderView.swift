@@ -44,15 +44,19 @@ struct ReaderView: View {
         }
     }
 
-    /// Letterbox behind the page: black in dark, gray in light so the page edges read
-    /// without the glare of white. With the paper effect on, the light gray is warmed to
-    /// match the page's tone (a cheap approximation of the shader's warmth — no need to
-    /// run the filter on a flat colour). The UIKit collection view draws the actual
-    /// letterbox, so the same colour is handed to it (see `ReaderHost`); the SwiftUI copy
-    /// backs the loading state.
+    /// Letterbox behind the page: a neutral gray so the page edges read without the glare
+    /// of white (light) or the harshness of black (dark) — dark mode is the same gray, a
+    /// few steps darker. With the paper effect on, the gray is warmed to match the page's
+    /// tone (a cheap approximation of the shader's warmth — no need to run the filter on a
+    /// flat colour). The UIKit collection view draws the actual letterbox, so the same
+    /// colour is handed to it (see `ReaderHost`); the SwiftUI copy backs the loading state.
     private var readerBackground: Color { Color(readerBackgroundUIColor) }
     private var readerBackgroundUIColor: UIColor {
-        if readerIsDark { return .black }
+        if readerIsDark {
+            return paper.isEnabled
+                ? UIColor(red: 0.30, green: 0.27, blue: 0.21, alpha: 1)   // warm dark gray (paper on)
+                : UIColor(red: 0.26, green: 0.26, blue: 0.27, alpha: 1)   // neutral dark gray
+        }
         return paper.isEnabled
             ? UIColor(red: 0.58, green: 0.55, blue: 0.48, alpha: 1)   // warm gray (paper on)
             : UIColor(red: 0.53, green: 0.53, blue: 0.54, alpha: 1)   // neutral gray

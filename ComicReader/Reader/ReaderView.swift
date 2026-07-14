@@ -44,22 +44,27 @@ struct ReaderView: View {
         }
     }
 
-    /// Letterbox behind the page: a neutral gray so the page edges read without the glare
-    /// of white (light) or the harshness of black (dark) — dark mode is the same gray, a
-    /// few steps darker. With the paper effect on, the gray is warmed to match the page's
-    /// tone (a cheap approximation of the shader's warmth — no need to run the filter on a
-    /// flat colour). The UIKit collection view draws the actual letterbox, so the same
-    /// colour is handed to it (see `ReaderHost`); the SwiftUI copy backs the loading state.
+    /// Letterbox behind the page: a neutral grey so the page edges read without the glare
+    /// of white (light) or the harshness of black (dark) — a bright mat in light mode, a
+    /// deep one in dark mode. When the paper effect is on, the grey is warmed toward the
+    /// page's cream tone, tracking the effect's own *warmth* setting (0 = neutral grey,
+    /// 1 = full cream) so the mat always matches how warm the pages actually look; with the
+    /// effect off it stays neutral. The UIKit collection view draws the actual letterbox, so
+    /// the same colour is handed to it (see `ReaderHost`); the SwiftUI copy backs the loading state.
     private var readerBackground: Color { Color(readerBackgroundUIColor) }
     private var readerBackgroundUIColor: UIColor {
+        // Warmth follows the paper effect: its warmth slider (0…1) while enabled, else neutral.
+        let warmth = paper.isEnabled ? max(0, min(1, paper.params.warmth)) : 0
+        let neutral, warm: (r: CGFloat, g: CGFloat, b: CGFloat)
         if readerIsDark {
-            return paper.isEnabled
-                ? UIColor(red: 0.30, green: 0.27, blue: 0.21, alpha: 1)   // warm dark gray (paper on)
-                : UIColor(red: 0.26, green: 0.26, blue: 0.27, alpha: 1)   // neutral dark gray
+            neutral = (0.16, 0.16, 0.17); warm = (0.20, 0.17, 0.13)   // deep mat → warm amber
+        } else {
+            neutral = (0.64, 0.64, 0.65); warm = (0.68, 0.64, 0.55)   // bright mat → warm cream
         }
-        return paper.isEnabled
-            ? UIColor(red: 0.58, green: 0.55, blue: 0.48, alpha: 1)   // warm gray (paper on)
-            : UIColor(red: 0.53, green: 0.53, blue: 0.54, alpha: 1)   // neutral gray
+        return UIColor(red:   neutral.r + (warm.r - neutral.r) * warmth,
+                       green: neutral.g + (warm.g - neutral.g) * warmth,
+                       blue:  neutral.b + (warm.b - neutral.b) * warmth,
+                       alpha: 1)
     }
 
     @State private var store: PageImageStore?

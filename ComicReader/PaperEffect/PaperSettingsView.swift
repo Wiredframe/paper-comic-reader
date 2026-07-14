@@ -42,6 +42,9 @@ struct PaperSettingsView: View {
 			.disabled(!settings.isEnabled)
 		}
 		.navigationTitle("Paper Effect")
+		// Reserve room so the last slider clears the floating tab bar (which sits over
+		// the bottom safe area) instead of being hidden under it.
+		.contentMargins(.bottom, 80, for: .scrollContent)
 	}
 
 	private var presetSelection: Binding<Int> {

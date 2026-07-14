@@ -14,6 +14,8 @@ struct SettingsView: View {
     @EnvironmentObject private var reader: ReaderSettings
     @Query private var books: [ComicBook]
 
+    @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.dark.rawValue
+
     private let repoURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader")!
     private let issuesURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader/issues")!
 
@@ -29,6 +31,31 @@ struct SettingsView: View {
                     Text("Reader")
                 } footer: {
                     Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Tap to Navigate lets you tap the left/right edges to move through the page a third at a time and turn pages — off by default, so swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
+                }
+
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Fit-Width Zoom")
+                            Spacer()
+                            Text("\(Int((reader.doubleTapZoom * 100).rounded()))%")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $reader.doubleTapZoom, in: 0.7...1.0, step: 0.05)
+                    }
+                } header: {
+                    Text("Zoom")
+                } footer: {
+                    Text("How wide a single page fills the screen — the default view and the double-tap zoom. Lower it if fit-width feels too wide or too zoomed-in; the page then sits centred with more of its height on screen.")
+                }
+
+                Section("Appearance") {
+                    Picker("Theme", selection: $appearanceRaw) {
+                        ForEach(AppAppearance.allCases) { appearance in
+                            Text(appearance.label).tag(appearance.rawValue)
+                        }
+                    }
                 }
 
                 Section("Paper Effect") {

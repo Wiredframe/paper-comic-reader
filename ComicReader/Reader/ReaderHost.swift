@@ -16,10 +16,11 @@ struct ReaderHost: UIViewControllerRepresentable {
     @Binding var currentPage: Int
     var paperVersion: Int
     @Binding var jumpTarget: Int?
+    var backgroundColor: UIColor
     var onToggleChrome: () -> Void
 
     func makeUIViewController(context: Context) -> ReaderCollectionController {
-        let controller = ReaderCollectionController(store: store, settings: settings, startIndex: startIndex)
+        let controller = ReaderCollectionController(store: store, settings: settings, startIndex: startIndex, backgroundColor: backgroundColor)
         controller.onPageChanged = { index in
             if currentPage != index { currentPage = index }
         }
@@ -33,6 +34,7 @@ struct ReaderHost: UIViewControllerRepresentable {
         // Pick up a live double-page toggle (idempotent — a no-op unless the mode
         // actually changed for the current orientation).
         controller.syncLayoutMode()
+        controller.setBackground(backgroundColor)
         if context.coordinator.lastPaperVersion != paperVersion {
             context.coordinator.lastPaperVersion = paperVersion
             controller.reloadCurrent()

@@ -56,7 +56,6 @@ struct PageGridView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 }
 

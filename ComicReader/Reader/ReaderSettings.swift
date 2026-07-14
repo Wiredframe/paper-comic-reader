@@ -27,6 +27,11 @@ final class ReaderSettings: ObservableObject {
     /// Show two pages side by side in landscape (cover alone, then fixed pairs).
     @Published var doublePage: Bool { didSet { defaults.set(doublePage, forKey: K.double) } }
 
+    /// How wide a single page fills the screen at fit-width (the default single-page look
+    /// and the double-tap zoom). 1.0 = full width; lower values (down to 0.7) show more of
+    /// the page height and read less zoomed-in.
+    @Published var doubleTapZoom: Double { didSet { defaults.set(doubleTapZoom, forKey: K.zoom) } }
+
     /// Duration to use for reader chrome / overlay animations.
     var uiAnimationDuration: TimeInterval { fastAnimations ? 0.08 : 0.16 }
 
@@ -46,6 +51,7 @@ final class ReaderSettings: ObservableObject {
         static let liveText = "reader.liveText"
         static let fastAnim = "reader.fastAnimations"
         static let double = "reader.doublePage"
+        static let zoom = "reader.doubleTapZoom"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -54,5 +60,9 @@ final class ReaderSettings: ObservableObject {
         liveText = defaults.object(forKey: K.liveText) as? Bool ?? false
         fastAnimations = defaults.object(forKey: K.fastAnim) as? Bool ?? true
         doublePage = defaults.object(forKey: K.double) as? Bool ?? false
+        doubleTapZoom = defaults.object(forKey: K.zoom) as? Double ?? 1.0
+        // Force-landscape used to be persisted; it's now session-only. Drop any leftover
+        // value so it can't linger from an older build.
+        defaults.removeObject(forKey: "reader.forceLandscape")
     }
 }

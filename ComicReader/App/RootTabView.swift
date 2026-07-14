@@ -11,6 +11,7 @@ import SwiftUI
 struct RootTabView: View {
     enum Tab: Hashable { case recents, library, bookmarks, settings }
     @State private var tab: Tab = Self.initialTab
+    @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.dark.rawValue
 
     private static var initialTab: Tab {
         #if DEBUG
@@ -32,7 +33,7 @@ struct RootTabView: View {
                     FloatingTabBar(selection: $tab).padding(.bottom, 2)
                 }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(AppAppearance.from(appearanceRaw).colorScheme)
         .tint(.accentColor)
     }
 
@@ -48,6 +49,7 @@ struct RootTabView: View {
 
 struct FloatingTabBar: View {
     @Binding var selection: RootTabView.Tab
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         HStack(spacing: 2) {
@@ -64,6 +66,10 @@ struct FloatingTabBar: View {
 
     private func item(_ tab: RootTabView.Tab, _ title: String, _ icon: String) -> some View {
         let active = selection == tab
+        // Active item is tinted with the accent in both modes (the light-mode accent
+        // #FF9500 is legible on white). Inactive items get a higher-contrast label in
+        // light mode than the washed-out secondary, closer to the system tab bar.
+        let inactiveColor: Color = scheme == .dark ? .secondary : Color.primary.opacity(0.55)
         return Button {
             withAnimation(.snappy(duration: 0.2)) { selection = tab }
         } label: {
@@ -71,10 +77,10 @@ struct FloatingTabBar: View {
                 Image(systemName: icon).font(.system(size: 16, weight: .semibold))
                 Text(title).font(.caption2)
             }
-            .foregroundStyle(active ? Color.accentColor : Color.secondary)
+            .foregroundStyle(active ? Color.accentColor : inactiveColor)
             .frame(width: 82, height: 48)
             .background {
-                if active { Capsule().fill(Color.accentColor.opacity(0.16)) }
+                if active { Capsule().fill(Color.accentColor.opacity(scheme == .dark ? 0.16 : 0.18)) }
             }
         }
         .buttonStyle(.plain)

@@ -97,8 +97,9 @@ final class EasedScrollAnimator {
         self.completion = completion
         let link = CADisplayLink(target: self, selector: #selector(step(_:)))
         // Run at the display's rate (up to 120 Hz on ProMotion) so the turn is as smooth
-        // as a drag; the range lets the system throttle for power when it needs to.
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        // as a drag. The floor is kept high so these short movements bias to 120 rather
+        // than being power-throttled toward 60 (60 Hz displays clamp this to 60 anyway).
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 90, maximum: 120, preferred: 120)
         link.add(to: .main, forMode: .common)
         self.link = link
     }
@@ -162,19 +163,47 @@ final class ReaderCollectionController: UIViewController,
 
     private var paging: ReaderPaging { ReaderPaging(pageCount: pageCount, double: isDouble) }
 
-    init(store: PageImageStore, settings: ReaderSettings, startIndex: Int) {
+    /// Letterbox behind the pages. The page cells are clear, so this is what shows
+    /// around a page that doesn't fill the screen. Adaptive to the app's theme.
+    private var backgroundUIColor: UIColor
+
+    init(store: PageImageStore, settings: ReaderSettings, startIndex: Int, backgroundColor: UIColor) {
         self.store = store
         self.settings = settings
         self.pageCount = max(store.pageCount, 0)
         self.currentPage = min(max(startIndex, 0), max(pageCount - 1, 0))
+        self.backgroundUIColor = backgroundColor
         super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// Update the letterbox colour live (e.g. the theme changed while reading).
+    func setBackground(_ color: UIColor) {
+        guard color != backgroundUIColor else { return }
+        backgroundUIColor = color
+        viewIfLoaded?.backgroundColor = color
+        collectionView?.backgroundColor = color
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Free rotation while reading; the manual landscape/portrait toggle in the reader
+        // nudges from here. (The rest of the app stays portrait — see OrientationGate.)
+        OrientationGate.free()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Roll back to portrait as part of the dismiss transition. The page-grid is a
+        // page sheet, which doesn't fire the presenter's viewWillDisappear, so this only
+        // runs when the reader itself is going away.
+        OrientationGate.lockPortrait()
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
+        view.backgroundColor = backgroundUIColor
 
         layout.scrollDirection = .horizontal
         layout.minimumLineSpacing = 0
@@ -193,7 +222,7 @@ final class ReaderCollectionController: UIViewController,
         collectionView.bounces = false
         collectionView.alwaysBounceHorizontal = false
         collectionView.alwaysBounceVertical = false
-        collectionView.backgroundColor = .black
+        collectionView.backgroundColor = backgroundUIColor
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.showsVerticalScrollIndicator = false
         collectionView.contentInsetAdjustmentBehavior = .never

@@ -69,16 +69,29 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 /// Lets the reader — and only the reader — rotate. The library, bookmarks and
 /// settings stay in portrait.
 enum OrientationGate {
-    /// Allow landscape (called when the reader appears).
-    static func unlock() { AppDelegate.mask = .allButUpsideDown }
+    /// Free rotation while the reader is open — the device orientation decides. The mask
+    /// stays permissive so the manual landscape/portrait nudges below work either way.
+    static func free() { AppDelegate.mask = .allButUpsideDown }
 
-    /// Back to portrait-only, and rotate the device back if it's currently landscape
-    /// (called when the reader closes).
+    /// Nudge the interface to a specific orientation *now* — the reader's manual
+    /// landscape/portrait toggle. Works even under the device rotation lock because it's
+    /// an explicit request; the mask stays permissive, so turning the device afterwards
+    /// still rotates freely.
+    static func rotate(to orientation: UIInterfaceOrientationMask) {
+        requestOrientation(orientation)
+    }
+
+    /// Back to portrait-only (called when the reader closes), rotating the device back if
+    /// it's currently landscape.
     static func lockPortrait() {
         AppDelegate.mask = .portrait
+        requestOrientation(.portrait)
+    }
+
+    private static func requestOrientation(_ orientations: UIInterfaceOrientationMask) {
         guard let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene }).first else { return }
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientations)) { _ in }
         scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
     }
 }

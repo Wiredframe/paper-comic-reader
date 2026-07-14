@@ -21,6 +21,10 @@ final class ComicBook {
     var dateOpened: Date?       // last time it was opened — drives the Recents tab
     var lastReadPage: Int       // 0-based, for resume
     var coverName: String?      // cover file in Storage.covers
+    var isRead: Bool = false     // user-set "read" flag; independent of bookmarks. Set
+                                 // manually from the cover menu, or automatically once
+                                 // the reader reaches the last page. Default via the
+                                 // property initializer keeps SwiftData migration additive.
 
     @Relationship(deleteRule: .cascade, inverse: \Bookmark.book)
     var bookmarks: [Bookmark] = []

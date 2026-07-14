@@ -10,18 +10,38 @@
 import SwiftUI
 import SwiftData
 
+/// How the library grid is ordered. Persisted as a raw string in @AppStorage.
+enum LibrarySort: String, CaseIterable {
+    case dateAdded, title
+}
+
 struct LibraryView: View {
     @Environment(\.modelContext) private var context
 
-    @Query(sort: \ComicBook.dateAdded, order: .reverse) private var books: [ComicBook]
+    @Query private var books: [ComicBook]
 
     @AppStorage("library.columns") private var columns = 2
     @AppStorage("library.listMode") private var listMode = false
+    @AppStorage("library.sortField") private var sortField = LibrarySort.dateAdded.rawValue
+    @AppStorage("library.sortAscending") private var sortAscending = false
 
     @State private var showImporter = false
     @State private var importError: String?
     @State private var openedBook: ComicBook?
     @State private var didAutoOpen = false
+
+    /// Books ordered by the current sort choice. Sorted in memory so the field/order can
+    /// change live without a new @Query.
+    private var sortedBooks: [ComicBook] {
+        let ascending: [ComicBook]
+        switch LibrarySort(rawValue: sortField) ?? .dateAdded {
+        case .dateAdded:
+            ascending = books.sorted { $0.dateAdded < $1.dateAdded }
+        case .title:
+            ascending = books.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        }
+        return sortAscending ? ascending : ascending.reversed()
+    }
 
     var body: some View {
         NavigationStack {
@@ -30,7 +50,7 @@ struct LibraryView: View {
                     LibraryEmptyState { showImporter = true }
                         .padding(.top, 80)
                 } else {
-                    LibraryGrid(books: books, columns: columns, listMode: listMode) { openedBook = $0 }
+                    LibraryGrid(books: sortedBooks, columns: columns, listMode: listMode) { openedBook = $0 }
                         .padding(.horizontal)
                         .padding(.top, 8)
                 }
@@ -76,6 +96,20 @@ struct LibraryView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button { showImporter = true } label: { Label("Import", systemImage: "square.and.arrow.down") }
+                Divider()
+                Menu {
+                    Picker("Sort By", selection: $sortField) {
+                        Label("Date Added", systemImage: "calendar").tag(LibrarySort.dateAdded.rawValue)
+                        Label("Title", systemImage: "textformat").tag(LibrarySort.title.rawValue)
+                    }
+                    Divider()
+                    Picker("Order", selection: $sortAscending) {
+                        Label("Ascending", systemImage: "arrow.up").tag(true)
+                        Label("Descending", systemImage: "arrow.down").tag(false)
+                    }
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
+                }
                 Divider()
                 Picker("View", selection: $listMode) {
                     Label("Gallery", systemImage: "square.grid.2x2").tag(false)

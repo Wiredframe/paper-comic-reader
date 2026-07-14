@@ -12,7 +12,7 @@ import Combine
 @MainActor
 final class PaperSettings: ObservableObject {
 
-	@Published var isEnabled: Bool = false {
+	@Published var isEnabled: Bool = true {
 		didSet { defaults.set(isEnabled, forKey: K.enabled) }
 	}
 
@@ -35,7 +35,7 @@ final class PaperSettings: ObservableObject {
 		self.defaults = defaults
 		// NB: property observers do not fire during init, so this loads without
 		// immediately writing back.
-		isEnabled = defaults.object(forKey: K.enabled) as? Bool ?? false
+		isEnabled = defaults.object(forKey: K.enabled) as? Bool ?? true
 		let base = PaperParams.cream
 		params = PaperParams(
 			showThrough: Self.load(defaults, K.showThrough, base.showThrough),

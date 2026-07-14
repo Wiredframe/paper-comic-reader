@@ -56,6 +56,13 @@ struct CoverCell: View {
 
     @ViewBuilder private var menu: some View {
         Button(action: onOpen) { Label("Read", systemImage: "book") }
+        Button {
+            book.isRead.toggle()
+            try? context.save()
+        } label: {
+            Label(book.isRead ? "Mark as Unread" : "Mark as Read",
+                  systemImage: book.isRead ? "circle" : "checkmark.circle")
+        }
         if inRecents {
             Button { removeFromRecents() } label: {
                 Label("Remove from Recents", systemImage: "clock.badge.xmark")

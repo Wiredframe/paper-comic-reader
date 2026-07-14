@@ -10,6 +10,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 /// A request to open a comic, optionally at a specific page (e.g. from a bookmark).
 struct ReaderTarget: Identifiable {
@@ -27,6 +28,35 @@ struct ReaderView: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var paper: PaperSettings
     @EnvironmentObject private var settings: ReaderSettings
+    // The reader is a fullScreenCover; `.preferredColorScheme` set on the tab view does
+    // not reach it, so it reads the appearance itself to keep the reader background and
+    // any presented sheets in the chosen theme.
+    @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.dark.rawValue
+    @Environment(\.colorScheme) private var systemScheme
+
+    /// Effective dark/light for the reader. Named colors (assets) don't resolve reliably
+    /// inside a fullScreenCover, so the background is computed from this directly.
+    private var readerIsDark: Bool {
+        switch AppAppearance.from(appearanceRaw) {
+        case .dark:   return true
+        case .light:  return false
+        case .system: return systemScheme == .dark
+        }
+    }
+
+    /// Letterbox behind the page: black in dark, gray in light so the page edges read
+    /// without the glare of white. With the paper effect on, the light gray is warmed to
+    /// match the page's tone (a cheap approximation of the shader's warmth — no need to
+    /// run the filter on a flat colour). The UIKit collection view draws the actual
+    /// letterbox, so the same colour is handed to it (see `ReaderHost`); the SwiftUI copy
+    /// backs the loading state.
+    private var readerBackground: Color { Color(readerBackgroundUIColor) }
+    private var readerBackgroundUIColor: UIColor {
+        if readerIsDark { return .black }
+        return paper.isEnabled
+            ? UIColor(red: 0.58, green: 0.55, blue: 0.48, alpha: 1)   // warm gray (paper on)
+            : UIColor(red: 0.53, green: 0.53, blue: 0.54, alpha: 1)   // neutral gray
+    }
 
     @State private var store: PageImageStore?
     @State private var currentPage = 0
@@ -36,6 +66,9 @@ struct ReaderView: View {
     @State private var showGrid = false
     @State private var bookmarkTick = 0   // nudges the view when bookmarks change
     @State private var autoHide: DispatchWorkItem?
+    /// Manual landscape override — session-only, not persisted. Toggling it also returns
+    /// to portrait, so it's a plain landscape⇄portrait switch for rotation-locked devices.
+    @State private var forcedLandscape = false
 
     private var pageCount: Int { store?.pageCount ?? book.pageCount }
     private var isBookmarked: Bool {
@@ -45,7 +78,7 @@ struct ReaderView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            readerBackground.ignoresSafeArea()
 
             if let store {
                 ReaderHost(store: store,
@@ -54,6 +87,7 @@ struct ReaderView: View {
                            currentPage: $currentPage,
                            paperVersion: paperVersion,
                            jumpTarget: $jumpTarget,
+                           backgroundColor: readerBackgroundUIColor,
                            onToggleChrome: toggleChrome)
                     .ignoresSafeArea()
             } else {
@@ -69,13 +103,18 @@ struct ReaderView: View {
                 .allowsHitTesting(chromeVisible)
         }
         .statusBarHidden(!chromeVisible)
+        .preferredColorScheme(AppAppearance.from(appearanceRaw).colorScheme)
         .onAppear(perform: setup)
         .onDisappear {
             autoHide?.cancel()
+            // Guaranteed portrait reset on close — a fallback for the controller's
+            // viewWillDisappear (which doesn't always fire for a fullScreenCover), so a
+            // forced landscape never lingers after leaving the reader.
             OrientationGate.lockPortrait()
         }
         .onChange(of: currentPage) { _, page in
             saveProgress(page)
+            if page >= pageCount - 1 { markRead() }
         }
         .onChange(of: paper.isEnabled) { reloadPaper() }
         .onChange(of: paper.params) { reloadPaper() }
@@ -97,7 +136,9 @@ struct ReaderView: View {
             Spacer()
             bottomBar
         }
-        .foregroundStyle(.white)
+        // Standard label colour so the chrome icons are dark on light and white on dark,
+        // matching the system reading apps. The buttons sit on `.ultraThinMaterial`.
+        .foregroundStyle(.primary)
     }
 
     private var topBar: some View {
@@ -136,10 +177,14 @@ struct ReaderView: View {
 
     private var bottomBar: some View {
         HStack(spacing: 26) {
-            barButton(isBookmarked ? "bookmark.fill" : "bookmark", tint: isBookmarked ? .accentColor : .white) {
+            barButton(isBookmarked ? "bookmark.fill" : "bookmark", tint: isBookmarked ? .accentColor : .primary) {
                 toggleBookmark()
             }
             barButton("square.grid.2x2") { showGrid = true }
+            barButton(forcedLandscape ? "rotate.left" : "rotate.right",
+                      tint: forcedLandscape ? .accentColor : .primary) {
+                toggleLandscape()
+            }
         }
         .padding(.horizontal, 24).padding(.vertical, 13)
         .background(.ultraThinMaterial, in: Capsule())
@@ -155,7 +200,7 @@ struct ReaderView: View {
         }
     }
 
-    private func barButton(_ icon: String, tint: Color = .white, action: @escaping () -> Void) -> some View {
+    private func barButton(_ icon: String, tint: Color = .primary, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.title3)
@@ -196,7 +241,9 @@ struct ReaderView: View {
     // MARK: Actions
 
     private func setup() {
-        OrientationGate.unlock()   // the reader may rotate; the rest of the app can't
+        // Orientation is handled in the reader controller's viewWillAppear/viewWillDisappear
+        // (standard UIKit lifecycle) so the rotation rides the present/dismiss transition
+        // instead of flashing afterwards.
         if store == nil {
             store = PageImageStore(book: book, paperEnabled: paper.isEnabled, paperParams: paper.params)
         }
@@ -215,6 +262,23 @@ struct ReaderView: View {
         guard book.lastReadPage != page else { return }
         book.lastReadPage = page
         try? context.save()
+    }
+
+    /// Mark the comic read once the last page is reached. Never un-marks automatically —
+    /// that stays a manual choice in the cover menu. Bookmarks are untouched.
+    private func markRead() {
+        guard !book.isRead else { return }
+        book.isRead = true
+        try? context.save()
+    }
+
+    /// Toggle the manual landscape override (session-only): rotate to landscape, or back
+    /// to portrait — both work even under the device rotation lock. Reset to portrait when
+    /// the reader closes (see the controller's viewWillDisappear).
+    private func toggleLandscape() {
+        scheduleAutoHide()
+        forcedLandscape.toggle()
+        OrientationGate.rotate(to: forcedLandscape ? .landscapeRight : .portrait)
     }
 
     private func reloadPaper() {

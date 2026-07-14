@@ -14,6 +14,9 @@ struct CoverCell: View {
     var inRecents: Bool = false
     var selectionMode: Bool = false
     var isSelected: Bool = false
+    /// Decode the cover down to roughly the on-screen cell size (covers are stored at
+    /// 1200px). Keeps grid scrolling smooth and the image cache from thrashing.
+    var maxPixel: CGFloat? = nil
     let onOpen: () -> Void
 
     @Environment(\.modelContext) private var context
@@ -22,13 +25,13 @@ struct CoverCell: View {
     var body: some View {
         Button(action: onOpen) {
             VStack(spacing: 7) {
-                DiskImage(url: book.coverURL, contentMode: .fill)
+                DiskImage(url: book.coverURL, contentMode: .fill, maxPixel: maxPixel)
                     .aspectRatio(2.0 / 3.0, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(isSelected ? Color.accentColor : .white.opacity(0.08),
+                            .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.1),
                                     lineWidth: isSelected ? 3 : 1)
                     )
                     .overlay(alignment: .topTrailing) { selectionBadge }
@@ -41,7 +44,7 @@ struct CoverCell: View {
                     .truncationMode(.tail)
 
                 HStack(spacing: 5) {
-                    Text("\(book.pageCount) pages")
+                    Text(book.pageCountLabel)
                     if book.progress > 0 { ProgressPie(progress: book.progress) }
                     // "Read" is independent of progress (browsing never overwrites it),
                     // so it gets its own indicator next to the pie.
@@ -52,6 +55,7 @@ struct CoverCell: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selectionMode && isSelected ? .isSelected : [])
         // No per-item context menu while selecting — the toolbar carries the batch actions.
         .contextMenu { if !selectionMode { menu } }
         .confirmationDialog("Delete “\(book.title)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
@@ -72,6 +76,7 @@ struct CoverCell: View {
                 .foregroundStyle(.white, Color.accentColor)
                 .shadow(color: .black.opacity(0.4), radius: 2)
                 .padding(8)
+                .accessibilityHidden(true)   // state is announced via the cell's .isSelected trait
         }
     }
 

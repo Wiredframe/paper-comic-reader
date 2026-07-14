@@ -33,7 +33,7 @@ struct LibraryGrid: View {
             LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
                 ForEach(books) { book in
                     CoverCell(book: book, inRecents: inRecents, selectionMode: selectionMode,
-                              isSelected: selectedIDs.contains(book.id)) { tap(book) }
+                              isSelected: selectedIDs.contains(book.id), maxPixel: coverMaxPixel) { tap(book) }
                 }
             }
         }
@@ -47,12 +47,27 @@ struct LibraryGrid: View {
         Array(repeating: GridItem(.flexible(), spacing: LibraryGridMetrics.spacing),
               count: max(1, columns))
     }
+
+    private var coverMaxPixel: CGFloat { LibraryGridMetrics.coverMaxPixel(columns: columns) }
 }
 
 /// Shared cover-grid spacing so Recents / Library / Bookmarks stay identical and
 /// the gap between columns is clearly visible (equal horizontally and vertically).
 enum LibraryGridMetrics {
     static let spacing: CGFloat = 30
+
+    /// Cover decode target for the current zoom level — covers and bookmark shots are
+    /// stored at 1200px, but a grid cell only needs roughly its on-screen size. Shared by
+    /// the library grid and the bookmarks grid so both downsample identically (off-main,
+    /// and small enough that many stay resident in the shared image cache while scrolling).
+    static func coverMaxPixel(columns: Int) -> CGFloat {
+        switch columns {
+        case 1:  return 1000
+        case 2:  return 680
+        case 3:  return 460
+        default: return 360
+        }
+    }
 }
 
 private struct LibraryRow: View {
@@ -77,7 +92,7 @@ private struct LibraryRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(book.title).font(.body).foregroundStyle(.primary).lineLimit(2)
                     HStack(spacing: 5) {
-                        Text("\(book.pageCount) pages")
+                        Text(book.pageCountLabel)
                         if book.progress > 0 { ProgressPie(progress: book.progress, size: 13) }
                         if book.isRead { ReadCheck(size: 13) }
                     }
@@ -89,5 +104,6 @@ private struct LibraryRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selectionMode && isSelected ? .isSelected : [])
     }
 }

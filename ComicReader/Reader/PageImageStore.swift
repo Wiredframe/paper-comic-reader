@@ -30,7 +30,10 @@ final class PageImageStore {
         self.pageCount = archive?.pageCount ?? book.pageCount
         self.paperEnabled = paperEnabled
         self.paperParams = paperParams
-        cache.countLimit = 7   // current page + ±2 prefetch, with headroom
+        cache.countLimit = 10   // current page + double-page spread + ±2 prefetch fan-out
+        // Bound the grid/bookmark thumbnails by decoded bytes so a long comic's page grid
+        // (a 260px thumb each) can't grow the cache without limit for the reader session.
+        thumbCache.totalCostLimit = 32 * 1024 * 1024   // ~32 MB
     }
 
     // MARK: Display images (paper applied)
@@ -63,11 +66,16 @@ final class PageImageStore {
 
     /// Rebuilds cached images with a new paper setting.
     func setPaper(enabled: Bool, params: PaperParams) {
+        // Clear the display cache synchronously: the reload that follows (paperVersion →
+        // reloadCurrent) reads the cache on the main thread, and an async clear could run
+        // *after* it, leaving the visible page rendered with the previous paper setting.
+        // NSCache is thread-safe; the params are still set on the work queue where render()
+        // reads them, and this call is enqueued before any reload's render, so re-decodes
+        // pick up the new params.
+        cache.removeAllObjects()
         work.async { [weak self] in
-            guard let self else { return }
-            self.paperEnabled = enabled
-            self.paperParams = params
-            self.cache.removeAllObjects()
+            self?.paperEnabled = enabled
+            self?.paperParams = params
         }
     }
 
@@ -92,8 +100,13 @@ final class PageImageStore {
         }
         work.async { [weak self] in
             let image = (self?.archive?.pageData(at: index)).flatMap { ImageDownsampler.downsample($0, maxPixel: maxPixel) }
-            if let image { self?.thumbCache.setObject(image, forKey: key) }
+            if let image { self?.thumbCache.setObject(image, forKey: key, cost: Self.cost(of: image)) }
             DispatchQueue.main.async { completion(image) }
         }
+    }
+
+    /// Approximate decoded size in bytes (4 per device pixel), for the thumbnail cost limit.
+    private static func cost(of image: UIImage) -> Int {
+        Int(image.size.width * image.scale * image.size.height * image.scale) * 4
     }
 }

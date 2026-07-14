@@ -22,7 +22,7 @@ struct RecentsView: View {
         NavigationStack {
             ScrollView {
                 if books.isEmpty {
-                    ContentUnavailableView("Nothing read yet",
+                    ContentUnavailableView("No recent comics",
                                            systemImage: "clock",
                                            description: Text("Comics you open show up here."))
                         .padding(.top, 80)

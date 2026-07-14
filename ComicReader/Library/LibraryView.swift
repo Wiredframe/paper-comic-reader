@@ -70,8 +70,18 @@ struct LibraryView: View {
         NavigationStack {
             ScrollView {
                 if books.isEmpty {
-                    LibraryEmptyState { showImporter = true }
-                        .padding(.top, 80)
+                    // Same system empty-state treatment as Recents / Bookmarks.
+                    ContentUnavailableView {
+                        Label("No comics yet", systemImage: "books.vertical")
+                    } description: {
+                        Text("Import a CBZ or CBR to get started.")
+                    } actions: {
+                        Button { showImporter = true } label: {
+                            Label("Import", systemImage: "square.and.arrow.down")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding(.top, 80)
                 } else {
                     LibraryGrid(books: sortedBooks, columns: columns, listMode: listMode,
                                 selectionMode: selectionMode, selectedIDs: selection,
@@ -153,6 +163,7 @@ struct LibraryView: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .accessibilityLabel("Actions for selected comics")
                 .disabled(selection.isEmpty)
             }
         } else {
@@ -160,6 +171,7 @@ struct LibraryView: View {
                 Button { openedBook = books.randomElement() } label: {
                     Image(systemName: "shuffle")
                 }
+                .accessibilityLabel("Open a random comic")
                 .disabled(books.isEmpty)
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -194,6 +206,7 @@ struct LibraryView: View {
                 } label: {
                     Image(systemName: "ellipsis")
                 }
+                .accessibilityLabel("Import and view options")
             }
         }
     }
@@ -288,27 +301,5 @@ private struct ImportProgressOverlay: View {
             .padding(28)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
-    }
-}
-
-private struct LibraryEmptyState: View {
-    let onImport: () -> Void
-    var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "books.vertical")
-                .font(.system(size: 52))
-                .foregroundStyle(.secondary)
-            Text("No comics yet")
-                .font(.title3.bold())
-            Text("Import a CBZ or CBR to get started.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Button(action: onImport) {
-                Label("Import", systemImage: "square.and.arrow.down")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.accentColor)
-        }
-        .frame(maxWidth: .infinity)
     }
 }

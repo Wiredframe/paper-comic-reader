@@ -20,7 +20,7 @@ struct PaperSettingsView: View {
 			}
 
 			Section {
-				Toggle("Paper effect", isOn: $settings.isEnabled)
+				Toggle("Paper Effect", isOn: $settings.isEnabled)
 			}
 
 			Section("Preset") {
@@ -91,7 +91,7 @@ private struct PaperPreview: View {
 			.scaledToFit()
 			.frame(maxHeight: 320)
 			.clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-			.overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(.white.opacity(0.08)))
+			.overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.1)))
 			.shadow(color: .black.opacity(0.3), radius: 5, y: 3)
 			.padding(.vertical, 6)
 			.task(id: PreviewKey(params: params, enabled: enabled)) { await render() }

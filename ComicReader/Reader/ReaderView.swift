@@ -100,7 +100,7 @@ struct ReaderView: View {
                            onToggleChrome: toggleChrome)
                     .ignoresSafeArea()
             } else {
-                ProgressView().tint(.white)
+                ProgressView().tint(.secondary)   // reads on both the dark and the light letterbox mat
             }
 
             // Keep the chrome in the hierarchy always (fade via opacity) so the
@@ -158,13 +158,14 @@ struct ReaderView: View {
 
     private var topBar: some View {
         HStack {
-            circleButton("xmark") { saveProgress(currentPage); dismiss() }
+            circleButton("xmark", label: "Close") { saveProgress(currentPage); dismiss() }
             Spacer()
             Text("\(currentPage + 1) / \(pageCount)")
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
                 .padding(.horizontal, 14).padding(.vertical, 7)
                 .background(.ultraThinMaterial, in: Capsule())
+                .accessibilityLabel("Page \(currentPage + 1) of \(pageCount)")
             Spacer()
             settingsMenu
         }
@@ -185,18 +186,22 @@ struct ReaderView: View {
         } label: {
             Image(systemName: "slider.horizontal.3")
                 .font(.headline)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)   // ≥ 44pt touch target
                 .background(.ultraThinMaterial, in: Circle())
         }
+        .accessibilityLabel("Reader settings")
     }
 
     private var bottomBar: some View {
         HStack(spacing: 26) {
-            barButton(isBookmarked ? "bookmark.fill" : "bookmark", tint: isBookmarked ? .accentColor : .primary) {
+            barButton(isBookmarked ? "bookmark.fill" : "bookmark",
+                      label: isBookmarked ? "Remove bookmark" : "Add bookmark",
+                      tint: isBookmarked ? .accentColor : .primary) {
                 toggleBookmark()
             }
-            barButton("square.grid.2x2") { showGrid = true }
+            barButton("square.grid.2x2", label: "Page grid") { showGrid = true }
             barButton(forcedLandscape ? "rotate.left" : "rotate.right",
+                      label: forcedLandscape ? "Return to portrait" : "Rotate to landscape",
                       tint: forcedLandscape ? .accentColor : .primary) {
                 toggleLandscape()
             }
@@ -206,22 +211,24 @@ struct ReaderView: View {
         .padding(.bottom, 10)
     }
 
-    private func circleButton(_ icon: String, action: @escaping () -> Void) -> some View {
+    private func circleButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.headline)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)   // ≥ 44pt touch target
                 .background(.ultraThinMaterial, in: Circle())
         }
+        .accessibilityLabel(label)
     }
 
-    private func barButton(_ icon: String, tint: Color = .primary, action: @escaping () -> Void) -> some View {
+    private func barButton(_ icon: String, label: String, tint: Color = .primary, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.title3)
                 .foregroundStyle(tint)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)   // ≥ 44pt touch target
         }
+        .accessibilityLabel(label)
     }
 
     // MARK: Chrome visibility
@@ -263,6 +270,10 @@ struct ReaderView: View {
             store = PageImageStore(book: book, paperEnabled: paper.isEnabled, paperParams: paper.params)
         }
         currentPage = clampedStart(store?.pageCount ?? 1)
+        // Auto-mark read when opening already on the last page — `.onChange(of: currentPage)`
+        // only fires on a change, so a 1-page comic (or resuming on the final page) would
+        // otherwise never be marked read despite reaching the end.
+        if currentPage >= pageCount - 1 { markRead() }
         book.dateOpened = .now
         try? context.save()
         scheduleAutoHide()   // the chrome starts visible, then fades after a moment

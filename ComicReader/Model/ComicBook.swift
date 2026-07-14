@@ -55,4 +55,7 @@ final class ComicBook {
         guard pageCount > 1 else { return lastReadPage > 0 ? 1 : 0 }
         return min(1, max(0, Double(lastReadPage) / Double(pageCount - 1)))
     }
+
+    /// "12 pages" / "1 page" — inflected for the cover and list captions.
+    var pageCountLabel: String { "\(pageCount) page\(pageCount == 1 ? "" : "s")" }
 }

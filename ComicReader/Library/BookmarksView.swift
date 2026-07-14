@@ -31,7 +31,8 @@ struct BookmarksView: View {
                 } else {
                     LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
                         ForEach(validBookmarks) { bookmark in
-                            BookmarkCard(bookmark: bookmark) {
+                            BookmarkCard(bookmark: bookmark,
+                                         maxPixel: LibraryGridMetrics.coverMaxPixel(columns: columns)) {
                                 if let book = bookmark.book {
                                     target = ReaderTarget(book: book, page: bookmark.pageIndex)
                                 }
@@ -56,6 +57,7 @@ struct BookmarksView: View {
                     } label: {
                         Image(systemName: "shuffle")
                     }
+                    .accessibilityLabel("Open a random bookmark")
                     .disabled(validBookmarks.isEmpty)
                 }
             }
@@ -79,18 +81,19 @@ struct BookmarksView: View {
 
 private struct BookmarkCard: View {
     let bookmark: Bookmark
+    var maxPixel: CGFloat? = nil
     let onOpen: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
         Button(action: onOpen) {
             VStack(spacing: 7) {
-                DiskImage(url: bookmark.thumbURL, contentMode: .fill)
+                DiskImage(url: bookmark.thumbURL, contentMode: .fill, maxPixel: maxPixel)
                     .aspectRatio(2.0 / 3.0, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(.white.opacity(0.08)))
+                        .stroke(Color.primary.opacity(0.1)))
                     .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
 
                 VStack(spacing: 2) {
@@ -98,7 +101,7 @@ private struct BookmarkCard: View {
                         .font(.subheadline)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text("Seite \(bookmark.pageIndex + 1)")
+                    Text("Page \(bookmark.pageIndex + 1)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

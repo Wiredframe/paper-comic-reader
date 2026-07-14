@@ -34,9 +34,6 @@ enum ImageDownsampler {
         return UIImage(cgImage: cg)
     }
 
-    /// Full-resolution decode (used by the reader for the on-screen page).
-    static func decode(_ data: Data) -> UIImage? { UIImage(data: data) }
-
     @discardableResult
     static func writeJPEG(_ image: UIImage, to url: URL, quality: CGFloat = 0.85) -> Bool {
         guard let data = image.jpegData(compressionQuality: quality) else { return false }

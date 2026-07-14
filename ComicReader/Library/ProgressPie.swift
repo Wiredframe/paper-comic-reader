@@ -17,6 +17,8 @@ struct ProgressPie: View {
             PieWedge(progress: progress).fill(Color.secondary)
         }
         .frame(width: size, height: size)
+        .accessibilityLabel("Reading progress")
+        .accessibilityValue("\(Int((min(1, max(0, progress)) * 100).rounded())) percent")
     }
 }
 
@@ -30,6 +32,7 @@ struct ReadCheck: View {
         Image(systemName: "checkmark.circle.fill")
             .font(.system(size: size))
             .foregroundStyle(.green)
+            .accessibilityLabel("Read")
     }
 }
 

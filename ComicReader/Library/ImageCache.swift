@@ -28,6 +28,9 @@ enum ImageCache {
         cache.setObject(image, forKey: key as NSString, cost: cost(of: image))
     }
 
+    /// Drops all decoded images (covers rebuild on demand from disk). Backs "Clear Cache".
+    static func clear() { cache.removeAllObjects() }
+
     /// Approximate decoded size in bytes (4 bytes per device pixel).
     private static func cost(of image: UIImage) -> Int {
         let pixels = image.size.width * image.scale * image.size.height * image.scale

@@ -118,6 +118,7 @@ final class ReaderPageCell: UICollectionViewCell {
             view.image = nil
             view.isHidden = true
             view.removeInteraction(liveText[i])
+            liveText[i].analysis = nil   // don't carry the old page's text into the reused cell
         }
         scrollView.contentInset = .zero
         scrollView.contentOffset = .zero
@@ -476,12 +477,15 @@ final class ReaderPageCell: UICollectionViewCell {
         }
         interaction.setSupplementaryInterfaceHidden(true, animated: false)
         updateLiveTextEnabled(landscape: scrollView.bounds.width > scrollView.bounds.height)
+        let token = loadToken
         Task { [weak self] in
             guard let self else { return }
             let config = ImageAnalyzer.Configuration([.text])
-            if let analysis = try? await self.analyzer.analyze(image, configuration: config) {
-                interaction.analysis = analysis
-            }
+            let analysis = try? await self.analyzer.analyze(image, configuration: config)
+            // The cell may have been reused for another page while analysis ran — only
+            // apply it if this is still that page's load (mirrors the image-load guard).
+            guard self.loadToken == token, let analysis else { return }
+            interaction.analysis = analysis
         }
     }
 

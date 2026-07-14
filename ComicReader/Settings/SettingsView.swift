@@ -16,6 +16,11 @@ struct SettingsView: View {
 
     @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.system.rawValue
 
+    // Computed on appear rather than in `body`: `body` re-evaluates whenever the ComicBook
+    // @Query republishes (every per-page-turn save while reading), and the size is a disk
+    // walk over three folders — no need to repeat it on every render.
+    @State private var storageText = "—"
+
     private let repoURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader")!
     private let issuesURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader/issues")!
 
@@ -70,8 +75,12 @@ struct SettingsView: View {
 
                 Section("Library") {
                     LabeledContent("Comics", value: "\(books.count)")
-                    LabeledContent("Storage", value: storageDescription)
-                    Button("Clear Cache") { Storage.clearCaches() }
+                    LabeledContent("Storage", value: storageText)
+                    Button("Clear Cache") {
+                        Storage.clearCaches()
+                        ImageCache.clear()
+                        storageText = storageDescription
+                    }
                 }
 
                 Section("Project") {
@@ -108,6 +117,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .task { storageText = storageDescription }
         }
     }
 

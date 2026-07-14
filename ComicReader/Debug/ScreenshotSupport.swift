@@ -2,10 +2,10 @@
 //  ScreenshotSupport.swift
 //  Comic Reader
 //
-//  DEBUG-only helpers that place the app in a known state for App Store screenshots,
-//  driven purely by launch-environment variables (see AppStore/screenshots.sh). The
-//  whole file is behind `#if DEBUG`, so it is empty in Release builds and can never
-//  affect the shipping app. In a normal Debug run (no env vars set) it is inert.
+//  DEBUG-only helpers that place the app in a known state for marketing/README
+//  screenshots, driven purely by launch-environment variables. The whole file is
+//  behind `#if DEBUG`, so it is empty in Release builds and can never affect the
+//  shipping app. In a normal Debug run (no env vars set) it is inert.
 //
 
 #if DEBUG
@@ -48,10 +48,5 @@ enum ScreenshotSupport {
     static var shouldOpenReader: Bool { openPage != nil }
 
     static var openPage: Int? { env["SCREENSHOT_OPEN_PAGE"].flatMap(Int.init) }
-
-    /// When set, RootTabView shows the Tip Jar sheet on launch (for the IAP review
-    /// screenshot); TipJarView renders a representative row so it doesn't need a live
-    /// StoreKit session.
-    static var showTips: Bool { env["SCREENSHOT_TIPS"] != nil }
 }
 #endif

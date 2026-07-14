@@ -1,0 +1,44 @@
+name: Release IPA
+
+# Build an unsigned .ipa and attach it to a GitHub Release whenever a v* tag is pushed.
+# Trigger manually from the Actions tab too (workflow_dispatch).
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest installed Xcode
+        run: |
+          sudo xcode-select -switch "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # The paper effect uses a Core Image Metal kernel; Xcode 26 fetches its toolchain
+      # on demand. Tolerated if the command/toolchain isn't applicable on the runner.
+      - name: Download Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain || echo "skipped"
+
+      - name: Build unsigned .ipa
+        run: ./scripts/build-ipa.sh
+
+      - name: Publish to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/PaperComicReader-*.ipa
+          body: |
+            Unsigned `.ipa` for sideloading (AltStore / Sideloadly / TrollStore).
+
+            iOS can't install this directly — see the README for how to sideload it and
+            re-sign it with your own Apple ID.

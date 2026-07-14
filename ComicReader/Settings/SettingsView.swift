@@ -14,7 +14,8 @@ struct SettingsView: View {
     @EnvironmentObject private var reader: ReaderSettings
     @Query private var books: [ComicBook]
 
-    @State private var showTips = false
+    private let repoURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader")!
+    private let issuesURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader/issues")!
 
     var body: some View {
         NavigationStack {
@@ -46,12 +47,12 @@ struct SettingsView: View {
                     Button("Clear Cache") { Storage.clearCaches() }
                 }
 
-                Section("Support") {
-                    Button { showTips = true } label: {
-                        Label("Leave a Tip", systemImage: "heart.fill")
+                Section("Project") {
+                    Link(destination: repoURL) {
+                        Label("View on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                     }
-                    Button { AppReview.openWriteReview() } label: {
-                        Label("Rate Paper Comic Reader", systemImage: "star.fill")
+                    Link(destination: issuesURL) {
+                        Label("Report an Issue", systemImage: "exclamationmark.bubble")
                     }
                 }
 
@@ -80,7 +81,6 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .sheet(isPresented: $showTips) { TipJarView() }
         }
     }
 

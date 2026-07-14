@@ -5,6 +5,22 @@ Metal). It opens **CBZ and CBR** archives, keeps a library with reading progress
 and bookmarks, and can render pages with a realistic **paper effect** (ported from
 the Simple Comic fork) so they read like ink on paper instead of a backlit screen.
 
+## Install
+
+Paper Comic Reader is **not on the App Store** — it's distributed as an **unsigned
+`.ipa`** on the [Releases page](https://github.com/Wiredframe/paper-comic-reader/releases).
+iOS won't install an `.ipa` directly; you sideload it with a tool that re-signs it with
+your own Apple ID:
+
+- **[AltStore](https://altstore.io)** — run AltServer on a Mac/PC, then open the `.ipa`
+  in AltStore on the device. A free Apple ID works, but the app stops launching after
+  **7 days** until AltStore refreshes it (a paid Apple Developer account lasts a year).
+- **[Sideloadly](https://sideloadly.io)** — connect the device to a Mac/PC and load the
+  `.ipa`. Same 7-day limit on a free Apple ID.
+
+Requires **iOS 18 or later**. Everything runs on-device — the app makes no network
+requests, so no accounts, tracking, or analytics.
+
 ## Project setup
 
 The Xcode project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
@@ -22,9 +38,23 @@ The generated `.xcodeproj` can be opened directly in Xcode without XcodeGen — 
 only need XcodeGen when you change `project.yml`. Signing is **automatic** with the
 developer team (`DEVELOPMENT_TEAM` in `project.yml`): Simulator builds need no
 profile; device/archive builds create one via your Apple ID (Xcode → Settings →
-Accounts). App Store submission steps live in `AppStore/GoLive.md`.
+Accounts). Shipping builds go out as an unsigned `.ipa` — see **Releasing** below.
 
 - **Deployment target:** iOS 18 · **Bundle id:** `de.wiredframe.comicreader`
+
+## Releasing
+
+`scripts/build-ipa.sh` archives the app **unsigned** and packages a sideloadable
+`build/PaperComicReader-<version>.ipa`. Pushing a `v*` tag runs the same script on CI
+(`.github/workflows/release.yml`) and attaches the `.ipa` to a GitHub Release:
+
+```bash
+./scripts/build-ipa.sh                    # build one locally
+git tag v1.0.0 && git push origin v1.0.0  # or let CI build + publish it
+```
+
+The `.ipa` is deliberately unsigned; sideload tools re-sign it per user (see **Install**).
+It must **not** be uploaded to the App Store.
 
 ## Structure
 

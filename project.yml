@@ -21,9 +21,6 @@ schemes:
         ComicReader: all
     run:
       config: Debug
-      # Local IAP testing (the tip jar) without App Store Connect. In Xcode this is
-      # Edit Scheme → Run → Options → StoreKit Configuration.
-      storeKitConfiguration: Tips.storekit
     archive:
       config: Release
 
@@ -31,6 +28,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.0.0"
+    # Distributed via GitHub Releases (sideload), not the App Store, so the build
+    # number is cosmetic — bump it with each tagged release if you like.
     CURRENT_PROJECT_VERSION: "1"
     # App Store distribution: automatic signing with the team. Xcode manages the
     # Apple Development / Apple Distribution certificates and provisioning profiles

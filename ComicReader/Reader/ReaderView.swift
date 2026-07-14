@@ -73,7 +73,6 @@ struct ReaderView: View {
         .onDisappear {
             autoHide?.cancel()
             OrientationGate.lockPortrait()
-            AppReview.registerReaderOpen()   // may ask for a rating after enough reading
         }
         .onChange(of: currentPage) { _, page in
             saveProgress(page)

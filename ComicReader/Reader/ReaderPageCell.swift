@@ -46,7 +46,7 @@ final class ReaderPageCell: UICollectionViewCell {
     private let pageViews = [UIImageView(), UIImageView()]       // [left, right]
     private let liveText = [ImageAnalysisInteraction(), ImageAnalysisInteraction()]
     private let analyzer = ImageAnalyzer()
-    private let tapScroll = EasedScrollAnimator()                // snappy, lightly-bouncing steps
+    private var tapScrollAnimator: UIViewPropertyAnimator?       // render-server tap-scroll step
 
     private(set) var slotIndex = -1
     private var pageIndices: [Int] = []          // 1 or 2 global page indices
@@ -109,7 +109,7 @@ final class ReaderPageCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         loadToken += 1
-        tapScroll.cancel()
+        stopTapScroll()
         images = []
         pageIndices = []
         lastLaidOutBounds = .zero
@@ -199,7 +199,7 @@ final class ReaderPageCell: UICollectionViewCell {
         guard !images.isEmpty, bounds.width > 0 else { return }
         lastLaidOutBounds = bounds
         if animated {
-            let duration = settings?.fastAnimations == true ? 0.2 : 0.32
+            let duration = settings?.fitToggleDuration ?? 0.25
             UIView.animate(withDuration: duration, delay: 0,
                            options: [.curveEaseInOut, .beginFromCurrentState]) {
                 self.performLayout(in: bounds)
@@ -422,13 +422,26 @@ final class ReaderPageCell: UICollectionViewCell {
         return true
     }
 
-    /// Animate a tap-scroll step with the same snappy, lightly-bouncing easeOutBack curve
-    /// as the page turn (see EasedScrollAnimator), just on a quicker duration. Restarting
-    /// from the live offset means two fast taps chain straight through to the page end.
+    /// Animate a tap-scroll step with a Core Animation property animator, so — like the
+    /// double-tap zoom — it runs on the render server at the full ProMotion rate instead of a
+    /// main-thread per-frame loop. Standard iOS ease-in-out, on a quicker duration than a page
+    /// turn. Restarting from the live offset (`.beginFromCurrentState` semantics of stopping
+    /// the previous animator) means two fast taps chain straight through to the page end.
     private func animateTapScroll(to offset: CGPoint) {
-        tapScroll.animate(scrollView, to: offset,
-                          duration: settings?.tapScrollDuration ?? 0.30,
-                          overshoot: settings?.movementOvershoot ?? 0.8) { }
+        stopTapScroll()
+        let animator = UIViewPropertyAnimator(duration: settings?.tapScrollDuration ?? 0.25,
+                                              curve: .easeInOut) { [weak self] in
+            self?.scrollView.contentOffset = offset
+        }
+        animator.startAnimation()
+        tapScrollAnimator = animator
+    }
+
+    /// Stop an in-flight tap-scroll, leaving the page at its current on-screen position so a
+    /// drag — or the next tap — continues from there.
+    private func stopTapScroll() {
+        if tapScrollAnimator?.state == .active { tapScrollAnimator?.stopAnimation(true) }
+        tapScrollAnimator = nil
     }
 
     /// Tap-scroll inside a zoomed spread: scroll the focused page; at its bottom cross
@@ -493,7 +506,7 @@ extension ReaderPageCell: UIScrollViewDelegate {
     /// A manual drag takes over from any in-flight tap-scroll and invalidates the
     /// tap-scroll target, so the next tap picks up from wherever the user left the page.
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        tapScroll.cancel()
+        stopTapScroll()
         tapTargetY = nil
     }
 }

@@ -58,85 +58,6 @@ final class PagingFlowLayout: UICollectionViewFlowLayout {
     }
 }
 
-/// Animates a scroll view's `contentOffset` along a snappy easeOutBack curve — a fast
-/// ease-out with a small terminal overshoot that reads as a light bounce. The curve is
-/// closed-form, evaluated at each frame's presentation time, so the motion (and the
-/// bounce) is identical at 60 or 120 Hz, and the display link is invalidated the instant
-/// it ends so it never holds ProMotion at a high refresh rate afterwards.
-///
-/// Shared by the two reader movements: the tap PAGE TURN (on the collection view) and a
-/// tap-SCROLL step (on a page's own scroll view). Driving the *model* `contentOffset`
-/// each frame — rather than a `UIView.animate` that jumps the model offset to the
-/// destination at once — is also what keeps BOTH pages laid out through a turn (the
-/// collection view would otherwise recycle the outgoing page and slide the new one in
-/// over black). The overshoot lands on neighbouring content mid-way and on the black
-/// background at the ends, so it always looks like natural momentum.
-final class EasedScrollAnimator {
-    private var link: CADisplayLink?
-    private weak var scrollView: UIScrollView?
-    private var from: CGPoint = .zero
-    private var to: CGPoint = .zero
-    private var startTime: CFTimeInterval = -1     // set on the first frame
-    private var duration: CFTimeInterval = 0
-    private var overshoot: CGFloat = 0             // easeOutBack strength (0 = plain ease-out)
-    private var completion: (() -> Void)?
-
-    var isRunning: Bool { link != nil }
-
-    /// Starts (or restarts, from the live offset) a turn to `target` over `duration`,
-    /// with `overshoot` controlling the size of the terminal bounce.
-    func animate(_ scrollView: UIScrollView, to target: CGPoint,
-                 duration: CFTimeInterval, overshoot: Double, completion: @escaping () -> Void) {
-        cancel()
-        self.scrollView = scrollView
-        self.from = scrollView.contentOffset
-        self.to = target
-        self.duration = duration
-        self.overshoot = CGFloat(overshoot)
-        self.startTime = -1
-        self.completion = completion
-        let link = CADisplayLink(target: self, selector: #selector(step(_:)))
-        // Run at the display's rate (up to 120 Hz on ProMotion) so the turn is as smooth
-        // as a drag. The floor is kept high so these short movements bias to 120 rather
-        // than being power-throttled toward 60 (60 Hz displays clamp this to 60 anyway).
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 90, maximum: 120, preferred: 120)
-        link.add(to: .main, forMode: .common)
-        self.link = link
-    }
-
-    /// Stops the turn where it is, dropping the completion (used when a drag takes over).
-    func cancel() {
-        link?.invalidate()
-        link = nil
-        completion = nil
-    }
-
-    @objc private func step(_ link: CADisplayLink) {
-        guard let scrollView else { cancel(); return }
-        if startTime < 0 { startTime = link.timestamp }
-        // Evaluate at the frame's own presentation time (targetTimestamp), not "now", so
-        // the motion stays jitter-free on a variable-rate display.
-        let t = duration > 0 ? min(1, (link.targetTimestamp - startTime) / duration) : 1
-        let e = Self.easeOutBack(CGFloat(t), overshoot: overshoot)
-        scrollView.contentOffset = CGPoint(x: from.x + (to.x - from.x) * e,
-                                           y: from.y + (to.y - from.y) * e)
-        if t >= 1 {
-            scrollView.contentOffset = to
-            let done = completion
-            cancel()
-            done?()
-        }
-    }
-
-    /// Ease-out with a small overshoot past 1 near the end, settling back to exactly 1 at
-    /// t = 1 — a snappy start and one light bounce. `c1` scales the overshoot (~0.8 ≈ 2%).
-    private static func easeOutBack(_ t: CGFloat, overshoot c1: CGFloat) -> CGFloat {
-        let c3 = c1 + 1
-        let p = t - 1
-        return 1 + c3 * p * p * p + c1 * p * p
-    }
-}
-
 final class ReaderCollectionController: UIViewController,
                                         UICollectionViewDataSource,
                                         UICollectionViewDataSourcePrefetching,
@@ -151,15 +72,19 @@ final class ReaderCollectionController: UIViewController,
 
     private var isDouble = false
     private var isRotating = false
+    private var isTurning = false
     private var isProgrammaticScroll = false
     private var pendingInitialScroll = true
+
+    /// The outgoing page's snapshot during a tap page turn (see `animatePageTurn`). While
+    /// it's on screen it also gates touches, so a turn can't be interrupted mid-flight.
+    private var turnSnapshot: UIView?
 
     var onPageChanged: ((Int) -> Void)?
     var onToggleChrome: (() -> Void)?
 
     private let layout = PagingFlowLayout()
     private var collectionView: UICollectionView!
-    private let pageTurn = EasedScrollAnimator()
 
     private var paging: ReaderPaging { ReaderPaging(pageCount: pageCount, double: isDouble) }
 
@@ -240,9 +165,11 @@ final class ReaderCollectionController: UIViewController,
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // Own the frame for every NON-rotation layout (initial size, safe-area / split
-        // changes). During a rotation the coordinator block below drives it instead, so
-        // we leave it alone and let the turn animate the resize in one piece.
-        if !isRotating { collectionView.frame = view.bounds }
+        // changes). During a rotation the coordinator block below drives it instead, and
+        // during a tap page turn the collection view carries a transform (see
+        // animatePageTurn) that a frame assignment would fight — so in both cases we leave
+        // it alone and reconcile the frame when the animation completes.
+        if !isRotating && !isTurning { collectionView.frame = view.bounds }
         guard collectionView.bounds.width > 0, pageCount > 0 else { return }
         if pendingInitialScroll {
             isDouble = wantsDouble(for: collectionView.bounds.size)
@@ -257,6 +184,7 @@ final class ReaderCollectionController: UIViewController,
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
+        endActiveTurn()                 // settle any in-flight page turn before rotating
         isRotating = true
         let newDouble = wantsDouble(for: size)
         let modeFlip = newDouble != isDouble
@@ -369,6 +297,7 @@ final class ReaderCollectionController: UIViewController,
 
     /// Jumps to a page (page grid / bookmarks) instantly.
     func jump(to page: Int) {
+        endActiveTurn()
         let target = clampPage(page)
         currentPage = target
         if let offset = offset(forSlot: paging.slot(forPage: target)) {
@@ -385,21 +314,68 @@ final class ReaderCollectionController: UIViewController,
         guard target != paging.slot(forPage: currentPage), let offset = offset(forSlot: target) else { return }
         currentPage = paging.pages(inSlot: target).first ?? currentPage
         if animated {
-            // Ease the offset each frame (not a UIView.animate to the destination) so
-            // both pages glide, like a drag, with a snappy, lightly-bouncing settle —
-            // see EasedScrollAnimator.
-            isProgrammaticScroll = true
-            pageTurn.animate(collectionView, to: offset,
-                             duration: settings.pageTurnDuration,
-                             overshoot: settings.movementOvershoot) { [weak self] in
-                self?.isProgrammaticScroll = false
-            }
+            animatePageTurn(to: offset)
         } else {
-            pageTurn.cancel()
+            endActiveTurn()
             collectionView.setContentOffset(offset, animated: false)
         }
         onPageChanged?(currentPage)
         prefetchNeighbours(of: currentPage)
+    }
+
+    /// A tap page turn, driven by Core Animation so it runs on the render server at the full
+    /// ProMotion rate (like the double-tap zoom and the rotation) rather than a main-thread
+    /// per-frame loop, which drops frames on any main-thread hitch.
+    ///
+    /// The outgoing page is snapshotted and the *live* collection view — already committed to
+    /// the destination offset — is slid in from the opposite edge by animating its transform;
+    /// both slides are a single `UIView.animate` (standard ease-in-out). The snapshot sits on
+    /// top for the duration, so it also swallows taps and the turn can't be interrupted into
+    /// an inconsistent state.
+    private func animatePageTurn(to targetOffset: CGPoint) {
+        endActiveTurn()
+        let width = collectionView.bounds.width
+        guard width > 0, let snapshot = collectionView.snapshotView(afterScreenUpdates: false) else {
+            collectionView.setContentOffset(targetOffset, animated: false)
+            return
+        }
+        let forward = targetOffset.x > collectionView.contentOffset.x
+        let cvFrame = collectionView.frame
+
+        isTurning = true
+        isProgrammaticScroll = true
+
+        // Cover the screen with the current page, then commit the live view to the target and
+        // push it one screen-width off the incoming edge — all behind the snapshot, so there
+        // is no visible jump before the slide.
+        snapshot.frame = cvFrame
+        snapshot.isUserInteractionEnabled = true      // swallow taps until the turn settles
+        view.addSubview(snapshot)
+        turnSnapshot = snapshot
+        collectionView.setContentOffset(targetOffset, animated: false)
+        collectionView.transform = CGAffineTransform(translationX: forward ? width : -width, y: 0)
+
+        UIView.animate(withDuration: settings.pageTurnDuration, delay: 0,
+                       options: [.curveEaseInOut]) {
+            snapshot.frame = cvFrame.offsetBy(dx: forward ? -width : width, dy: 0)
+            self.collectionView.transform = .identity
+        } completion: { [weak self] _ in
+            self?.endActiveTurn()
+        }
+    }
+
+    /// Tear down a page turn — remove the outgoing snapshot and reconcile the collection
+    /// view's transform / frame. Safe to call when no turn is running, and idempotent, so it
+    /// doubles as the animation's completion and as a "settle now" for jumps / rotations that
+    /// arrive mid-turn.
+    private func endActiveTurn() {
+        guard isTurning else { return }
+        turnSnapshot?.removeFromSuperview()
+        turnSnapshot = nil
+        collectionView.transform = .identity
+        collectionView.frame = view.bounds
+        isTurning = false
+        isProgrammaticScroll = false
     }
 
     private func offset(forSlot slot: Int, width: CGFloat? = nil) -> CGPoint? {
@@ -459,13 +435,9 @@ final class ReaderCollectionController: UIViewController,
 
     // MARK: Scroll tracking (user swipes)
 
-    /// A finger on the page takes over from an in-flight tap turn: stop interpolating
-    /// and hand control back to the scroll view so the drag (and its page sync) is clean.
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        guard pageTurn.isRunning else { return }
-        pageTurn.cancel()
-        isProgrammaticScroll = false
-    }
+    // A tap page turn can't be interrupted by a drag — its snapshot overlay swallows touches
+    // until it settles (see animatePageTurn) — so there's nothing to hand back here; a swipe
+    // only ever begins from a resting collection view.
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { syncCurrentPage() }
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {

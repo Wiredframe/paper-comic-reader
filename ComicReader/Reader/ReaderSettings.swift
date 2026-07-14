@@ -32,18 +32,21 @@ final class ReaderSettings: ObservableObject {
     /// the page height and read less zoomed-in.
     @Published var doubleTapZoom: Double { didSet { defaults.set(doubleTapZoom, forKey: K.zoom) } }
 
-    /// Duration to use for reader chrome / overlay animations.
-    var uiAnimationDuration: TimeInterval { fastAnimations ? 0.08 : 0.16 }
+    // Animation timing. With Fast Animations OFF every reader transition uses the iOS
+    // defaults — the standard ~0.25s UIView.animate baseline paired with the system
+    // ease-in-out curve. Every reader movement is driven by Core Animation (no custom
+    // easing or overshoot, no per-frame main-thread loop), so all of them run on the render
+    // server at the full ProMotion rate. Turning Fast Animations ON scales ALL of them down
+    // together to a snappier ~0.6×, so the whole reader speeds up as one.
 
-    /// Both reader movements — the tap page turn and a tap-scroll step — share one snappy
-    /// easeOutBack curve (see EasedScrollAnimator). This is its overshoot strength: 0.8 →
-    /// ~2% past the target before it settles back, which reads as the light bounce.
-    var movementOvershoot: Double { 0.8 }
-    /// Duration of a tap page turn (a full page slide) — snappier with fast animations on.
-    var pageTurnDuration: TimeInterval { fastAnimations ? 0.30 : 0.44 }
-    /// Duration of a tap-scroll step (the shorter vertical half-page move). Kept quicker
-    /// than a full turn so repeated taps stay snappy.
-    var tapScrollDuration: TimeInterval { fastAnimations ? 0.16 : 0.30 }
+    /// Reader chrome / overlay fades (top & bottom bars, status bar).
+    var uiAnimationDuration: TimeInterval { fastAnimations ? 0.15 : 0.25 }
+    /// A tap page turn (a full page slide).
+    var pageTurnDuration: TimeInterval { fastAnimations ? 0.20 : 0.30 }
+    /// A tap-scroll step (the shorter vertical part-page move).
+    var tapScrollDuration: TimeInterval { fastAnimations ? 0.15 : 0.25 }
+    /// A double-tap fit toggle (fit-width ⇄ fit-height, spread ⇄ zoomed page).
+    var fitToggleDuration: TimeInterval { fastAnimations ? 0.15 : 0.25 }
 
     private let defaults: UserDefaults
     private enum K {

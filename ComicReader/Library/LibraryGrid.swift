@@ -51,7 +51,7 @@ private struct LibraryRow: View {
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: 12) {
-                DiskImage(url: book.coverURL, contentMode: .fill)
+                DiskImage(url: book.coverURL, contentMode: .fill, maxPixel: 260)
                     .frame(width: 44, height: 62)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {

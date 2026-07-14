@@ -14,7 +14,7 @@ struct SettingsView: View {
     @EnvironmentObject private var reader: ReaderSettings
     @Query private var books: [ComicBook]
 
-    @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.dark.rawValue
+    @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.system.rawValue
 
     private let repoURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader")!
     private let issuesURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader/issues")!
@@ -30,7 +30,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Reader")
                 } footer: {
-                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Tap to Navigate lets you tap the left/right edges to move through the page a third at a time and turn pages — off by default, so swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
+                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Tap to Navigate lets you tap the left/right edges to move through the page a third at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
                 }
 
                 Section {

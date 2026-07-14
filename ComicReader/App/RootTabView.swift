@@ -11,7 +11,8 @@ import SwiftUI
 struct RootTabView: View {
     enum Tab: Hashable { case recents, library, bookmarks, settings }
     @State private var tab: Tab = Self.initialTab
-    @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.dark.rawValue
+    @EnvironmentObject private var fileOpener: FileOpenCoordinator
+    @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.system.rawValue
 
     private static var initialTab: Tab {
         #if DEBUG
@@ -35,6 +36,12 @@ struct RootTabView: View {
         }
         .preferredColorScheme(AppAppearance.from(appearanceRaw).colorScheme)
         .tint(.accentColor)
+        // A comic opened from outside the app lands in the Library — switch to it so
+        // the newly imported book (and the reader it opens), or the import-failure
+        // alert, is visible.
+        .onChange(of: fileOpener.token) { _, _ in
+            if fileOpener.pendingBook != nil || fileOpener.pendingError != nil { tab = .library }
+        }
     }
 
     @ViewBuilder private var content: some View {

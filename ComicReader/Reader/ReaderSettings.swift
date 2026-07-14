@@ -15,7 +15,7 @@ import Combine
 final class ReaderSettings: ObservableObject {
 
     /// Tap the left/right edge to move through the page (a half at a time) and turn
-    /// pages. Off by default — when disabled a tap only toggles the chrome.
+    /// pages. On by default — when disabled a tap only toggles the chrome.
     @Published var tapToNavigate: Bool { didSet { defaults.set(tapToNavigate, forKey: K.tapNav) } }
 
     /// Enable native Live Text selection (press-and-hold) on comic pages.
@@ -59,10 +59,10 @@ final class ReaderSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        tapToNavigate = defaults.object(forKey: K.tapNav) as? Bool ?? false
-        liveText = defaults.object(forKey: K.liveText) as? Bool ?? false
-        fastAnimations = defaults.object(forKey: K.fastAnim) as? Bool ?? true
-        doublePage = defaults.object(forKey: K.double) as? Bool ?? false
+        tapToNavigate = defaults.object(forKey: K.tapNav) as? Bool ?? true
+        liveText = defaults.object(forKey: K.liveText) as? Bool ?? true
+        fastAnimations = defaults.object(forKey: K.fastAnim) as? Bool ?? false
+        doublePage = defaults.object(forKey: K.double) as? Bool ?? true
         doubleTapZoom = defaults.object(forKey: K.zoom) as? Double ?? 1.0
         // Force-landscape used to be persisted; it's now session-only. Drop any leftover
         // value so it can't linger from an older build.

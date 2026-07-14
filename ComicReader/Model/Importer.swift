@@ -13,8 +13,9 @@ import UIKit
 @MainActor
 enum Importer {
 
-    /// Longest side (device pixels) of the stored cover thumbnail.
-    static let coverMaxPixel: CGFloat = 700
+    /// Longest side (device pixels) of the stored cover thumbnail. Shared with the
+    /// bookmark page shots so both stay crisp at the same full-width card size.
+    static let coverMaxPixel: CGFloat = ImageDownsampler.libraryCardPixel
 
     enum ImportError: Error { case unsupported, copyFailed, empty }
 

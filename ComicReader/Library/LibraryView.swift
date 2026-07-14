@@ -17,6 +17,7 @@ enum LibrarySort: String, CaseIterable {
 
 struct LibraryView: View {
     @Environment(\.modelContext) private var context
+    @EnvironmentObject private var fileOpener: FileOpenCoordinator
 
     @Query private var books: [ComicBook]
 
@@ -69,6 +70,10 @@ struct LibraryView: View {
         .fullScreenCover(item: $openedBook) { book in
             ReaderView(book: book)
         }
+        // Present a comic opened from outside the app (Files / "Open With"). onAppear
+        // covers arriving here via a tab switch; onChange covers already being here.
+        .onAppear(perform: consumePendingOpen)
+        .onChange(of: fileOpener.token) { _, _ in consumePendingOpen() }
         #if DEBUG
         // Screenshot mode: once the seeded comic lands, open it in the reader.
         .onChange(of: books.count) { _, count in
@@ -124,6 +129,13 @@ struct LibraryView: View {
                 Image(systemName: "ellipsis")
             }
         }
+    }
+
+    /// Picks up a comic (or error) handed over by the app after opening a file from
+    /// outside — presents the reader, or shows the import-failure alert.
+    private func consumePendingOpen() {
+        if let book = fileOpener.consumeBook() { openedBook = book }
+        if let error = fileOpener.consumeError() { importError = error }
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {

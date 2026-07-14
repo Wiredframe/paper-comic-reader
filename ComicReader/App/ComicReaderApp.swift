@@ -38,20 +38,50 @@ struct ComicReaderApp: App {
     @StateObject private var paper = PaperSettings()
     @StateObject private var readerSettings = ReaderSettings()
 
+    /// Hand-off for comics opened from outside the app (Files, "Open With", share sheet).
+    @StateObject private var fileOpener = FileOpenCoordinator()
+
     var body: some Scene {
         WindowGroup {
             RootTabView()
                 .environmentObject(paper)
                 .environmentObject(readerSettings)
-                .onOpenURL { url in
-                    // Files opened via the share sheet ("Open in Comic Reader").
-                    _ = try? Importer.importComic(from: url, into: modelContainer.mainContext)
-                }
+                .environmentObject(fileOpener)
+                .onOpenURL(perform: handleOpenURL)
                 #if DEBUG
                 .task { ScreenshotSupport.seedIfRequested(into: modelContainer.mainContext) }
                 #endif
         }
         .modelContainer(modelContainer)
+    }
+
+    /// Handles a comic opened from the Files app, another app's "Open With", or the
+    /// share sheet: imports it, hands the new book to the Library to present, and
+    /// removes the copy iOS may have dropped in Documents/Inbox.
+    @MainActor
+    private func handleOpenURL(_ url: URL) {
+        do {
+            let book = try Importer.importComic(from: url, into: modelContainer.mainContext)
+            fileOpener.request(book: book)
+        } catch {
+            let name = url.deletingPathExtension().lastPathComponent
+            fileOpener.request(error: "Couldn't open “\(name)”. It may not be a valid CBZ or CBR.")
+        }
+        removeInboxCopy(at: url)
+    }
+
+    /// When another app opens a file "into" us, iOS drops a copy in Documents/Inbox.
+    /// The importer has already copied it into permanent storage, so delete the
+    /// leftover to keep the container tidy. In-place opens (from Files) aren't in
+    /// Inbox and are untouched.
+    private func removeInboxCopy(at url: URL) {
+        // Resolve symlinks on both sides so a /private/var… URL still matches the
+        // /var… Documents base (the two forms otherwise never share a prefix).
+        let inbox = URL.documentsDirectory.appendingPathComponent("Inbox", isDirectory: true)
+            .resolvingSymlinksInPath().path
+        if url.resolvingSymlinksInPath().path.hasPrefix(inbox) {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 }
 

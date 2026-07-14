@@ -4,8 +4,8 @@
 //
 //  The user's chosen interface appearance (System / Light / Dark), persisted as a
 //  string under "app.appearance" (@AppStorage). Drives `.preferredColorScheme` at the
-//  app root. Default is Dark — the app shipped dark-only, so existing users see no
-//  change until they pick otherwise.
+//  app root. Default is System (follow the device); users who already picked a theme
+//  keep their choice.
 //
 
 import SwiftUI
@@ -35,6 +35,6 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     }
 
     static func from(_ raw: String) -> AppAppearance {
-        AppAppearance(rawValue: raw) ?? .dark
+        AppAppearance(rawValue: raw) ?? .system
     }
 }

@@ -31,7 +31,7 @@ struct ReaderView: View {
     // The reader is a fullScreenCover; `.preferredColorScheme` set on the tab view does
     // not reach it, so it reads the appearance itself to keep the reader background and
     // any presented sheets in the chosen theme.
-    @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.dark.rawValue
+    @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.system.rawValue
     @Environment(\.colorScheme) private var systemScheme
 
     /// Effective dark/light for the reader. Named colors (assets) don't resolve reliably
@@ -310,7 +310,9 @@ struct ReaderView: View {
             bookmarkTick += 1
         } else {
             let page = currentPage
-            store?.thumbnail(at: page, maxPixel: 420) { image in
+            // Bookmark cards render at the same full-width size as covers, so match
+            // the cover resolution rather than a small thumbnail.
+            store?.thumbnail(at: page, maxPixel: ImageDownsampler.libraryCardPixel) { image in
                 guard let image else { return }
                 let name = "\(UUID().uuidString).jpg"
                 ImageDownsampler.writeJPEG(image, to: Storage.bookmarkThumbURL(name))

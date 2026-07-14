@@ -1,30 +1,31 @@
 # Paper Comic Reader
 
-A lean, performant native comic reader for iPhone & iPad (SwiftUI + Core Image /
-Metal). It opens **CBZ and CBR** archives, keeps a library with reading progress
-and bookmarks, and can render pages with a realistic **paper effect** (ported from
-the Simple Comic fork) so they read like ink on paper instead of a backlit screen.
+A lean, native comic reader for iPhone and iPad that makes pages read like ink on paper instead of a backlit screen.
+
+[![Download](https://img.shields.io/badge/Download-.ipa-2563eb?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![Platform](https://img.shields.io/badge/iOS-18%2B-1d4ed8?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![License](https://img.shields.io/badge/License-MIT-64748b?style=for-the-badge)](LICENSE)
+
+<p align="center">
+  <img src="docs/screenshot.png" alt="Paper Comic Reader library on iPhone" width="260">
+</p>
+
+Paper Comic Reader opens **CBZ and CBR** archives, keeps a library with reading progress and bookmarks, and can render every page with a realistic **paper effect** (ported from the Simple Comic fork) — a warm tonal remap plus a fine paper grain, so pages read like they were printed.
+
+Built with SwiftUI and a UIKit reader core, Core Image and Metal for the paper effect. Everything runs on-device: no accounts, no network requests, no tracking or analytics.
+
 
 ## Install
 
-Paper Comic Reader is **not on the App Store** — it's distributed as an **unsigned
-`.ipa`** on the [Releases page](https://github.com/Wiredframe/paper-comic-reader/releases).
-iOS won't install an `.ipa` directly; you sideload it with a tool that re-signs it with
-your own Apple ID:
+Paper Comic Reader is **not on the App Store** — it ships as an **unsigned `.ipa`** on the [Releases page](https://github.com/Wiredframe/paper-comic-reader/releases). iOS won't install an `.ipa` directly, so you sideload it with a tool that re-signs it with your own Apple ID:
 
-- **[AltStore](https://altstore.io)** — run AltServer on a Mac/PC, then open the `.ipa`
-  in AltStore on the device. A free Apple ID works, but the app stops launching after
-  **7 days** until AltStore refreshes it (a paid Apple Developer account lasts a year).
-- **[Sideloadly](https://sideloadly.io)** — connect the device to a Mac/PC and load the
-  `.ipa`. Same 7-day limit on a free Apple ID.
+- **[AltStore](https://altstore.io)** — run AltServer on a Mac or PC, then open the `.ipa` in AltStore on the device. A free Apple ID works, but the app stops launching after **7 days** until AltStore refreshes it (a paid Apple Developer account lasts a year).
+- **[Sideloadly](https://sideloadly.io)** — connect the device to a Mac or PC and load the `.ipa`. Same 7-day limit on a free Apple ID.
 
-Requires **iOS 18 or later**. Everything runs on-device — the app makes no network
-requests, so no accounts, tracking, or analytics.
+Requires **iOS 18 or later**.
+
 
 ## Project setup
 
-The Xcode project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
-from `project.yml` (so file/target changes are easy to review and merge).
+The Xcode project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen) from `project.yml`, so file and target changes stay easy to review and merge.
 
 ```bash
 brew install xcodegen        # once
@@ -34,27 +35,22 @@ xcodebuild -project ComicReader.xcodeproj -scheme ComicReader \
   -destination 'generic/platform=iOS Simulator' build
 ```
 
-The generated `.xcodeproj` can be opened directly in Xcode without XcodeGen — you
-only need XcodeGen when you change `project.yml`. Signing is **automatic** with the
-developer team (`DEVELOPMENT_TEAM` in `project.yml`): Simulator builds need no
-profile; device/archive builds create one via your Apple ID (Xcode → Settings →
-Accounts). Shipping builds go out as an unsigned `.ipa` — see **Releasing** below.
+The generated `.xcodeproj` opens directly in Xcode without XcodeGen — you only need XcodeGen when you change `project.yml`. Signing is **automatic** with the developer team (`DEVELOPMENT_TEAM` in `project.yml`): Simulator builds need no profile, device and archive builds create one via your Apple ID (Xcode → Settings → Accounts). Shipping builds go out as an unsigned `.ipa` — see **Releasing** below.
 
-- **Deployment target:** iOS 18 · **Bundle id:** `de.wiredframe.comicreader`
+Deployment target: iOS 18 · Bundle id: `de.wiredframe.comicreader`
+
 
 ## Releasing
 
-`scripts/build-ipa.sh` archives the app **unsigned** and packages a sideloadable
-`build/PaperComicReader-<version>.ipa`. Pushing a `v*` tag runs the same script on CI
-(`.github/workflows/release.yml`) and attaches the `.ipa` to a GitHub Release:
+`scripts/build-ipa.sh` archives the app **unsigned** and packages a sideloadable `build/PaperComicReader-<version>.ipa`. Pushing a `v*` tag runs the same script on CI (`.github/workflows/release.yml`) and attaches the `.ipa` to a GitHub Release:
 
 ```bash
 ./scripts/build-ipa.sh                    # build one locally
 git tag v1.0.0 && git push origin v1.0.0  # or let CI build + publish it
 ```
 
-The `.ipa` is deliberately unsigned; sideload tools re-sign it per user (see **Install**).
-It must **not** be uploaded to the App Store.
+The `.ipa` is deliberately unsigned; sideload tools re-sign it per user (see **Install**). It must **not** be uploaded to the App Store.
+
 
 ## Structure
 
@@ -71,57 +67,32 @@ ComicReader/
 Vendor/UnrarKit/  Vendored UnrarKit + unrar engine (CBR; no clean SPM package exists)
 ```
 
-### Formats / persistence
+### Formats and persistence
 
 - **CBZ** via [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) (SPM).
-- **CBR** via [UnrarKit](https://github.com/abbeycode/UnrarKit), vendored flat under
-  `Vendor/UnrarKit` (unrar C++ compiled with `-DSILENT -DRARDLL`; see `project.yml`
-  for the exact source/exclude list). Reached from Swift via the bridging header.
-- **Library** is a [SwiftData](https://developer.apple.com/xcode/swiftdata/) store;
-  archives, covers and bookmark thumbnails are files on disk (see `Storage`).
+- **CBR** via [UnrarKit](https://github.com/abbeycode/UnrarKit), vendored flat under `Vendor/UnrarKit` (unrar C++ compiled with `-DSILENT -DRARDLL`; see `project.yml` for the exact source and exclude list). Reached from Swift via the bridging header.
+- **Library** is a [SwiftData](https://developer.apple.com/xcode/swiftdata/) store; archives, covers and bookmark thumbnails are files on disk (see `Storage`).
 
 ### The reader
 
-Full-bleed paged UIKit core — a horizontal, paging `UICollectionView`
-(`ReaderCollectionController`) of `ReaderPageCell`s — wrapped for SwiftUI. There is
-no pinch zoom: a **double-tap toggles the fit** instead (single page: fit-width ⇄
-fit-height), which keeps the layout drift-free. In landscape, an optional **double
-page** mode shows two pages side by side with a *fixed* pairing (cover alone, then
-2·3, 4·5 …, so a right-half page never becomes a left half); a double-tap there
-focuses the tapped page at fit-width. Rotation re-fits the page animated. An optional
-"page-by-page" mode taps through the page in thirds. Resumes on the last read page and
-has a page-grid picker. Bookmarks (page screenshots) are added from the reader and
-browsed globally in the **Bookmarks tab** — tapping one opens that comic straight to
-the page.
+Full-bleed paged UIKit core — a horizontal, paging `UICollectionView` (`ReaderCollectionController`) of `ReaderPageCell`s — wrapped for SwiftUI. There is no pinch zoom: a **double-tap toggles the fit** instead (single page: fit-width ⇄ fit-height), which keeps the layout drift-free. In landscape, an optional **double-page** mode shows two pages side by side with a *fixed* pairing (cover alone, then 2·3, 4·5 …, so a right-half page never becomes a left half); a double-tap there focuses the tapped page at fit-width. Rotation re-fits the page animated. An optional "page-by-page" mode taps through the page in thirds. The reader resumes on the last read page and has a page-grid picker. Bookmarks (page screenshots) are added from the reader and browsed globally in the **Bookmarks tab** — tapping one opens that comic straight to the page.
 
 ### The paper effect
 
-`PaperFilter` is engine-only and reusable: a warm-cream tonal remap plus an even,
-isotropic paper grain (`PaperKernels.metal`) laid over the page two ways — a multiply
-"body" plus a screen "show-through". Falls back to pure Core Image if the Metal
-kernel can't load. Global on/off switch in Settings.
+`PaperFilter` is engine-only and reusable: a warm-cream tonal remap plus an even, isotropic paper grain (`PaperKernels.metal`) laid over the page two ways — a multiply "body" plus a screen "show-through". It falls back to pure Core Image if the Metal kernel can't load, with a global on/off switch in Settings.
 
-> The kernel needs the Metal toolchain to build. On Xcode 26 that's a one-time
-> `xcodebuild -downloadComponent MetalToolchain`.
+> The kernel needs the Metal toolchain to build. On Xcode 26 that's a one-time `xcodebuild -downloadComponent MetalToolchain`.
 
-## Roadmap (priority order)
 
-Goal above everything: **stay lean and fast**; panel detection must run on-device as
-efficiently and battery-friendly as possible.
+## Roadmap
 
-1. **Reader foundation** — ✅ open CBZ/CBR, library with folders, paged zoomable
-   reader, resume, global bookmarks with thumbnails, page-grid picker, paper effect.
-2. **Live Text / OCR** — native VisionKit Live Text (press-and-hold to select) is
-   toggleable in Settings; deeper OCR (copy / speak, cached per page) comes next.
-3. **Panel detection & smart zoom** — detect panels once per page (cache the rects),
-   then guided zoom. Don't over-zoom: the priority is only that the target panel is
-   in view, and *equally* that the comic fills the **full screen width** whenever
-   possible. Adjustable min/max, hysteresis; detection downscaled on a background queue.
-4. **Random comic** — ✅ surprise-me picker (Library & Bookmarks toolbars).
-5. **Double-page (landscape) layout** — ✅ global toggle, fixed pairing.
+The goal above everything: **stay lean and fast**. Panel detection must run on-device as efficiently and battery-friendly as possible.
 
-Feature status: reader foundation ✅ · paper effect ✅ · Live Text setting ✅ ·
-double-page ✅ · random comic ✅.
+**Done** — open CBZ/CBR, library with folders, paged zoomable reader, resume, global bookmarks with thumbnails, page-grid picker, paper effect, Live Text setting, double-page landscape layout, random comic picker.
 
-_Out of scope (dropped): library search, OPDS, metadata/backstories. A page-curl
-open/close transition was prototyped and removed; it may be redone later._
+**Next**
+
+1. **Deeper Live Text / OCR** — native VisionKit Live Text (press-and-hold to select) is already toggleable in Settings; copy, speak and per-page caching come next.
+2. **Panel detection and smart zoom** — detect panels once per page (cache the rects), then guided zoom. Don't over-zoom: the priority is only that the target panel is in view, and *equally* that the comic fills the **full screen width** whenever possible. Adjustable min/max, hysteresis; detection downscaled on a background queue.
+
+Out of scope (dropped): library search, OPDS, metadata and backstories. A page-curl open/close transition was prototyped and removed; it may be redone later.

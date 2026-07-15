@@ -22,7 +22,9 @@ enum BookmarksViewMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     static let storageKey = "bookmarks.viewMode"
-    static func from(_ raw: String) -> BookmarksViewMode { BookmarksViewMode(rawValue: raw) ?? .gallery }
+    /// Same reasoning as the Library's: the deck shows the pages off, the grid lists them.
+    static let defaultMode = carousel
+    static func from(_ raw: String) -> BookmarksViewMode { BookmarksViewMode(rawValue: raw) ?? defaultMode }
 }
 
 struct BookmarksView: View {
@@ -30,7 +32,7 @@ struct BookmarksView: View {
     @Query(sort: \Bookmark.dateAdded, order: .reverse) private var bookmarks: [Bookmark]
 
     @AppStorage("library.columns") private var columns = 2
-    @AppStorage(BookmarksViewMode.storageKey) private var viewModeRaw = BookmarksViewMode.gallery.rawValue
+    @AppStorage(BookmarksViewMode.storageKey) private var viewModeRaw = BookmarksViewMode.defaultMode.rawValue
     @AppStorage("bookmarks.sortField") private var sortField = BookmarkSort.dateAdded.rawValue
     @AppStorage("bookmarks.sortAscending") private var sortAscending = false
 

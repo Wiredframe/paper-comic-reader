@@ -24,7 +24,10 @@ enum LibraryViewMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     static let storageKey = "library.viewMode"
-    static func from(_ raw: String) -> LibraryViewMode { LibraryViewMode(rawValue: raw) ?? .gallery }
+    /// The default for anyone who hasn't chosen: the carousel simply shows the collection off
+    /// better than a grid of thumbnails does. Falls back here for an unreadable raw value too.
+    static let defaultMode = discover
+    static func from(_ raw: String) -> LibraryViewMode { LibraryViewMode(rawValue: raw) ?? defaultMode }
 
     /// One-shot migration off the old `library.listMode` Bool, so someone sitting in List
     /// mode isn't silently reset to Gallery by the upgrade. Self-deleting; safe to call on
@@ -45,7 +48,7 @@ struct LibraryView: View {
     @Query private var books: [ComicBook]
 
     @AppStorage("library.columns") private var columns = 2
-    @AppStorage(LibraryViewMode.storageKey) private var viewModeRaw = LibraryViewMode.gallery.rawValue
+    @AppStorage(LibraryViewMode.storageKey) private var viewModeRaw = LibraryViewMode.defaultMode.rawValue
     @AppStorage("library.sortField") private var sortField = LibrarySort.dateAdded.rawValue
     @AppStorage("library.sortAscending") private var sortAscending = false
 

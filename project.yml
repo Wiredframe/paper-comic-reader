@@ -54,10 +54,12 @@ targets:
       - package: ZIPFoundation
     sources:
       # App sources. The Metal kernel needs a per-file flag (below), so it is
-      # excluded here.
+      # excluded here. Info.plist is the target's INFOPLIST_FILE, not a resource —
+      # excluded so it isn't also copied into the bundle as a stray file.
       - path: ComicReader
         excludes:
           - "PaperEffect/PaperKernels.metal"
+          - "Info.plist"
       # The Core Image Metal kernel is compiled with -fcikernel.
       - path: ComicReader/PaperEffect/PaperKernels.metal
         compilerFlags: "-fcikernel"
@@ -113,6 +115,16 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.wiredframe.comicreader
+        # Keys with no INFOPLIST_KEY_ build-setting form (the CBZ/CBR file association,
+        # ProMotion, export compliance) live in Info.plist. GENERATE_INFOPLIST_FILE merges
+        # the INFOPLIST_KEY_* settings below into that file rather than replacing it, so
+        # both halves survive.
+        #
+        # Don't move those keys back into a post-build `plutil` script: ProcessInfoPlistFile
+        # is not ordered against shell script phases, and on the device build it runs last
+        # and silently overwrites the patches — which ships an app whose comics can't be
+        # opened from Files at all.
+        INFOPLIST_FILE: ComicReader/Info.plist
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "Paper Comic"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -128,51 +140,3 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: "ComicReader/ComicReader-Bridging-Header.h"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor"
         OTHER_LDFLAGS: "$(inherited) -lz -lc++"
-    postBuildScripts:
-      # Add CADisableMinimumFrameDurationOnPhone to the (generated) Info.plist so the
-      # page-turn CADisplayLink can run above 60 Hz on ProMotion iPhones — iOS caps
-      # custom animations at 60 Hz without it, which judders next to the 120 Hz drag.
-      # This key has no INFOPLIST_KEY_ build-setting form and GENERATE_INFOPLIST_FILE
-      # ignores a supplied INFOPLIST_FILE, so it's patched in here — after Info.plist
-      # processing, before code signing (the last, implicit step), so the signature
-      # covers it. Runs every build so a regenerated plist always gets the key.
-      - name: "Enable high frame rate (ProMotion)"
-        basedOnDependencyAnalysis: false
-        script: |
-          PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
-          if [ -f "$PLIST" ]; then
-            /usr/bin/plutil -replace CADisableMinimumFrameDurationOnPhone -bool YES "$PLIST"
-          fi
-      # Export-compliance declaration for App Store uploads. The app uses only
-      # standard, exempt encryption (HTTPS via StoreKit/App Store), so declare it up
-      # front — this lets App Store Connect skip the encryption question on every
-      # upload. Like the key above, ITSAppUsesNonExemptEncryption has no
-      # INFOPLIST_KEY_ build-setting form, so it is patched into the generated
-      # Info.plist here, before code signing so the signature covers it.
-      - name: "Export compliance (no non-exempt encryption)"
-        basedOnDependencyAnalysis: false
-        script: |
-          PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
-          if [ -f "$PLIST" ]; then
-            /usr/bin/plutil -replace ITSAppUsesNonExemptEncryption -bool NO "$PLIST"
-          fi
-      # File association for CBZ/CBR so the app shows up in the Files app ("Open"),
-      # in other apps' "Open With" / share sheet, and can be the default handler.
-      # These keys — the exported UTIs, the document types, and in-place opening —
-      # have no INFOPLIST_KEY_ build-setting form, so (like the two scripts above)
-      # they're patched into the generated Info.plist here, before code signing.
-      #  - UTExportedTypeDeclarations: define our own UTIs for cbz/cbr and map the
-      #    file extensions to them (the OS otherwise makes a dynamic type per app).
-      #    cbz conforms to public.zip-archive; cbr is just data (no system RAR type).
-      #  - CFBundleDocumentTypes: declare the app opens those two UTIs as a viewer.
-      #  - LSSupportsOpeningDocumentsInPlace: read the file at its source location
-      #    (the importer copies it into the library, so no write-back is needed).
-      - name: "Register comic document types (CBZ/CBR)"
-        basedOnDependencyAnalysis: false
-        script: |
-          PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
-          if [ -f "$PLIST" ]; then
-            /usr/bin/plutil -replace UTExportedTypeDeclarations -json '[{"UTTypeIdentifier":"de.wiredframe.comicreader.cbz","UTTypeDescription":"Comic Book Archive (ZIP)","UTTypeConformsTo":["public.zip-archive"],"UTTypeTagSpecification":{"public.filename-extension":["cbz"],"public.mime-type":["application/vnd.comicbook+zip","application/x-cbz"]}},{"UTTypeIdentifier":"de.wiredframe.comicreader.cbr","UTTypeDescription":"Comic Book Archive (RAR)","UTTypeConformsTo":["public.data"],"UTTypeTagSpecification":{"public.filename-extension":["cbr"],"public.mime-type":["application/vnd.comicbook-rar","application/x-cbr"]}}]' "$PLIST"
-            /usr/bin/plutil -replace CFBundleDocumentTypes -json '[{"CFBundleTypeName":"Comic Book Archive (ZIP)","CFBundleTypeRole":"Viewer","LSHandlerRank":"Owner","LSItemContentTypes":["de.wiredframe.comicreader.cbz"]},{"CFBundleTypeName":"Comic Book Archive (RAR)","CFBundleTypeRole":"Viewer","LSHandlerRank":"Owner","LSItemContentTypes":["de.wiredframe.comicreader.cbr"]}]' "$PLIST"
-            /usr/bin/plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$PLIST"
-          fi

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent: rebuild + reinstall Paper Comic Reader nightly at 04:00 so the
+  free-account 7-day signing profile never expires.
+
+  Install:
+    cp "scripts/de.wiredframe.comicreader.refresh.plist" ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/de.wiredframe.comicreader.refresh.plist
+
+  Run once now to test:
+    launchctl start de.wiredframe.comicreader.refresh
+
+  Remove:
+    launchctl unload ~/Library/LaunchAgents/de.wiredframe.comicreader.refresh.plist
+    rm ~/Library/LaunchAgents/de.wiredframe.comicreader.refresh.plist
+
+  Note: a missed run (Mac asleep at 04:00) fires on next wake. To wake the Mac for
+  it, run once:  sudo pmset repeat wake MTWRFSU 03:58:00
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>de.wiredframe.comicreader.refresh</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/wiredframe/Projekte/Claude Code/Comic Reader iOS/scripts/refresh-install.sh</string>
+  </array>
+
+  <!-- Nightly at 04:00. Every day = 6 nights of buffer on the 7-day profile. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>4</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/wiredframe/Projekte/Claude Code/Comic Reader iOS/build/refresh-logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/wiredframe/Projekte/Claude Code/Comic Reader iOS/build/refresh-logs/launchd.err.log</string>
+</dict>
+</plist>

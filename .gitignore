@@ -20,3 +20,6 @@ ComicReader.xcodeproj/
 # Personal reference screenshots (Chunky UI mockups) — not part of the app.
 IMG_*.PNG
 IMG_*.png
+
+# Local machine ids for refresh-install.sh
+scripts/refresh.env

@@ -79,6 +79,9 @@ struct ReaderView: View {
     /// One open = one count. @State is per-presentation, which is exactly the semantics
     /// wanted — see `setup()`.
     @State private var didCountOpen = false
+    /// Guards the one-shot archive open, which `store` can no longer do itself now that it
+    /// arrives asynchronously — see `setup()`.
+    @State private var didStartOpen = false
     /// Manual landscape override — session-only, not persisted. Toggling it also returns
     /// to portrait, so it's a plain landscape⇄portrait switch for rotation-locked devices.
     @State private var forcedLandscape = false
@@ -130,7 +133,7 @@ struct ReaderView: View {
         // way by the time anyone could ask. Close and the manual portrait toggle still work.
         .interactiveDismissDisabled(isLandscape)
         .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isLandscape = $0 }
-        .onAppear(perform: setup)
+        .task { await setup() }
         .onDisappear {
             autoHide?.cancel()
             persistProgress()   // durable checkpoint on leaving the reader
@@ -309,30 +312,53 @@ struct ReaderView: View {
 
     // MARK: Actions
 
-    private func setup() {
-        // Orientation is handled in the reader controller's viewWillAppear/viewWillDisappear
-        // (standard UIKit lifecycle) so the rotation rides the present/dismiss transition
-        // instead of flashing afterwards.
-        if store == nil {
-            store = PageImageStore(book: book, paperEnabled: paper.isEnabled, paperParams: paper.params)
-        }
-        currentPage = clampedStart(store?.pageCount ?? 1)
+    /// Opens the archive, then settles the reader on it.
+    ///
+    /// The open runs OFF the main actor (`PageImageStore.open`) and everything that needs a real
+    /// page count waits for it. It used to happen right here, synchronously: opening is file I/O
+    /// that scales with the archive rather than the page, so a big comic — or any comic whose
+    /// bytes were cold — froze the whole app until it finished, and the loading state below could
+    /// never even draw. Now the spinner shows and the app stays live while it opens.
+    ///
+    /// Orientation is deliberately not touched here: the reader controller handles it in
+    /// viewWillAppear/viewWillDisappear (standard UIKit lifecycle) so the rotation rides the
+    /// present/dismiss transition instead of flashing afterwards.
+    private func setup() async {
+        // `store` stays nil for as long as the open takes, so it can't stand in as the guard
+        // the way it did when it was assigned synchronously — a second appear would start a
+        // second open on top of the first.
+        guard !didStartOpen else { return }
+        didStartOpen = true
+
+        // The import-time page count came off this same archive, so the counter and the resume
+        // page are already right while it opens; the store's own count replaces it below in
+        // case the file changed underneath us since.
+        currentPage = clampedStart(book.pageCount)
+
+        let opened = await PageImageStore.open(bookID: book.id, url: book.archiveURL,
+                                               paperEnabled: paper.isEnabled, paperParams: paper.params)
+        store = opened
+        currentPage = clampedStart(opened.pageCount)
+
         // Auto-mark read when opening already on the last page — `.onChange(of: currentPage)`
         // only fires on a change, so a 1-page comic (or resuming on the final page) would
         // otherwise never be marked read despite reaching the end. Guard on pageCount so a
         // comic whose archive failed to open (pageCount 0) isn't marked read.
-        if pageCount > 0, currentPage >= pageCount - 1 { markRead() }
+        if opened.pageCount > 0, currentPage >= opened.pageCount - 1 { markRead() }
         // Count the open once per presentation, riding the save below. setup() is written to
         // be re-runnable (re-setting a date is idempotent) — incrementing a counter is not,
         // and a double count would be silent and permanent. Guarded on pageCount like
         // markRead above, so a comic whose archive won't open can't gain popularity.
-        if pageCount > 0, !didCountOpen {
+        if opened.pageCount > 0, !didCountOpen {
             didCountOpen = true
             book.openCount += 1
         }
         book.dateOpened = .now
         try? context.save()
-        scheduleAutoHide()   // the chrome starts visible, then fades after a moment
+        // The chrome starts visible, then fades. Armed only once there's a page to look at, so
+        // a slow open doesn't spend the delay on the spinner — and never when the archive
+        // wouldn't open, since Close is then the only way out and it must not fade away.
+        if opened.pageCount > 0 { scheduleAutoHide() }
     }
 
     private func clampedStart(_ count: Int) -> Int {

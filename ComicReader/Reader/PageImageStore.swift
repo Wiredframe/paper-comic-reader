@@ -13,7 +13,8 @@ import UIKit
 /// `@unchecked Sendable` is the design, not a shortcut: every archive read and every mutation
 /// of `paperEnabled` / `paperParams` happens on the private `work` queue (the ZIP/RAR readers
 /// are not thread-safe), and both caches are `NSCache`, which is. The type is handed between
-/// the main actor and that queue on every page request.
+/// the main actor and that queue on every page request. The archive is opened once on
+/// `openQueue` before the store is handed to anyone (see `open`), so that can't race a read.
 final class PageImageStore: @unchecked Sendable {
 
     /// 0 when the archive couldn't be opened (missing/corrupt file after import) — the
@@ -24,6 +25,10 @@ final class PageImageStore: @unchecked Sendable {
     private let bookID: UUID
     private let archive: ComicArchive?
     private let work = DispatchQueue(label: "de.wiredframe.comicreader.page-decode", qos: .userInitiated)
+    /// Opening is one shot per reader session, so it gets its own queue rather than sharing
+    /// `work` — nothing is waiting behind it, and `work` doesn't exist until init returns.
+    private static let openQueue = DispatchQueue(label: "de.wiredframe.comicreader.archive-open",
+                                                 qos: .userInitiated)
     private let cache = NSCache<NSNumber, UIImage>()
     // Keyed by page index AND target size: the page grid asks for small (260px)
     // thumbnails, a bookmark for a full-size (1200px) shot. Keying by index alone let
@@ -33,9 +38,33 @@ final class PageImageStore: @unchecked Sendable {
     private var paperEnabled: Bool
     private var paperParams: PaperParams
 
-    init(book: ComicBook, paperEnabled: Bool, paperParams: PaperParams) {
-        self.bookID = book.id
-        self.archive = try? ComicArchiveFactory.open(url: book.archiveURL)
+    /// Opens `url` off the main thread and hands back the ready store.
+    ///
+    /// ALWAYS open through this, never by calling `init` directly on the main actor. Opening an
+    /// archive is file I/O whose cost scales with the archive, not with the page being read:
+    /// ZIPFoundation walks the CBZ's central directory entry by entry and seeks to each page's
+    /// *local* header on the way — offsets scattered across the whole file — plus a second seek
+    /// past a page's compressed bytes for the streamed ZIPs that carry a data descriptor; a CBR
+    /// is worse still, since UnrarKit skips through every RAR header end to end. On a big comic,
+    /// or one whose bytes aren't in the page cache yet, that is hundreds of milliseconds to
+    /// seconds — which is exactly how long the app froze while `init` ran on the main thread.
+    static func open(bookID: UUID, url: URL,
+                     paperEnabled: Bool, paperParams: PaperParams) async -> PageImageStore {
+        await withCheckedContinuation { continuation in
+            openQueue.async {
+                continuation.resume(returning: PageImageStore(bookID: bookID, url: url,
+                                                              paperEnabled: paperEnabled,
+                                                              paperParams: paperParams))
+            }
+        }
+    }
+
+    /// Private so the blocking open can't accidentally be put back on the main actor — see `open`.
+    /// Takes the book's id and URL rather than the `ComicBook` itself: the model belongs to the
+    /// main actor's SwiftData context and must not be read from the queue this runs on.
+    private init(bookID: UUID, url: URL, paperEnabled: Bool, paperParams: PaperParams) {
+        self.bookID = bookID
+        self.archive = try? ComicArchiveFactory.open(url: url)
         self.pageCount = archive?.pageCount ?? 0
         self.paperEnabled = paperEnabled
         self.paperParams = paperParams

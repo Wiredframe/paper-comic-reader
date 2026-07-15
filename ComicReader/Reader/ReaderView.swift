@@ -76,6 +76,9 @@ struct ReaderView: View {
     @State private var showGrid = false
     @State private var bookmarkTick = 0   // nudges the view when bookmarks change
     @State private var autoHide: DispatchWorkItem?
+    /// One open = one count. @State is per-presentation, which is exactly the semantics
+    /// wanted — see `setup()`.
+    @State private var didCountOpen = false
     /// Manual landscape override — session-only, not persisted. Toggling it also returns
     /// to portrait, so it's a plain landscape⇄portrait switch for rotation-locked devices.
     @State private var forcedLandscape = false
@@ -289,6 +292,14 @@ struct ReaderView: View {
         // otherwise never be marked read despite reaching the end. Guard on pageCount so a
         // comic whose archive failed to open (pageCount 0) isn't marked read.
         if pageCount > 0, currentPage >= pageCount - 1 { markRead() }
+        // Count the open once per presentation, riding the save below. setup() is written to
+        // be re-runnable (re-setting a date is idempotent) — incrementing a counter is not,
+        // and a double count would be silent and permanent. Guarded on pageCount like
+        // markRead above, so a comic whose archive won't open can't gain popularity.
+        if pageCount > 0, !didCountOpen {
+            didCountOpen = true
+            book.openCount += 1
+        }
         book.dateOpened = .now
         try? context.save()
         scheduleAutoHide()   // the chrome starts visible, then fades after a moment

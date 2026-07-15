@@ -27,6 +27,7 @@ enum Importer {
         let format: ComicFormat
         let pageCount: Int
         let coverName: String?
+        let coverAspect: Double?
     }
 
     /// The heavy half of an import — copy the file into storage, read the archive and
@@ -63,19 +64,23 @@ enum Importer {
             throw ImportError.empty
         }
 
-        // Cover from the first page.
+        // Cover from the first page. Its aspect is captured here — the image is already in
+        // hand, so it costs nothing, and Discover needs it to size an uncropped card.
         var coverName: String?
+        var coverAspect: Double?
         if let data = archive.pageData(at: 0),
            let cover = ImageDownsampler.downsample(data, maxPixel: coverMaxPixel) {
             let name = "\(id.uuidString).jpg"
             if ImageDownsampler.writeJPEG(cover, to: Storage.coverURL(name)) {
                 coverName = name
+                if cover.size.height > 0 { coverAspect = cover.size.width / cover.size.height }
             }
         }
 
         let title = sourceURL.deletingPathExtension().lastPathComponent
         return Prepared(id: id, title: title, fileName: fileName,
-                        format: format, pageCount: archive.pageCount, coverName: coverName)
+                        format: format, pageCount: archive.pageCount,
+                        coverName: coverName, coverAspect: coverAspect)
     }
 
     /// The light half — insert a prepared import into the store. Main-actor: SwiftData's
@@ -84,7 +89,7 @@ enum Importer {
     static func commit(_ prepared: Prepared, into context: ModelContext) -> ComicBook {
         let book = ComicBook(id: prepared.id, title: prepared.title, fileName: prepared.fileName,
                              format: prepared.format, pageCount: prepared.pageCount,
-                             coverName: prepared.coverName)
+                             coverName: prepared.coverName, coverAspect: prepared.coverAspect)
         context.insert(book)
         try? context.save()
         return book

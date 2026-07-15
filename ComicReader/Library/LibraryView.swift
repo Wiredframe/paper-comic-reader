@@ -13,6 +13,29 @@ import SwiftData
 /// How the library grid is ordered. Persisted as a raw string in @AppStorage.
 enum LibrarySort: String, CaseIterable {
     case dateAdded, title
+    /// Times opened. One field, both readings: descending = most-opened ("popular"),
+    /// ascending = least-opened ("gathering dust") — the existing order toggle covers both.
+    case opened
+}
+
+/// Which layout the Library tab shows. Raw string in @AppStorage, like `LibrarySort`.
+enum LibraryViewMode: String, CaseIterable, Identifiable {
+    case gallery, list, discover
+
+    var id: String { rawValue }
+    static let storageKey = "library.viewMode"
+    static func from(_ raw: String) -> LibraryViewMode { LibraryViewMode(rawValue: raw) ?? .gallery }
+
+    /// One-shot migration off the old `library.listMode` Bool, so someone sitting in List
+    /// mode isn't silently reset to Gallery by the upgrade. Self-deleting; safe to call on
+    /// every launch. (Gallery users are unaffected either way — the old key defaulted false.)
+    static func migrateIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: storageKey) == nil,
+              let wasList = defaults.object(forKey: "library.listMode") as? Bool else { return }
+        defaults.set((wasList ? list : gallery).rawValue, forKey: storageKey)
+        defaults.removeObject(forKey: "library.listMode")
+    }
 }
 
 struct LibraryView: View {
@@ -22,7 +45,7 @@ struct LibraryView: View {
     @Query private var books: [ComicBook]
 
     @AppStorage("library.columns") private var columns = 2
-    @AppStorage("library.listMode") private var listMode = false
+    @AppStorage(LibraryViewMode.storageKey) private var viewModeRaw = LibraryViewMode.gallery.rawValue
     @AppStorage("library.sortField") private var sortField = LibrarySort.dateAdded.rawValue
     @AppStorage("library.sortAscending") private var sortAscending = false
 
@@ -40,6 +63,8 @@ struct LibraryView: View {
 
     /// Live state of a running batch import, driving the progress overlay.
     struct ImportProgress: Equatable { var done: Int; var total: Int }
+
+    private var viewMode: LibraryViewMode { .from(viewModeRaw) }
 
     private var allSelected: Bool { !books.isEmpty && selection.count == books.count }
 
@@ -62,36 +87,36 @@ struct LibraryView: View {
             ascending = books.sorted { $0.dateAdded < $1.dateAdded }
         case .title:
             ascending = books.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .opened:
+            // Tie-break on dateAdded: a fresh library is all-zero openCount and sorted(by:)
+            // isn't guaranteed stable, so ties would otherwise churn between recomputations.
+            ascending = books.sorted { ($0.openCount, $0.dateAdded) < ($1.openCount, $1.dateAdded) }
         }
         return sortAscending ? ascending : ascending.reversed()
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
+            Group {
                 if books.isEmpty {
-                    // Same system empty-state treatment as Recents / Bookmarks.
-                    ContentUnavailableView {
-                        Label("No comics yet", systemImage: "books.vertical")
-                    } description: {
-                        Text("Import a CBZ or CBR to get started.")
-                    } actions: {
-                        Button { showImporter = true } label: {
-                            Label("Import", systemImage: "square.and.arrow.down")
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding(.top, 80)
+                    ScrollView { emptyState.padding(.top, 80) }
+                } else if viewMode == .discover {
+                    // Deliberately NOT inside a ScrollView: Discover needs the real available
+                    // height to size its card, and a horizontal scroll nested in a vertical
+                    // one fights for the gesture.
+                    DiscoverView(books: books) { openedBook = $0 }
                 } else {
-                    LibraryGrid(books: sortedBooks, columns: columns, listMode: listMode,
-                                selectionMode: selectionMode, selectedIDs: selection,
-                                onToggleSelect: toggleSelection) { openedBook = $0 }
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                        // Clear the floating tab bar: its `.safeAreaInset` in RootTabView
-                        // doesn't reach a ScrollView nested in a NavigationStack, so the
-                        // last row would otherwise sit hidden behind the bar.
-                        .padding(.bottom, FloatingTabBar.reservedSpace)
+                    ScrollView {
+                        LibraryGrid(books: sortedBooks, columns: columns, listMode: viewMode == .list,
+                                    selectionMode: selectionMode, selectedIDs: selection,
+                                    onToggleSelect: toggleSelection) { openedBook = $0 }
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                            // Clear the floating tab bar: its `.safeAreaInset` in RootTabView
+                            // doesn't reach a ScrollView nested in a NavigationStack, so the
+                            // last row would otherwise sit hidden behind the bar.
+                            .padding(.bottom, FloatingTabBar.reservedSpace)
+                    }
                 }
             }
             .navigationTitle(navTitle)
@@ -126,6 +151,10 @@ struct LibraryView: View {
         // covers arriving here via a tab switch; onChange covers already being here.
         .onAppear(perform: consumePendingOpen)
         .onChange(of: fileOpener.token) { _, _ in consumePendingOpen() }
+        // Selecting is meaningless over a carousel — don't strand the user in "3 Selected".
+        .onChange(of: viewModeRaw) { _, raw in
+            if LibraryViewMode.from(raw) == .discover { exitSelection() }
+        }
         #if DEBUG
         // Screenshot mode: once the seeded comic lands, open it in the reader.
         .onChange(of: books.count) { _, count in
@@ -178,12 +207,14 @@ struct LibraryView: View {
                 Menu {
                     Button { showImporter = true } label: { Label("Import", systemImage: "square.and.arrow.down") }
                     Button { enterSelection() } label: { Label("Select", systemImage: "checkmark.circle") }
-                        .disabled(books.isEmpty)
+                        // A carousel shows one comic at a time — batch selection has nothing to act on.
+                        .disabled(books.isEmpty || viewMode == .discover)
                     Divider()
                     Menu {
                         Picker("Sort By", selection: $sortField) {
                             Label("Date Added", systemImage: "calendar").tag(LibrarySort.dateAdded.rawValue)
                             Label("Title", systemImage: "textformat").tag(LibrarySort.title.rawValue)
+                            Label("Times Opened", systemImage: "flame").tag(LibrarySort.opened.rawValue)
                         }
                         Divider()
                         Picker("Order", selection: $sortAscending) {
@@ -194,11 +225,13 @@ struct LibraryView: View {
                         Label("Sort", systemImage: "arrow.up.arrow.down")
                     }
                     Divider()
-                    Picker("View", selection: $listMode) {
-                        Label("Gallery", systemImage: "square.grid.2x2").tag(false)
-                        Label("List", systemImage: "list.bullet").tag(true)
+                    Picker("View", selection: $viewModeRaw) {
+                        Label("Gallery", systemImage: "square.grid.2x2").tag(LibraryViewMode.gallery.rawValue)
+                        Label("List", systemImage: "list.bullet").tag(LibraryViewMode.list.rawValue)
+                        Label("Discover", systemImage: "sparkles").tag(LibraryViewMode.discover.rawValue)
                     }
-                    if !listMode {
+                    // Column zoom only means something in the gallery grid.
+                    if viewMode == .gallery {
                         Divider()
                         Button { columns = max(1, columns - 1) } label: { Label("Zoom In", systemImage: "plus.magnifyingglass") }
                         Button { columns = min(4, columns + 1) } label: { Label("Zoom Out", systemImage: "minus.magnifyingglass") }
@@ -208,6 +241,20 @@ struct LibraryView: View {
                 }
                 .accessibilityLabel("Import and view options")
             }
+        }
+    }
+
+    /// Same system empty-state treatment as Recents / Bookmarks. Shown for every view mode.
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("No comics yet", systemImage: "books.vertical")
+        } description: {
+            Text("Import a CBZ or CBR to get started.")
+        } actions: {
+            Button { showImporter = true } label: {
+                Label("Import", systemImage: "square.and.arrow.down")
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 

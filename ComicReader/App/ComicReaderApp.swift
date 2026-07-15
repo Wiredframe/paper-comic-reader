@@ -41,6 +41,13 @@ struct ComicReaderApp: App {
     /// Hand-off for comics opened from outside the app (Files, "Open With", share sheet).
     @StateObject private var fileOpener = FileOpenCoordinator()
 
+    init() {
+        // Fold the old `library.listMode` Bool into the three-way view mode. Property
+        // initializers run before this, but nothing reads @AppStorage until the WindowGroup
+        // body below, so it lands in time. Self-deleting — a no-op on every later launch.
+        LibraryViewMode.migrateIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootTabView()

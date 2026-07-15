@@ -10,7 +10,11 @@
 
 import UIKit
 
-final class PageImageStore {
+/// `@unchecked Sendable` is the design, not a shortcut: every archive read and every mutation
+/// of `paperEnabled` / `paperParams` happens on the private `work` queue (the ZIP/RAR readers
+/// are not thread-safe), and both caches are `NSCache`, which is. The type is handed between
+/// the main actor and that queue on every page request.
+final class PageImageStore: @unchecked Sendable {
 
     /// 0 when the archive couldn't be opened (missing/corrupt file after import) — the
     /// reader shows an "unavailable" state rather than a run of blank pages, since trusting
@@ -103,8 +107,9 @@ final class PageImageStore {
     /// re-extract and re-downsample every page. Honours task cancellation, so fast grid
     /// scrolling doesn't backlog the decode queue with pages already scrolled past.
     func thumbnail(at index: Int, maxPixel: CGFloat = 260) async -> UIImage? {
-        let key = "\(index)#\(Int(maxPixel))" as NSString
-        if let cached = thumbCache.object(forKey: key) { return cached }
+        // Kept as a String (Sendable) so the decode closure below doesn't capture an NSString.
+        let key = "\(index)#\(Int(maxPixel))"
+        if let cached = thumbCache.object(forKey: key as NSString) { return cached }
         // Only the small, oft-revisited grid thumbnails are worth a disk cache; a bookmark's
         // one-off full-size shot isn't.
         let persist = maxPixel <= 400
@@ -114,13 +119,13 @@ final class PageImageStore {
                 work.async { [weak self] in
                     guard let self, !flag.isCancelled else { return continuation.resume(returning: nil) }
                     if persist, let disk = self.diskThumb(index: index, maxPixel: maxPixel) {
-                        self.thumbCache.setObject(disk, forKey: key, cost: Self.cost(of: disk))
+                        self.thumbCache.setObject(disk, forKey: key as NSString, cost: Self.cost(of: disk))
                         return continuation.resume(returning: disk)
                     }
                     let image = (self.archive?.pageData(at: index))
                         .flatMap { ImageDownsampler.downsample($0, maxPixel: maxPixel) }
                     if let image {
-                        self.thumbCache.setObject(image, forKey: key, cost: Self.cost(of: image))
+                        self.thumbCache.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
                         if persist { ImageDownsampler.writeJPEG(image, to: self.thumbDiskURL(index: index, maxPixel: maxPixel)) }
                     }
                     continuation.resume(returning: image)
@@ -147,8 +152,9 @@ final class PageImageStore {
 }
 
 /// Thread-safe cancellation flag: set from a task-cancellation handler, read on the decode
-/// queue so a superseded thumbnail request skips its decode.
-private final class CancelFlag {
+/// queue so a superseded thumbnail request skips its decode. Unchecked because the lock is
+/// the synchronisation.
+private final class CancelFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
     var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }

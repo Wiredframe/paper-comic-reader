@@ -34,6 +34,21 @@ enum ImageDownsampler {
         return UIImage(cgImage: cg)
     }
 
+    /// Aspect (width / height) of the image at `url`, read from its **header only** — no
+    /// bitmap is decoded, so this is cheap enough to run across a whole library. Backfills
+    /// `ComicBook.coverAspect` for covers imported before it was captured. Stored covers are
+    /// written already orientation-normalised (see `kCGImageSourceCreateThumbnailWithTransform`
+    /// above), so the raw pixel dimensions need no transform.
+    static func pixelAspect(ofImageAt url: URL) -> Double? {
+        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, options),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = props[kCGImagePropertyPixelWidth] as? Double,
+              let height = props[kCGImagePropertyPixelHeight] as? Double,
+              height > 0 else { return nil }
+        return width / height
+    }
+
     @discardableResult
     static func writeJPEG(_ image: UIImage, to url: URL, quality: CGFloat = 0.85) -> Bool {
         guard let data = image.jpegData(compressionQuality: quality) else { return false }

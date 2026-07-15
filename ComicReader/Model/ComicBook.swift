@@ -25,6 +25,14 @@ final class ComicBook {
                                  // manually from the cover menu, or automatically once
                                  // the reader reaches the last page. Default via the
                                  // property initializer keeps SwiftData migration additive.
+    var openCount: Int = 0       // how often the comic was opened — read as "popularity"
+                                 // by the library sort and the Discover modes. Monotonic:
+                                 // deliberately NOT cleared by Recents' "Clear", which only
+                                 // forgets `dateOpened`. Defaulted, so migration stays additive.
+    var coverAspect: Double?     // cover width / height, captured at import. Stored because
+                                 // DiskImage fills whatever frame it's given and can't report
+                                 // the artwork's shape — Discover needs it to size a card that
+                                 // doesn't crop. Optional, so migration stays additive.
 
     @Relationship(deleteRule: .cascade, inverse: \Bookmark.book)
     var bookmarks: [Bookmark] = []
@@ -34,7 +42,8 @@ final class ComicBook {
          fileName: String,
          format: ComicFormat,
          pageCount: Int,
-         coverName: String?) {
+         coverName: String?,
+         coverAspect: Double? = nil) {
         self.id = id
         self.title = title
         self.fileName = fileName
@@ -44,6 +53,7 @@ final class ComicBook {
         self.dateOpened = nil
         self.lastReadPage = 0
         self.coverName = coverName
+        self.coverAspect = coverAspect
     }
 
     var format: ComicFormat { formatRaw == "rar" ? .rar : .zip }
@@ -58,4 +68,13 @@ final class ComicBook {
 
     /// "12 pages" / "1 page" — inflected for the cover and list captions.
     var pageCountLabel: String { "\(pageCount) page\(pageCount == 1 ? "" : "s")" }
+
+    /// "Opened 7 times" / "Opened once" / "Never opened" — for the Discover info panel.
+    var openCountLabel: String {
+        switch openCount {
+        case 0:  return "Never opened"
+        case 1:  return "Opened once"
+        default: return "Opened \(openCount) times"
+        }
+    }
 }

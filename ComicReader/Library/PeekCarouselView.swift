@@ -82,22 +82,10 @@ struct PeekCarouselView: View {
     let onOpen: (ComicBook, Int?) -> Void
 
     @Environment(\.modelContext) private var context
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("library.discoveryMode") private var filterRaw = DiscoveryFilter.discover.rawValue
 
     @State private var centeredID: UUID?
 
-    /// How much of each neighbour stays visible either side — this is what makes it a peek
-    /// carousel, and it (not a height percentage) is what bounds the cover's size.
-    private let peekInset: CGFloat = 52
-    private let slotSpacing: CGFloat = 14
-    // Room for the cover's shadow, which the ScrollView would otherwise clip. A Gaussian blur
-    // spreads roughly 1.5x its radius, so `.shadow(radius: 18, y: 8)` actually reaches about
-    // 27 + 8 = 35pt below the cover and 27 - 8 = 19pt above — not the 26/10 the radius alone
-    // suggests. Asymmetric on purpose: reserving the same both sides wasted room up top and
-    // still clipped the tail against the panel.
-    private let shadowTop: CGFloat = 20
-    private let shadowBottom: CGFloat = 40
     /// Fixed, so swiping between comics with different title lengths can't resize the panel
     /// and make the covers jump.
     private let panelHeight: CGFloat = 132
@@ -117,12 +105,8 @@ struct PeekCarouselView: View {
         return books.filter { filter.matches($0) }
     }
 
-    /// The comic the pinned panel describes. Falls back to the first so the panel has a
-    /// subject before the first scroll settles.
-    private var centeredBook: ComicBook? {
-        if let id = centeredID, let match = visibleBooks.first(where: { $0.id == id }) { return match }
-        return visibleBooks.first
-    }
+    /// The comic the pinned panel describes — the same one the deck draws as centred.
+    private var centeredBook: ComicBook? { peekCentered(in: visibleBooks, id: centeredID) }
 
     /// The relationship is a set, not a sequence — for a per-comic section, reading order is
     /// the only order that makes sense.
@@ -179,15 +163,13 @@ struct PeekCarouselView: View {
         VStack(spacing: 16) {
             if showsFilters { filterPicker }
 
-            GeometryReader { geo in
-                if visibleBooks.isEmpty {
-                    ContentUnavailableView(filter.emptyTitle,
-                                           systemImage: filter.emptyIcon,
-                                           description: Text(filter.emptyMessage))
-                        .frame(width: geo.size.width, height: geo.size.height)
-                } else {
-                    carousel(in: geo.size)
-                }
+            if visibleBooks.isEmpty {
+                ContentUnavailableView(filter.emptyTitle,
+                                       systemImage: filter.emptyIcon,
+                                       description: Text(filter.emptyMessage))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                PeekDeck(items: visibleBooks, centeredID: $centeredID, art: art) { onOpen($0, nil) }
             }
 
             // Pinned: it doesn't travel with the cards, only its contents change as you swipe.
@@ -212,85 +194,13 @@ struct PeekCarouselView: View {
         .padding(.horizontal)
     }
 
-    // MARK: Carousel
+    // MARK: Deck adapter
 
-    private func carousel(in size: CGSize) -> some View {
-        // The slot is what the peek leaves over; the cover then fills it (unless it's so tall
-        // that the height caps it first — see `card`).
-        let slotW = max(120, size.width - 2 * peekInset)
-        // Read once here: `.scrollTransition`'s closure is @Sendable and can't touch
-        // main-actor state like the environment.
-        let animate = !reduceMotion
-
-        return ScrollView(.horizontal) {
-            LazyHStack(spacing: slotSpacing) {
-                ForEach(visibleBooks) { book in
-                    card(book, slotW: slotW, boxH: size.height)
-                        .frame(width: slotW)
-                        // Visual only — the layout keeps a clean, even stride, so viewAligned
-                        // still snaps each card dead centre while they visually overlap.
-                        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                            content
-                                .scaleEffect(animate ? 1 - 0.14 * abs(phase.value) : 1)
-                                .offset(x: animate ? -phase.value * 26 : 0)   // pull neighbours inward
-                                .opacity(animate ? 1 - 0.3 * abs(phase.value) : 1)
-                        }
-                        .zIndex(centeredBook?.id == book.id ? 1 : 0)
-                }
-            }
-            .scrollTargetLayout()
-        }
-        .scrollTargetBehavior(.viewAligned)
-        .scrollIndicators(.hidden)
-        // These margins are what let the first and last card reach the middle — and together
-        // with viewAligned they ARE the centring. Note there is deliberately no
-        // `anchor: .center` on scrollPosition below: that would centre a second time, pushing
-        // every card one full inset to the right.
-        .contentMargins(.horizontal, max(0, (size.width - slotW) / 2), for: .scrollContent)
-        .scrollPosition(id: $centeredID)
-        .sensoryFeedback(.selection, trigger: centeredID)
-    }
-
-    // MARK: Card
-
-    private func card(_ book: ComicBook, slotW: CGFloat, boxH: CGFloat) -> some View {
-        // Width-driven: the cover fills its slot, and only a very tall cover gets capped by the
-        // height left once the shadow has room. Either way it is never cropped.
-        let aspect = book.coverAspect ?? (2.0 / 3.0)
-        let coverH = min(max(80, boxH - shadowTop - shadowBottom), slotW / aspect)
-        let coverW = coverH * aspect
-        // Fall back to `centeredBook` so the first card counts as centred before any scroll
-        // has reported an id — otherwise its first tap would try to centre it instead of
-        // opening it.
-        let isCentered = centeredBook?.id == book.id
-
-        // Spacers with different minimums: the cover still sits about centred when there's
-        // room to spare, but can never come closer to either edge than its shadow needs.
-        return VStack(spacing: 0) {
-            Spacer(minLength: shadowTop)
-            cover(book, width: coverW, height: coverH)
-            Spacer(minLength: shadowBottom)
-        }
-            .frame(width: slotW, height: boxH)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                if isCentered {
-                    onOpen(book, nil)   // its details are already on screen — a tap just reads it
-                } else {
-                    withAnimation(.snappy(duration: 0.28)) { centeredID = book.id }
-                }
-            }
-    }
-
-    private func cover(_ book: ComicBook, width: CGFloat, height: CGFloat) -> some View {
-        DiskImage(url: book.coverURL, contentMode: .fit,
-                  maxPixel: ImageDownsampler.libraryCardPixel)
-            .frame(width: width, height: height)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.primary.opacity(0.1)))
-            .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
-            .accessibilityLabel(book.title)
+    /// How a comic looks in the deck: its cover, and the shape needed to size a card that
+    /// doesn't crop it. `coverAspect` is nil only until `backfillCoverAspects` has run over
+    /// comics imported before it existed — 2:3 is the usual comic-book cover.
+    private func art(_ book: ComicBook) -> PeekArt {
+        PeekArt(url: book.coverURL, aspect: book.coverAspect ?? (2.0 / 3.0), label: book.title)
     }
 
     // MARK: Pinned info panel

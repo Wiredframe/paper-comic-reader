@@ -357,7 +357,13 @@ struct ReaderView: View {
                 guard let image = await store?.thumbnail(at: page, maxPixel: ImageDownsampler.libraryCardPixel) else { return }
                 let name = "\(UUID().uuidString).jpg"
                 ImageDownsampler.writeJPEG(image, to: Storage.bookmarkThumbURL(name))
-                context.insert(Bookmark(pageIndex: page, thumbName: name, book: book))
+                // The page's shape, free — the carousel needs it to size an uncropped card, and
+                // the decoded image is right here. Older bookmarks get it backfilled from the
+                // thumbnail's header instead.
+                let aspect: Double? = image.size.height > 0
+                    ? Double(image.size.width / image.size.height) : nil
+                context.insert(Bookmark(pageIndex: page, thumbName: name,
+                                        pageAspect: aspect, book: book))
                 try? context.save()
                 bookmarkTick += 1
             }

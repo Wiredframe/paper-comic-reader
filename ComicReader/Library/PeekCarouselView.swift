@@ -78,6 +78,10 @@ struct PeekCarouselView: View {
     /// Only Recents supplies this — it puts a "forget this one" button in the panel, which the
     /// cover grid used to offer via its context menu.
     var onRemoveFromRecents: ((ComicBook) -> Void)? = nil
+    /// Pair with `.navigationTransition(.zoom(sourceID: book.id, in:))` on the reader the
+    /// caller presents: the cover grows into the reader, and the presentation gains the
+    /// system's interactive drag-down dismiss.
+    var transitionNamespace: Namespace.ID? = nil
     /// The page is nil for "open where you left off", or a bookmark's page for a direct jump.
     let onOpen: (ComicBook, Int?) -> Void
 
@@ -169,7 +173,9 @@ struct PeekCarouselView: View {
                                        description: Text(filter.emptyMessage))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                PeekDeck(items: visibleBooks, centeredID: $centeredID, art: art) { onOpen($0, nil) }
+                PeekDeck(items: visibleBooks, centeredID: $centeredID, art: art,
+                         onOpen: { onOpen($0, nil) },
+                         transitionNamespace: transitionNamespace)
             }
 
             // Pinned: it doesn't travel with the cards, only its contents change as you swipe.

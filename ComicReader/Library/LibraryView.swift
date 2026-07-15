@@ -68,6 +68,10 @@ struct LibraryView: View {
     /// Bumped by the shuffle button in Discover mode — the carousel glides to a random comic
     /// rather than opening one.
     @State private var randomTick = 0
+    /// Ties the carousel's cover to the reader it opens, so the cover grows into the reader
+    /// instead of the reader sliding up over it — and the reader gets the system's drag-down
+    /// dismiss along with it.
+    @Namespace private var readerZoom
 
     /// Live state of a running batch import, driving the progress overlay.
     struct ImportProgress: Equatable { var done: Int; var total: Int }
@@ -113,7 +117,8 @@ struct LibraryView: View {
                     // because it needs the real available height to size its card. It gets
                     // `sortedBooks`, so Discover follows the same sort menu as the grid — its
                     // segments only filter.
-                    PeekCarouselView(books: sortedBooks, randomTrigger: randomTick) { book, page in
+                    PeekCarouselView(books: sortedBooks, randomTrigger: randomTick,
+                                     transitionNamespace: readerZoom) { book, page in
                         target = ReaderTarget(book: book, page: page)
                     }
                 } else {
@@ -146,6 +151,9 @@ struct LibraryView: View {
         } message: { Text(importError ?? "") }
         .fullScreenCover(item: $target) { target in
             ReaderView(book: target.book, initialPage: target.page)
+                // Resolves against the carousel's cover. In the grid and list there's no source
+                // with this id, and the presentation falls back to the standard slide-up.
+                .navigationTransition(.zoom(sourceID: target.book.id, in: readerZoom))
         }
         .overlay {
             if let progress = importProgress {

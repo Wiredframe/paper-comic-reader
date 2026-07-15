@@ -37,6 +37,11 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
     let art: (Item) -> PeekArt
     /// Called when the centred slot is tapped. Tapping a neighbour centres it instead.
     let onOpen: (Item) -> Void
+    /// Supply this, and pair it with `.navigationTransition(.zoom(sourceID:in:))` on whatever
+    /// the tap presents, to have the art itself grow into the presented view rather than a
+    /// sheet sliding up over it. It also buys the presentation a native interactive dismiss —
+    /// the same drag-it-back-down the system uses everywhere else.
+    var transitionNamespace: Namespace.ID? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -109,7 +114,7 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
         // to spare, but can never come closer to either edge than its shadow needs.
         return VStack(spacing: 0) {
             Spacer(minLength: shadowTop)
-            image(art, width: artW, height: artH)
+            transitionSource(image(art, width: artW, height: artH), id: item.id)
             Spacer(minLength: shadowBottom)
         }
             .frame(width: slotW, height: boxH)
@@ -121,6 +126,19 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
                     withAnimation(.snappy(duration: 0.28)) { centeredID = item.id }
                 }
             }
+    }
+
+    /// Anchors the zoom transition on the art itself — not the slot, which is the full peek
+    /// width and mostly empty, so anchoring there would grow the reader out of a transparent
+    /// box around the cover rather than out of the cover. No-op for callers that don't want a
+    /// zoom (`.matchedTransitionSource` takes no optional namespace, hence the branch).
+    @ViewBuilder
+    private func transitionSource(_ view: some View, id: UUID) -> some View {
+        if let transitionNamespace {
+            view.matchedTransitionSource(id: id, in: transitionNamespace)
+        } else {
+            view
+        }
     }
 
     private func image(_ art: PeekArt, width: CGFloat, height: CGFloat) -> some View {

@@ -16,6 +16,8 @@ struct RecentsView: View {
     private var books: [ComicBook]
 
     @State private var target: ReaderTarget?
+    /// Ties the carousel's cover to the reader it opens — see LibraryView.
+    @Namespace private var readerZoom
 
     var body: some View {
         NavigationStack {
@@ -32,7 +34,8 @@ struct RecentsView: View {
                     // recently opened first) — so no filter segments here.
                     PeekCarouselView(books: books,
                                      showsFilters: false,
-                                     onRemoveFromRecents: removeFromRecents) { book, page in
+                                     onRemoveFromRecents: removeFromRecents,
+                                     transitionNamespace: readerZoom) { book, page in
                         target = ReaderTarget(book: book, page: page)
                     }
                 }
@@ -49,6 +52,7 @@ struct RecentsView: View {
         }
         .fullScreenCover(item: $target) { target in
             ReaderView(book: target.book, initialPage: target.page)
+                .navigationTransition(.zoom(sourceID: target.book.id, in: readerZoom))
         }
     }
 

@@ -64,7 +64,7 @@ struct PaperSettingsView: View {
 			HStack {
 				Text(title)
 				Spacer()
-				Text(String(format: "%.2f", value.wrappedValue))
+				Text("\(Int((Double(value.wrappedValue) / range.upperBound * 100).rounded()))%")
 					.monospacedDigit()
 					.foregroundStyle(.secondary)
 			}

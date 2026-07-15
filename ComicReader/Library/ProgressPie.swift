@@ -10,13 +10,16 @@ import SwiftUI
 struct ProgressPie: View {
     let progress: Double        // 0…1
     var size: CGFloat = 15
+    // Scale with Dynamic Type so the pie tracks the adjacent caption text instead of
+    // staying a fixed size while the label grows.
+    @ScaledMetric(relativeTo: .caption) private var unit: CGFloat = 1
 
     var body: some View {
         ZStack {
             Circle().stroke(Color.secondary, lineWidth: 1)
             PieWedge(progress: progress).fill(Color.secondary)
         }
-        .frame(width: size, height: size)
+        .frame(width: size * unit, height: size * unit)
         .accessibilityLabel("Reading progress")
         .accessibilityValue("\(Int((min(1, max(0, progress)) * 100).rounded())) percent")
     }
@@ -27,10 +30,11 @@ struct ProgressPie: View {
 /// own always-visible mark (a filled green check) rather than riding on read progress.
 struct ReadCheck: View {
     var size: CGFloat = 15
+    @ScaledMetric(relativeTo: .caption) private var unit: CGFloat = 1
 
     var body: some View {
         Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: size))
+            .font(.system(size: size * unit))
             .foregroundStyle(.green)
             .accessibilityLabel("Read")
     }

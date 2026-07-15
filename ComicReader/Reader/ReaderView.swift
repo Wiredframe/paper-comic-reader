@@ -26,6 +26,7 @@ struct ReaderView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var paper: PaperSettings
     @EnvironmentObject private var settings: ReaderSettings
     // The reader is a fullScreenCover; `.preferredColorScheme` set on the tab view does
@@ -89,7 +90,7 @@ struct ReaderView: View {
         ZStack {
             readerBackground.ignoresSafeArea()
 
-            if let store {
+            if let store, store.pageCount > 0 {
                 ReaderHost(store: store,
                            settings: settings,
                            startIndex: clampedStart(store.pageCount),
@@ -99,6 +100,9 @@ struct ReaderView: View {
                            backgroundColor: readerBackgroundUIColor,
                            onToggleChrome: toggleChrome)
                     .ignoresSafeArea()
+            } else if store != nil {
+                // Archive couldn't be opened (missing / corrupt after import).
+                ReaderUnavailableView()
             } else {
                 ProgressView().tint(.secondary)   // reads on both the dark and the light letterbox mat
             }
@@ -116,26 +120,30 @@ struct ReaderView: View {
         .onAppear(perform: setup)
         .onDisappear {
             autoHide?.cancel()
+            persistProgress()   // durable checkpoint on leaving the reader
             // Guaranteed portrait reset on close — a fallback for the controller's
             // viewWillDisappear (which doesn't always fire for a fullScreenCover), so a
             // forced landscape never lingers after leaving the reader.
             OrientationGate.lockPortrait()
         }
         .onChange(of: currentPage) { _, page in
-            saveProgress(page)
             if page >= pageCount - 1 { markRead() }
+        }
+        // Save the resume page when the app leaves the foreground (progress only needs to
+        // survive backgrounding / closing, not every page turn — see persistProgress).
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { persistProgress() }
         }
         .onChange(of: paper.isEnabled) { reloadPaper() }
         .onChange(of: paper.params) { reloadPaper() }
         .sheet(isPresented: $showGrid) {
             if let store {
                 PageGridView(store: store, pageCount: store.pageCount, current: currentPage) { page in
-                    // Persist the selection here (a clean user event) and update the
-                    // counter. The scroll itself is driven by jumpTarget inside
-                    // updateUIViewController, where a state change wouldn't reliably fire
-                    // onChange — so resume-on-reopen would otherwise miss a grid jump.
-                    saveProgress(page)
+                    // Persist the jump here (a clean user event) and update the counter.
+                    // The scroll itself is driven by jumpTarget inside updateUIViewController,
+                    // where a state change wouldn't reliably fire onChange.
                     currentPage = page
+                    persistProgress()
                     jumpTarget = page
                     showGrid = false
                 }
@@ -149,25 +157,31 @@ struct ReaderView: View {
         VStack {
             topBar
             Spacer()
-            bottomBar
+            if hasPages { bottomBar }
         }
         // Standard label colour so the chrome icons are dark on light and white on dark,
         // matching the system reading apps. The buttons sit on `.ultraThinMaterial`.
         .foregroundStyle(.primary)
     }
 
+    /// False once an archive fails to open (pageCount 0) — the page counter and the reading
+    /// controls have nothing to act on, so the chrome shows just the Close button.
+    private var hasPages: Bool { pageCount > 0 }
+
     private var topBar: some View {
         HStack {
-            circleButton("xmark", label: "Close") { saveProgress(currentPage); dismiss() }
+            circleButton("xmark", label: "Close") { persistProgress(); dismiss() }
             Spacer()
-            Text("\(currentPage + 1) / \(pageCount)")
-                .font(.subheadline.weight(.semibold))
-                .monospacedDigit()
-                .padding(.horizontal, 14).padding(.vertical, 7)
-                .background(.ultraThinMaterial, in: Capsule())
-                .accessibilityLabel("Page \(currentPage + 1) of \(pageCount)")
+            if hasPages {
+                Text("\(currentPage + 1) / \(pageCount)")
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityLabel("Page \(currentPage + 1) of \(pageCount)")
+            }
             Spacer()
-            settingsMenu
+            if hasPages { settingsMenu }
         }
         .padding(.horizontal)
         .padding(.top, 8)
@@ -272,8 +286,9 @@ struct ReaderView: View {
         currentPage = clampedStart(store?.pageCount ?? 1)
         // Auto-mark read when opening already on the last page — `.onChange(of: currentPage)`
         // only fires on a change, so a 1-page comic (or resuming on the final page) would
-        // otherwise never be marked read despite reaching the end.
-        if currentPage >= pageCount - 1 { markRead() }
+        // otherwise never be marked read despite reaching the end. Guard on pageCount so a
+        // comic whose archive failed to open (pageCount 0) isn't marked read.
+        if pageCount > 0, currentPage >= pageCount - 1 { markRead() }
         book.dateOpened = .now
         try? context.save()
         scheduleAutoHide()   // the chrome starts visible, then fades after a moment
@@ -284,9 +299,13 @@ struct ReaderView: View {
         return min(max(base, 0), max(count - 1, 0))
     }
 
-    private func saveProgress(_ page: Int) {
-        guard book.lastReadPage != page else { return }
-        book.lastReadPage = page
+    /// Writes the resume page at durable checkpoints (close, backgrounding, a page-grid
+    /// jump) rather than on every page turn: a per-turn `save()` republishes the library
+    /// @Query (which re-sorts in its body), and reading progress only needs to survive
+    /// leaving the reader.
+    private func persistProgress() {
+        guard book.lastReadPage != currentPage else { return }
+        book.lastReadPage = currentPage
         try? context.save()
     }
 
@@ -323,8 +342,8 @@ struct ReaderView: View {
             let page = currentPage
             // Bookmark cards render at the same full-width size as covers, so match
             // the cover resolution rather than a small thumbnail.
-            store?.thumbnail(at: page, maxPixel: ImageDownsampler.libraryCardPixel) { image in
-                guard let image else { return }
+            Task { @MainActor in
+                guard let image = await store?.thumbnail(at: page, maxPixel: ImageDownsampler.libraryCardPixel) else { return }
                 let name = "\(UUID().uuidString).jpg"
                 ImageDownsampler.writeJPEG(image, to: Storage.bookmarkThumbURL(name))
                 context.insert(Bookmark(pageIndex: page, thumbName: name, book: book))
@@ -332,5 +351,17 @@ struct ReaderView: View {
                 bookmarkTick += 1
             }
         }
+    }
+}
+
+/// Shown when a comic's archive can't be opened — moved, deleted, or corrupted after import.
+/// Reachable via the reader's Close button in the chrome above.
+private struct ReaderUnavailableView: View {
+    var body: some View {
+        ContentUnavailableView(
+            "Couldn't open this comic",
+            systemImage: "exclamationmark.triangle",
+            description: Text("The file may have been moved, or is no longer a readable CBZ or CBR archive.")
+        )
     }
 }

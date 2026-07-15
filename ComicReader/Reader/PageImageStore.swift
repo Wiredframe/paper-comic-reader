@@ -12,8 +12,12 @@ import UIKit
 
 final class PageImageStore {
 
+    /// 0 when the archive couldn't be opened (missing/corrupt file after import) — the
+    /// reader shows an "unavailable" state rather than a run of blank pages, since trusting
+    /// the stale metadata page count would render `pageCount` empty slots.
     let pageCount: Int
 
+    private let bookID: UUID
     private let archive: ComicArchive?
     private let work = DispatchQueue(label: "de.wiredframe.comicreader.page-decode", qos: .userInitiated)
     private let cache = NSCache<NSNumber, UIImage>()
@@ -26,8 +30,9 @@ final class PageImageStore {
     private var paperParams: PaperParams
 
     init(book: ComicBook, paperEnabled: Bool, paperParams: PaperParams) {
+        self.bookID = book.id
         self.archive = try? ComicArchiveFactory.open(url: book.archiveURL)
-        self.pageCount = archive?.pageCount ?? book.pageCount
+        self.pageCount = archive?.pageCount ?? 0
         self.paperEnabled = paperEnabled
         self.paperParams = paperParams
         cache.countLimit = 10   // current page + double-page spread + ±2 prefetch fan-out
@@ -92,21 +97,60 @@ final class PageImageStore {
 
     // MARK: Thumbnails (no paper — for the page grid / bookmarks)
 
-    func thumbnail(at index: Int, maxPixel: CGFloat = 260, completion: @escaping (UIImage?) -> Void) {
+    /// A page thumbnail for the page grid (small) or a bookmark shot (full size). Checked in
+    /// order: in-memory cache → on-disk cache (small thumbnails only) → decode from archive.
+    /// Small thumbnails are persisted to `Storage.pageThumbs` so reopening the grid doesn't
+    /// re-extract and re-downsample every page. Honours task cancellation, so fast grid
+    /// scrolling doesn't backlog the decode queue with pages already scrolled past.
+    func thumbnail(at index: Int, maxPixel: CGFloat = 260) async -> UIImage? {
         let key = "\(index)#\(Int(maxPixel))" as NSString
-        if let cached = thumbCache.object(forKey: key) {
-            completion(cached)
-            return
+        if let cached = thumbCache.object(forKey: key) { return cached }
+        // Only the small, oft-revisited grid thumbnails are worth a disk cache; a bookmark's
+        // one-off full-size shot isn't.
+        let persist = maxPixel <= 400
+        let flag = CancelFlag()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
+                work.async { [weak self] in
+                    guard let self, !flag.isCancelled else { return continuation.resume(returning: nil) }
+                    if persist, let disk = self.diskThumb(index: index, maxPixel: maxPixel) {
+                        self.thumbCache.setObject(disk, forKey: key, cost: Self.cost(of: disk))
+                        return continuation.resume(returning: disk)
+                    }
+                    let image = (self.archive?.pageData(at: index))
+                        .flatMap { ImageDownsampler.downsample($0, maxPixel: maxPixel) }
+                    if let image {
+                        self.thumbCache.setObject(image, forKey: key, cost: Self.cost(of: image))
+                        if persist { ImageDownsampler.writeJPEG(image, to: self.thumbDiskURL(index: index, maxPixel: maxPixel)) }
+                    }
+                    continuation.resume(returning: image)
+                }
+            }
+        } onCancel: {
+            flag.cancel()
         }
-        work.async { [weak self] in
-            let image = (self?.archive?.pageData(at: index)).flatMap { ImageDownsampler.downsample($0, maxPixel: maxPixel) }
-            if let image { self?.thumbCache.setObject(image, forKey: key, cost: Self.cost(of: image)) }
-            DispatchQueue.main.async { completion(image) }
-        }
+    }
+
+    private func thumbDiskURL(index: Int, maxPixel: CGFloat) -> URL {
+        Storage.pageThumbs(for: bookID).appendingPathComponent("\(index)@\(Int(maxPixel)).jpg")
+    }
+
+    private func diskThumb(index: Int, maxPixel: CGFloat) -> UIImage? {
+        guard let data = try? Data(contentsOf: thumbDiskURL(index: index, maxPixel: maxPixel)) else { return nil }
+        return UIImage(data: data)
     }
 
     /// Approximate decoded size in bytes (4 per device pixel), for the thumbnail cost limit.
     private static func cost(of image: UIImage) -> Int {
         Int(image.size.width * image.scale * image.size.height * image.scale) * 4
     }
+}
+
+/// Thread-safe cancellation flag: set from a task-cancellation handler, read on the decode
+/// queue so a superseded thumbnail request skips its decode.
+private final class CancelFlag {
+    private let lock = NSLock()
+    private var cancelled = false
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
 }

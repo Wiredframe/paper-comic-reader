@@ -52,11 +52,6 @@ enum Legal {
     it, at any time and without notice, and may modify these terms. Continued use \
     after a change means you accept the updated terms.
 
-    Purchases
-    The app may offer optional, one-time in-app purchases ("tips") that support \
-    development and unlock no additional functionality. Purchases are handled by the \
-    App Store and are subject to Apple's terms.
-
     Governing Law
     These terms are governed by the laws of the Federal Republic of Germany, without \
     regard to conflict-of-law rules.
@@ -75,11 +70,6 @@ enum Legal {
     The comics you import, your reading progress, bookmarks and settings are stored \
     only on your device (and in your own iCloud backup, if you have one enabled for \
     the device). They are never uploaded to the developer or any third party.
-
-    In-app purchases
-    Optional tips are processed by Apple through the App Store. The developer never \
-    sees your payment details. Apple's own privacy policy applies to those \
-    transactions.
 
     Contact
     Questions about privacy? Email accounts@wiredframe.de.

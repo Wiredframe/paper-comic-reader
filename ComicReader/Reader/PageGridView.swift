@@ -74,7 +74,7 @@ struct PageThumb: View {
             }
         }
         .task(id: index) {
-            store.thumbnail(at: index) { loaded in image = loaded }
+            image = await store.thumbnail(at: index)
         }
     }
 }

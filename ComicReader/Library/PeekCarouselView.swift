@@ -89,12 +89,13 @@ struct PeekCarouselView: View {
     /// carousel, and it (not a height percentage) is what bounds the cover's size.
     private let peekInset: CGFloat = 52
     private let slotSpacing: CGFloat = 14
-    // Room for the cover's shadow, which the ScrollView would otherwise clip. Asymmetric on
-    // purpose: the shadow is offset downwards (radius 18, y 8), so it reaches ~26pt below the
-    // cover but only ~10pt above. Reserving the same on both sides wasted space up top and
+    // Room for the cover's shadow, which the ScrollView would otherwise clip. A Gaussian blur
+    // spreads roughly 1.5x its radius, so `.shadow(radius: 18, y: 8)` actually reaches about
+    // 27 + 8 = 35pt below the cover and 27 - 8 = 19pt above — not the 26/10 the radius alone
+    // suggests. Asymmetric on purpose: reserving the same both sides wasted room up top and
     // still clipped the tail against the panel.
-    private let shadowTop: CGFloat = 14
-    private let shadowBottom: CGFloat = 32
+    private let shadowTop: CGFloat = 20
+    private let shadowBottom: CGFloat = 40
     /// Fixed, so swiping between comics with different title lengths can't resize the panel
     /// and make the covers jump.
     private let panelHeight: CGFloat = 132
@@ -177,19 +178,19 @@ struct PeekCarouselView: View {
                                 .offset(x: animate ? -phase.value * 26 : 0)   // pull neighbours inward
                                 .opacity(animate ? 1 - 0.3 * abs(phase.value) : 1)
                         }
-                        .zIndex(book.id == centeredID ? 1 : 0)
+                        .zIndex(centeredBook?.id == book.id ? 1 : 0)
                 }
             }
             .scrollTargetLayout()
         }
         .scrollTargetBehavior(.viewAligned)
         .scrollIndicators(.hidden)
-        // Without this the first and last card could never reach the centre. It must be
-        // contentMargins rather than safeAreaPadding: scrollPosition's anchor maths counts
-        // content margins but not safe-area padding, which left the first card sitting one
-        // inset to the right of centre on open.
+        // These margins are what let the first and last card reach the middle — and together
+        // with viewAligned they ARE the centring. Note there is deliberately no
+        // `anchor: .center` on scrollPosition below: that would centre a second time, pushing
+        // every card one full inset to the right.
         .contentMargins(.horizontal, max(0, (size.width - slotW) / 2), for: .scrollContent)
-        .scrollPosition(id: $centeredID, anchor: .center)
+        .scrollPosition(id: $centeredID)
         .sensoryFeedback(.selection, trigger: centeredID)
     }
 
@@ -201,7 +202,10 @@ struct PeekCarouselView: View {
         let aspect = book.coverAspect ?? (2.0 / 3.0)
         let coverH = min(max(80, boxH - shadowTop - shadowBottom), slotW / aspect)
         let coverW = coverH * aspect
-        let isCentered = book.id == centeredID
+        // Fall back to `centeredBook` so the first card counts as centred before any scroll
+        // has reported an id — otherwise its first tap would try to centre it instead of
+        // opening it.
+        let isCentered = centeredBook?.id == book.id
 
         // Spacers with different minimums: the cover still sits about centred when there's
         // room to spare, but can never come closer to either edge than its shadow needs.

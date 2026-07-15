@@ -40,5 +40,8 @@ jobs:
           body: |
             Unsigned `.ipa` for sideloading (AltStore / Sideloadly / TrollStore).
 
+            **Requires iOS 26 or later.** On anything older the install fails with an
+            unhelpful error rather than saying why.
+
             iOS can't install this directly — see the README for how to sideload it and
             re-sign it with your own Apple ID.

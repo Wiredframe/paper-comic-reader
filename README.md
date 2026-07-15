@@ -26,7 +26,7 @@ Paper Comic Reader is **not on the App Store** — it ships as an **unsigned `.i
 - **[AltStore](https://altstore.io)** — run AltServer on a Mac or PC, then open the `.ipa` in AltStore on the device. A free Apple ID works, but the app stops launching after **7 days** until AltStore refreshes it (a paid Apple Developer account lasts a year).
 - **[Sideloadly](https://sideloadly.io)** — connect the device to a Mac or PC and load the `.ipa`. Same 7-day limit on a free Apple ID.
 
-Requires **iOS 18 or later**.
+Requires **iOS 26 or later**.
 
 
 ## Project setup
@@ -43,7 +43,7 @@ xcodebuild -project ComicReader.xcodeproj -scheme ComicReader \
 
 The generated `.xcodeproj` opens directly in Xcode without XcodeGen — you only need XcodeGen when you change `project.yml`. Signing is **automatic** with the developer team (`DEVELOPMENT_TEAM` in `project.yml`): Simulator builds need no profile, device and archive builds create one via your Apple ID (Xcode → Settings → Accounts). Shipping builds go out as an unsigned `.ipa` — see **Releasing** below.
 
-Deployment target: iOS 18 · Bundle id: `de.wiredframe.comicreader`
+Deployment target: iOS 26 · Bundle id: `de.wiredframe.comicreader`
 
 
 ## Releasing

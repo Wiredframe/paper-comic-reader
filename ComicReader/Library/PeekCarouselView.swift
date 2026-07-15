@@ -179,7 +179,14 @@ struct PeekCarouselView: View {
                     .padding(.horizontal)
             }
         }
+        // The tab bar's safe area puts the panel right up against the glass. Safe to add
+        // inside: `containerRelativeFrame` pins the deck's total height, so this squeezes the
+        // content rather than growing the deck — the paging boundary doesn't move.
+        .padding(.bottom, panelGap)
     }
+
+    /// Breathing room between the info panel and the tab bar below it.
+    private var panelGap: CGFloat { 10 }
 
     // MARK: Filter segments
 
@@ -224,21 +231,17 @@ struct PeekCarouselView: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
 
-            // One control size for the row, and a shared label height, so every button is
-            // exactly as tall as its neighbour.
+            // Read keeps its label; everything that isn't reading or the bookmarks hint goes
+            // in the overflow. With four buttons abreast "Read" was truncated down to nothing
+            // — and Mark as Read / Remove from Recents are rare enough to earn a tap.
             HStack(spacing: 10) {
                 Button { onOpen(book, nil) } label: {
                     Label("Read", systemImage: "book")
                         .frame(maxWidth: .infinity, minHeight: buttonLabelHeight)
+                        // The accent is a bright orange-yellow — white on it barely reads.
+                        .foregroundStyle(.black)
                 }
                 .buttonStyle(.borderedProminent)
-
-                Button { toggleRead(book) } label: {
-                    Image(systemName: book.isRead ? "circle" : "checkmark.circle")
-                        .frame(width: 28, height: buttonLabelHeight)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel(book.isRead ? "Mark as unread" : "Mark as read")
 
                 // Doubles as the "there's more below" hint: the bookmarks live a page down,
                 // where nothing is visible until you scroll, so their existence has to be
@@ -257,14 +260,22 @@ struct PeekCarouselView: View {
                     .accessibilityLabel("\(marks.count) bookmark\(marks.count == 1 ? "" : "s"), show below")
                 }
 
-                if let onRemoveFromRecents {
-                    Button { onRemoveFromRecents(book) } label: {
-                        Image(systemName: "clock.badge.xmark")
-                            .frame(width: 28, height: buttonLabelHeight)
+                Menu {
+                    Button { toggleRead(book) } label: {
+                        Label(book.isRead ? "Mark as Unread" : "Mark as Read",
+                              systemImage: book.isRead ? "circle" : "checkmark.circle")
                     }
-                    .buttonStyle(.bordered)
-                    .accessibilityLabel("Remove from Recents")
+                    if let onRemoveFromRecents {
+                        Button { onRemoveFromRecents(book) } label: {
+                            Label("Remove from Recents", systemImage: "clock.badge.xmark")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 28, height: buttonLabelHeight)
                 }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("More actions for this comic")
             }
             .controlSize(.large)
         }

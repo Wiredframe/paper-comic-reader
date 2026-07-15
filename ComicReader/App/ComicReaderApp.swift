@@ -125,6 +125,22 @@ enum OrientationGate {
         requestOrientation(.portrait)
     }
 
+    /// True while the interface is actually sideways — the reader asks before closing, since
+    /// only then does the rotation need to finish first (see `settleDuration`).
+    @MainActor static var isLandscape: Bool {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first else { return false }
+        return scene.effectiveGeometry.interfaceOrientation.isLandscape
+    }
+
+    /// How long to let the rotation settle before revealing what's behind the reader.
+    ///
+    /// `requestGeometryUpdate`'s trailing closure is an ERROR handler, not a completion — there
+    /// is no callback for "the rotation finished", so this is a timed wait rather than a
+    /// chained one. It's the system rotation animation's own length; the cost of being wrong is
+    /// cosmetic in one direction and a slightly late dismiss in the other.
+    static let settleDuration: TimeInterval = 0.35
+
     private static func requestOrientation(_ orientations: UIInterfaceOrientationMask) {
         guard let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene }).first else { return }

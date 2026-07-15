@@ -173,7 +173,7 @@ struct ReaderView: View {
 
     private var topBar: some View {
         HStack {
-            circleButton("xmark", label: "Close") { persistProgress(); dismiss() }
+            circleButton("xmark", label: "Close", action: close)
             Spacer()
             if hasPages {
                 Text("\(currentPage + 1) / \(pageCount)")
@@ -265,6 +265,26 @@ struct ReaderView: View {
     }
 
     private func toggleChrome() { chromeVisible ? hideChrome() : showChrome() }
+
+    /// Closes the reader, rotating back to portrait FIRST when sideways.
+    ///
+    /// The mask is app-wide and permissive while the reader is up, so everything behind it is
+    /// laid out in landscape too — just covered. Dismissing straight away reveals the library
+    /// sideways for the moment it takes the rotation to land, which reads as a bug. Rotating
+    /// while the reader still covers the screen means there's nothing sideways to see.
+    private func close() {
+        persistProgress()
+        autoHide?.cancel()
+        guard OrientationGate.isLandscape else {
+            OrientationGate.lockPortrait()
+            dismiss()
+            return
+        }
+        OrientationGate.lockPortrait()
+        DispatchQueue.main.asyncAfter(deadline: .now() + OrientationGate.settleDuration) {
+            dismiss()
+        }
+    }
 
     /// Fade the chrome out after a short idle so the controls never linger. Re-armed
     /// every time it's shown (tap, first open, rotation).

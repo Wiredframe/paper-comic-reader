@@ -42,6 +42,8 @@ struct BookmarkCarouselView: View {
                     .padding(.horizontal)
             }
         }
+        // Breathing room between the panel and the tab bar's glass below it.
+        .padding(.bottom, 10)
         .task { await backfillPageAspects() }
         .onAppear { if centeredID == nil { centeredID = bookmarks.first?.id } }
         .onChange(of: randomTrigger) { _, _ in jumpToRandom() }
@@ -84,6 +86,8 @@ struct BookmarkCarouselView: View {
                 Button { onOpenBookmark(mark) } label: {
                     Label("Read", systemImage: "bookmark.fill")
                         .frame(maxWidth: .infinity, minHeight: buttonLabelHeight)
+                        // The accent is a bright orange-yellow — white on it barely reads.
+                        .foregroundStyle(.black)
                 }
                 .buttonStyle(.borderedProminent)
 

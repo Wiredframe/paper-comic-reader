@@ -1,18 +1,18 @@
 //
-//  DiscoverView.swift
+//  PeekCarouselView.swift
 //  Comic Reader
 //
-//  The Library's "Discover" layout: one large, uncropped cover centred with its neighbours
-//  peeking in from either side, swiped left/right. Three orderings — a shuffle, most-opened
-//  ("Popular") and least-opened ("Gathering Dust") — all driven by ComicBook.openCount.
-//  Tapping the centred cover slides an info panel out beneath it.
+//  The cover carousel: one large, uncropped cover centred with its neighbours peeking in
+//  either side, swiped left/right, with the comic's details permanently below it. Used by
+//  the Library's "Discover" mode (which adds the mode switcher and its own orderings) and by
+//  Recents (which supplies its own most-recent-first order).
 //
 
 import SwiftUI
 import SwiftData
 
-/// Which comics the carousel shows, and in what order. Raw string in @AppStorage, like
-/// `LibrarySort` / `LibraryViewMode`.
+/// Which comics the Library's Discover mode shows, and in what order. Raw string in
+/// @AppStorage, like `LibrarySort` / `LibraryViewMode`.
 enum DiscoveryMode: String, CaseIterable, Identifiable {
     case discover, popular, dust
 
@@ -29,8 +29,14 @@ enum DiscoveryMode: String, CaseIterable, Identifiable {
     static func from(_ raw: String) -> DiscoveryMode { DiscoveryMode(rawValue: raw) ?? .discover }
 }
 
-struct DiscoverView: View {
+struct PeekCarouselView: View {
     let books: [ComicBook]
+    /// Library shows the Discover/Popular/Gathering Dust switcher and re-orders itself.
+    /// Recents passes false and keeps the order it was handed (most recently opened first).
+    var showsModes: Bool = true
+    /// Only Recents supplies this — it puts a "forget this one" button in the panel, which
+    /// the cover grid used to offer via its context menu.
+    var onRemoveFromRecents: ((ComicBook) -> Void)? = nil
     let onOpen: (ComicBook) -> Void
 
     @Environment(\.modelContext) private var context
@@ -42,7 +48,6 @@ struct DiscoverView: View {
     /// the deck mid-swipe. Ids (not references) so a deleted book can't dangle.
     @State private var order: [UUID] = []
     @State private var centeredID: UUID?
-    @State private var expanded = false
 
     private var mode: DiscoveryMode { .from(modeRaw) }
 
@@ -50,23 +55,25 @@ struct DiscoverView: View {
     /// carousel, and it (not a height percentage) is what bounds the cover's size.
     private let peekInset: CGFloat = 52
     private let slotSpacing: CGFloat = 14
-    /// Must be a constant — `.frame(height: nil)` doesn't animate.
-    private let panelHeight: CGFloat = 128
+    /// Room above the cover so its shadow isn't clipped by the ScrollView's bounds.
+    private let shadowPad: CGFloat = 28
+    private let coverToPanel: CGFloat = 16
+    private let panelHeight: CGFloat = 132
 
     private var orderedBooks: [ComicBook] {
-        let byID = Dictionary(books.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let byID = Dictionary(books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return order.compactMap { byID[$0] }
     }
 
     /// "Popular" on a library nobody has opened yet would silently degrade to date-added order
     /// and claim a popularity that doesn't exist.
     private var popularIsEmpty: Bool {
-        mode == .popular && books.allSatisfy { $0.openCount == 0 }
+        showsModes && mode == .popular && books.allSatisfy { $0.openCount == 0 }
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            modePicker
+        VStack(spacing: 20) {
+            if showsModes { modePicker }
             GeometryReader { geo in
                 if popularIsEmpty {
                     ContentUnavailableView("Nothing's popular yet",
@@ -137,42 +144,32 @@ struct DiscoverView: View {
 
     private func card(_ book: ComicBook, slotW: CGFloat, boxH: CGFloat) -> some View {
         // Width-driven: the cover fills its slot, and only a very tall cover gets capped by
-        // the available height. Either way it is never cropped.
+        // what's left once the panel and the shadow's breathing room are taken out. Either
+        // way it is never cropped.
         let aspect = book.coverAspect ?? (2.0 / 3.0)
-        let coverH = min(boxH, slotW / aspect)
+        // Exactly what's left once the shadow's top room, the gap and the panel are taken out
+        // — so a typical cover stays width-driven (filling its slot) rather than being
+        // needlessly capped by height.
+        let maxCoverH = max(80, boxH - shadowPad - coverToPanel - panelHeight)
+        let coverH = min(maxCoverH, slotW / aspect)
         let coverW = coverH * aspect
         let isCentered = book.id == centeredID
-        let showPanel = expanded && isCentered
-        // Shrink the cover by exactly the drawer's height — derived, so cover + panel fill the
-        // box at any aspect instead of overflowing.
-        let shrink = coverH > 0 ? min(1, max(0.4, (boxH - panelHeight - 10) / coverH)) : 1
 
-        return ZStack(alignment: .top) {
-            if showPanel {
-                infoPanel(book)
-                    .frame(width: slotW, height: panelHeight)
-                    .offset(y: coverH * shrink + 10)
-                    .transition(.opacity)
-            }
+        return VStack(spacing: coverToPanel) {
             cover(book, width: coverW, height: coverH)
-                // A pure GPU transform — no relayout, no re-decode.
-                .scaleEffect(showPanel ? shrink : 1, anchor: .top)
+            infoPanel(book)
+                .frame(width: slotW, height: panelHeight)
         }
+        .padding(.top, shadowPad)
         .frame(width: slotW, height: boxH, alignment: .top)
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.snappy(duration: 0.28)) {
-                if isCentered {
-                    expanded.toggle()
-                } else {
-                    // Tapping a neighbour brings it to the middle.
-                    centeredID = book.id
-                    expanded = false
-                }
+            if isCentered {
+                onOpen(book)          // the details are already on screen — a tap just reads it
+            } else {
+                withAnimation(.snappy(duration: 0.28)) { centeredID = book.id }
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(book.title)
     }
 
     private func cover(_ book: ComicBook, width: CGFloat, height: CGFloat) -> some View {
@@ -182,20 +179,8 @@ struct DiscoverView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.primary.opacity(0.1)))
-            .overlay(alignment: .bottom) { grabber }
             .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
-    }
-
-    /// The affordance for the info panel. Tapping anywhere on the centred card works — this
-    /// just advertises it. Deliberately not a drag: a vertical DragGesture on a child of a
-    /// horizontal ScrollView competes for the gesture and can kill the swipe.
-    private var grabber: some View {
-        Capsule()
-            .fill(.white.opacity(0.9))
-            .frame(width: 36, height: 5)
-            .shadow(color: .black.opacity(0.5), radius: 3)
-            .padding(.bottom, 10)
-            .accessibilityHidden(true)
+            .accessibilityLabel(book.title)
     }
 
     // MARK: Info panel
@@ -218,23 +203,39 @@ struct DiscoverView: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
 
+            // One control size for the row, and a shared label height, so every button is
+            // exactly as tall as its neighbour.
             HStack(spacing: 10) {
                 Button { onOpen(book) } label: {
-                    Label("Read", systemImage: "book").frame(maxWidth: .infinity)
+                    Label("Read", systemImage: "book")
+                        .frame(maxWidth: .infinity, minHeight: buttonLabelHeight)
                 }
                 .buttonStyle(.borderedProminent)
+
                 Button { toggleRead(book) } label: {
                     Image(systemName: book.isRead ? "circle" : "checkmark.circle")
-                        .frame(width: 44, height: 30)
+                        .frame(width: 28, height: buttonLabelHeight)
                 }
                 .buttonStyle(.bordered)
                 .accessibilityLabel(book.isRead ? "Mark as unread" : "Mark as read")
+
+                if let onRemoveFromRecents {
+                    Button { onRemoveFromRecents(book) } label: {
+                        Image(systemName: "clock.badge.xmark")
+                            .frame(width: 28, height: buttonLabelHeight)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Remove from Recents")
+                }
             }
+            .controlSize(.large)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
+
+    private var buttonLabelHeight: CGFloat { 24 }
 
     private func toggleRead(_ book: ComicBook) {
         book.isRead.toggle()
@@ -246,11 +247,10 @@ struct DiscoverView: View {
     private func reseed() {
         order = ordered(books).map(\.id)
         centeredID = order.first     // otherwise there's no subject until the first scroll
-        expanded = false
     }
 
-    /// Keep the existing order and just fold the change in — an import landing while Discover
-    /// is open must not reshuffle the deck under the user.
+    /// Keep the existing order and just fold the change in — an import landing (or a comic
+    /// being read, which re-sorts Recents) must not reshuffle the deck under the user.
     private func reconcile() {
         let live = Set(books.map(\.id))
         var next = order.filter { live.contains($0) }
@@ -262,6 +262,8 @@ struct DiscoverView: View {
     }
 
     private func ordered(_ books: [ComicBook]) -> [ComicBook] {
+        // Recents hands us its own order (most recently opened first) — don't second-guess it.
+        guard showsModes else { return books }
         switch mode {
         case .discover:
             return books.shuffled()

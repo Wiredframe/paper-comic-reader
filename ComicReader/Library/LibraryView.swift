@@ -101,10 +101,10 @@ struct LibraryView: View {
                 if books.isEmpty {
                     ScrollView { emptyState.padding(.top, 80) }
                 } else if viewMode == .discover {
-                    // Deliberately NOT inside a ScrollView: Discover needs the real available
-                    // height to size its card, and a horizontal scroll nested in a vertical
-                    // one fights for the gesture.
-                    DiscoverView(books: books) { openedBook = $0 }
+                    // Deliberately NOT inside a ScrollView: the carousel needs the real
+                    // available height to size its card, and a horizontal scroll nested in a
+                    // vertical one fights for the gesture.
+                    PeekCarouselView(books: books) { openedBook = $0 }
                 } else {
                     ScrollView {
                         LibraryGrid(books: sortedBooks, columns: columns, listMode: viewMode == .list,

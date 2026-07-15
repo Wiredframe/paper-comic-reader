@@ -15,22 +15,23 @@ struct RecentsView: View {
            sort: \ComicBook.dateOpened, order: .reverse)
     private var books: [ComicBook]
 
-    @AppStorage("library.columns") private var columns = 2
     @State private var openedBook: ComicBook?
 
     var body: some View {
         NavigationStack {
-            ScrollView {
+            Group {
                 if books.isEmpty {
-                    ContentUnavailableView("No recent comics",
-                                           systemImage: "clock",
-                                           description: Text("Comics you open show up here."))
-                        .padding(.top, 80)
+                    ScrollView {
+                        ContentUnavailableView("No recent comics",
+                                               systemImage: "clock",
+                                               description: Text("Comics you open show up here."))
+                            .padding(.top, 80)
+                    }
                 } else {
-                    LibraryGrid(books: books, columns: columns, inRecents: true) { openedBook = $0 }
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                        .padding(.bottom, FloatingTabBar.reservedSpace)
+                    // The cover carousel, in the order the @Query already gives us (most
+                    // recently opened first) — so no mode switcher here.
+                    PeekCarouselView(books: books, showsModes: false,
+                                     onRemoveFromRecents: removeFromRecents) { openedBook = $0 }
                 }
             }
             .navigationTitle("Recents")
@@ -52,6 +53,14 @@ struct RecentsView: View {
     /// bookmarks stay untouched — only the "recently read" ordering is reset.
     private func clearRecents() {
         for book in books { book.dateOpened = nil }
+        try? context.save()
+    }
+
+    /// Drops one comic from Recents without touching the library, its bookmarks or its open
+    /// count — just forgets when it was last opened. (The cover grid offered this in its
+    /// context menu; the carousel puts it in the info panel.)
+    private func removeFromRecents(_ book: ComicBook) {
+        book.dateOpened = nil
         try? context.save()
     }
 }

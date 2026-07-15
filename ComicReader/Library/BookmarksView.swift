@@ -96,7 +96,6 @@ struct BookmarksView: View {
                             }
                         }
                         .padding(.horizontal)
-                        .padding(.bottom, FloatingTabBar.reservedSpace)
                     }
                 } else {
                     ScrollView {
@@ -112,10 +111,6 @@ struct BookmarksView: View {
                         }
                         .padding(.horizontal)
                         .padding(.top, 8)
-                        // Clear the floating tab bar: its `.safeAreaInset` in RootTabView
-                        // doesn't reach a ScrollView nested in a NavigationStack, so the last
-                        // row would otherwise sit hidden behind the bar.
-                        .padding(.bottom, FloatingTabBar.reservedSpace)
                     }
                 }
             }

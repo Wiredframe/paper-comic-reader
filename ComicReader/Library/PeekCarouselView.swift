@@ -126,11 +126,12 @@ struct PeekCarouselView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 VStack(spacing: 0) {
-                    // One full container height, with the tab-bar room kept INSIDE the deck
-                    // (as the padding it always was). That keeps the resting layout identical
-                    // to the deck-only version, and makes the page boundary land exactly on
-                    // the section's first pixel — a deck sized `height - reservedSpace` would
-                    // put paging out of step by those 74pt and clip the section header.
+                    // Exactly one container height — which is also `.paging`'s page size, so
+                    // the page boundary lands on the section's first pixel by construction
+                    // rather than by arithmetic. (This is the canonical paging pattern, and
+                    // the reason it survives the tab bar: whatever the container height turns
+                    // out to be, both sides read the same number.) The tab bar's room is no
+                    // longer reserved by hand — the native TabView insets the scroll content.
                     deck(proxy: proxy)
                         .containerRelativeFrame(.vertical)
                         .id(Self.deckAnchor)
@@ -138,7 +139,6 @@ struct PeekCarouselView: View {
                     if let book = sectionBook() {
                         bookmarkSection(book)
                             .id(Self.bookmarksAnchor)
-                            .padding(.bottom, FloatingTabBar.reservedSpace)
                     }
                 }
             }
@@ -179,7 +179,6 @@ struct PeekCarouselView: View {
                     .padding(.horizontal)
             }
         }
-        .padding(.bottom, FloatingTabBar.reservedSpace)
     }
 
     // MARK: Filter segments

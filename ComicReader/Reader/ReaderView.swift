@@ -163,7 +163,7 @@ struct ReaderView: View {
             if hasPages { bottomBar }
         }
         // Standard label colour so the chrome icons are dark on light and white on dark,
-        // matching the system reading apps. The buttons sit on `.ultraThinMaterial`.
+        // matching the system reading apps. The buttons sit on Liquid Glass.
         .foregroundStyle(.primary)
     }
 
@@ -180,7 +180,7 @@ struct ReaderView: View {
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
                     .padding(.horizontal, 14).padding(.vertical, 7)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .glassEffect(in: Capsule())
                     .accessibilityLabel("Page \(currentPage + 1) of \(pageCount)")
             }
             Spacer()
@@ -204,7 +204,7 @@ struct ReaderView: View {
             Image(systemName: "slider.horizontal.3")
                 .font(.headline)
                 .frame(width: 44, height: 44)   // ≥ 44pt touch target
-                .background(.ultraThinMaterial, in: Circle())
+                .glassEffect(in: Circle())
         }
         .accessibilityLabel("Reader settings")
     }
@@ -224,7 +224,7 @@ struct ReaderView: View {
             }
         }
         .padding(.horizontal, 24).padding(.vertical, 13)
-        .background(.ultraThinMaterial, in: Capsule())
+        .glassEffect(in: Capsule())
         .padding(.bottom, 10)
     }
 
@@ -233,7 +233,7 @@ struct ReaderView: View {
             Image(systemName: icon)
                 .font(.headline)
                 .frame(width: 44, height: 44)   // ≥ 44pt touch target
-                .background(.ultraThinMaterial, in: Circle())
+                .glassEffect(in: Circle())
         }
         .accessibilityLabel(label)
     }

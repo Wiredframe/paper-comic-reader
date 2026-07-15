@@ -42,7 +42,6 @@ struct BookmarkCarouselView: View {
                     .padding(.horizontal)
             }
         }
-        .padding(.bottom, FloatingTabBar.reservedSpace)
         .task { await backfillPageAspects() }
         .onAppear { if centeredID == nil { centeredID = bookmarks.first?.id } }
         .onChange(of: randomTrigger) { _, _ in jumpToRandom() }

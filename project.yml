@@ -2,7 +2,11 @@ name: ComicReader
 options:
   bundleIdPrefix: de.wiredframe
   deploymentTarget:
-    iOS: "18.0"
+    # iOS 26: the app adopts Liquid Glass rather than straddling two design languages.
+    # Building against the iOS 26 SDK already gave every system control the glass look while
+    # the hand-rolled chrome stayed on iOS 18 materials — the deployment target is what lets
+    # that chrome catch up (native TabView, .glassEffect) without `if #available` everywhere.
+    iOS: "26.0"
   createIntermediateGroups: true
   minimumXcodeGenVersion: "2.40.0"
 

@@ -2,19 +2,26 @@
 //  RootTabView.swift
 //  Comic Reader
 //
-//  App shell: Recents / Library / Bookmarks / Settings with a floating capsule
-//  tab bar (matching the reference app), forced to the dark look.
+//  App shell: Recents / Library / Bookmarks / Settings.
+//
+//  This used to hand-roll a floating capsule tab bar, because back then the platform had no
+//  such thing. iOS 26 renders the native TabView as exactly that — a floating glass capsule —
+//  so the copy is gone. Two things fall out with it: the bar is real Liquid Glass instead of a
+//  material lookalike, and the tab bar now contributes a genuine safe-area inset, so screens no
+//  longer have to reserve bottom space by hand (see `FloatingTabBar.reservedSpace`, deleted).
 //
 
 import SwiftUI
 
 struct RootTabView: View {
-    enum Tab: Hashable { case recents, library, bookmarks, settings }
-    @State private var tab: Tab = Self.initialTab
+    /// Not called `Tab`: that would shadow SwiftUI's `Tab` inside the builder below.
+    enum Screen: Hashable { case recents, library, bookmarks, settings }
+
+    @State private var screen: Screen = Self.initialScreen
     @EnvironmentObject private var fileOpener: FileOpenCoordinator
     @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.system.rawValue
 
-    private static var initialTab: Tab {
+    private static var initialScreen: Screen {
         #if DEBUG
         switch ScreenshotSupport.initialTab {
         case "recents":   return .recents
@@ -27,12 +34,19 @@ struct RootTabView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color(.systemBackground).ignoresSafeArea()
-            content
-                .safeAreaInset(edge: .bottom) {
-                    FloatingTabBar(selection: $tab).padding(.bottom, FloatingTabBar.bottomOffset)
-                }
+        TabView(selection: $screen) {
+            Tab("Recents", systemImage: "clock", value: Screen.recents) {
+                RecentsView()
+            }
+            Tab("Library", systemImage: "books.vertical", value: Screen.library) {
+                LibraryView()
+            }
+            Tab("Bookmarks", systemImage: "bookmark", value: Screen.bookmarks) {
+                BookmarksView()
+            }
+            Tab("Settings", systemImage: "gearshape", value: Screen.settings) {
+                SettingsView()
+            }
         }
         .preferredColorScheme(AppAppearance.from(appearanceRaw).colorScheme)
         .tint(.accentColor)
@@ -40,67 +54,7 @@ struct RootTabView: View {
         // the newly imported book (and the reader it opens), or the import-failure
         // alert, is visible.
         .onChange(of: fileOpener.token) { _, _ in
-            if fileOpener.pendingBook != nil || fileOpener.pendingError != nil { tab = .library }
+            if fileOpener.pendingBook != nil || fileOpener.pendingError != nil { screen = .library }
         }
-    }
-
-    @ViewBuilder private var content: some View {
-        switch tab {
-        case .recents:   RecentsView()
-        case .library:   LibraryView()
-        case .bookmarks: BookmarksView()
-        case .settings:  SettingsView()
-        }
-    }
-}
-
-struct FloatingTabBar: View {
-    @Binding var selection: RootTabView.Tab
-    @Environment(\.colorScheme) private var scheme
-
-    // Layout constants, shared so scroll screens can reserve matching bottom space.
-    static let itemHeight: CGFloat = 48
-    static let capsulePadding: CGFloat = 6
-    /// Gap between the capsule and the bottom safe area (see RootTabView).
-    static let bottomOffset: CGFloat = 2
-    /// Bottom content inset the grid/reading screens add so their last row clears the
-    /// floating bar. `.safeAreaInset` places the bar but that inset doesn't reach a
-    /// ScrollView nested inside a NavigationStack, so each screen reserves the space:
-    /// the capsule height, its bottom offset, and a small breathing gap.
-    static var reservedSpace: CGFloat { itemHeight + capsulePadding * 2 + bottomOffset + 12 }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            item(.recents, "Recents", "clock")
-            item(.library, "Library", "books.vertical")
-            item(.bookmarks, "Bookmarks", "bookmark")
-            item(.settings, "Settings", "gearshape")
-        }
-        .padding(Self.capsulePadding)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.primary.opacity(0.1)))
-        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-    }
-
-    private func item(_ tab: RootTabView.Tab, _ title: String, _ icon: String) -> some View {
-        let active = selection == tab
-        // Active item is tinted with the accent in both modes (the light-mode accent
-        // #FF9500 is legible on white). Inactive items get a higher-contrast label in
-        // light mode than the washed-out secondary, closer to the system tab bar.
-        let inactiveColor: Color = scheme == .dark ? .secondary : Color.primary.opacity(0.55)
-        return Button {
-            withAnimation(.snappy(duration: 0.2)) { selection = tab }
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: icon).font(.system(size: 16, weight: .semibold))
-                Text(title).font(.caption2)
-            }
-            .foregroundStyle(active ? Color.accentColor : inactiveColor)
-            .frame(width: 82, height: Self.itemHeight)
-            .background {
-                if active { Capsule().fill(Color.accentColor.opacity(scheme == .dark ? 0.16 : 0.18)) }
-            }
-        }
-        .buttonStyle(.plain)
     }
 }

@@ -89,8 +89,12 @@ struct PeekCarouselView: View {
     /// carousel, and it (not a height percentage) is what bounds the cover's size.
     private let peekInset: CGFloat = 52
     private let slotSpacing: CGFloat = 14
-    /// Room around the cover so its shadow isn't clipped by the ScrollView's bounds.
-    private let shadowPad: CGFloat = 28
+    // Room for the cover's shadow, which the ScrollView would otherwise clip. Asymmetric on
+    // purpose: the shadow is offset downwards (radius 18, y 8), so it reaches ~26pt below the
+    // cover but only ~10pt above. Reserving the same on both sides wasted space up top and
+    // still clipped the tail against the panel.
+    private let shadowTop: CGFloat = 14
+    private let shadowBottom: CGFloat = 32
     /// Fixed, so swiping between comics with different title lengths can't resize the panel
     /// and make the covers jump.
     private let panelHeight: CGFloat = 132
@@ -180,8 +184,11 @@ struct PeekCarouselView: View {
         }
         .scrollTargetBehavior(.viewAligned)
         .scrollIndicators(.hidden)
-        // Without this the first and last card could never reach the centre.
-        .safeAreaPadding(.horizontal, max(0, (size.width - slotW) / 2))
+        // Without this the first and last card could never reach the centre. It must be
+        // contentMargins rather than safeAreaPadding: scrollPosition's anchor maths counts
+        // content margins but not safe-area padding, which left the first card sitting one
+        // inset to the right of centre on open.
+        .contentMargins(.horizontal, max(0, (size.width - slotW) / 2), for: .scrollContent)
         .scrollPosition(id: $centeredID, anchor: .center)
         .sensoryFeedback(.selection, trigger: centeredID)
     }
@@ -192,11 +199,17 @@ struct PeekCarouselView: View {
         // Width-driven: the cover fills its slot, and only a very tall cover gets capped by the
         // height left once the shadow has room. Either way it is never cropped.
         let aspect = book.coverAspect ?? (2.0 / 3.0)
-        let coverH = min(max(80, boxH - shadowPad * 2), slotW / aspect)
+        let coverH = min(max(80, boxH - shadowTop - shadowBottom), slotW / aspect)
         let coverW = coverH * aspect
         let isCentered = book.id == centeredID
 
-        return cover(book, width: coverW, height: coverH)
+        // Spacers with different minimums: the cover still sits about centred when there's
+        // room to spare, but can never come closer to either edge than its shadow needs.
+        return VStack(spacing: 0) {
+            Spacer(minLength: shadowTop)
+            cover(book, width: coverW, height: coverH)
+            Spacer(minLength: shadowBottom)
+        }
             .frame(width: slotW, height: boxH)
             .contentShape(Rectangle())
             .onTapGesture {

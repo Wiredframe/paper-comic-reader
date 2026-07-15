@@ -4,7 +4,8 @@
 //
 //  The cover carousel: one large, uncropped cover centred with its neighbours peeking in
 //  either side, swiped left/right, with the centred comic's details pinned below. Used by the
-//  Library's "Discover" mode (which adds the filter segments) and by Recents.
+//  Library's "Discover" mode (which adds the filter segments and the bookmarks section) and by
+//  Recents (deliberately reduced to just the deck).
 //
 //  Ordering is NOT decided here — the caller hands the books in already, so Discover follows
 //  the Library's sort menu and Recents its most-recent-first query. The segments only pick
@@ -72,18 +73,26 @@ struct PeekCarouselView: View {
     let books: [ComicBook]
     /// Library shows the filter segments; Recents doesn't (its deck is simply "what you opened").
     var showsFilters: Bool = true
+    /// Library puts the centred comic's bookmarks one page below the fold. Recents deliberately
+    /// stays reduced: it's the "get me back into what I was reading" screen, so it renders the
+    /// bare deck with no vertical scrolling at all.
+    var showsBookmarks: Bool = true
     /// Bumped by the Library's shuffle button to glide to a random comic in the current deck.
     var randomTrigger: Int = 0
     /// Only Recents supplies this — it puts a "forget this one" button in the panel, which the
     /// cover grid used to offer via its context menu.
     var onRemoveFromRecents: ((ComicBook) -> Void)? = nil
-    let onOpen: (ComicBook) -> Void
+    /// The page is nil for "open where you left off", or a bookmark's page for a direct jump.
+    let onOpen: (ComicBook, Int?) -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("library.discoveryMode") private var filterRaw = DiscoveryFilter.discover.rawValue
 
     @State private var centeredID: UUID?
+    /// Bumped when something off-deck changes the centred comic (the toolbar's shuffle is
+    /// reachable while the bookmarks are on screen), so the view can scroll back up to show it.
+    @State private var scrollTopTick = 0
 
     /// How much of each neighbour stays visible either side — this is what makes it a peek
     /// carousel, and it (not a height percentage) is what bounds the cover's size.
@@ -100,6 +109,14 @@ struct PeekCarouselView: View {
     /// and make the covers jump.
     private let panelHeight: CGFloat = 132
 
+    private static let deckAnchor = "deck"
+    private static let bookmarksAnchor = "bookmarks"
+    /// Two columns regardless of the library's zoom setting: this section exists to show the
+    /// bookmarked pages BIG, which is the whole reason it's worth a screen of its own.
+    private static let bookmarkColumns = Array(repeating: GridItem(.flexible(),
+                                                                   spacing: LibraryGridMetrics.spacing),
+                                               count: 2)
+
     private var filter: DiscoveryFilter { .from(filterRaw) }
 
     private var visibleBooks: [ComicBook] {
@@ -114,7 +131,72 @@ struct PeekCarouselView: View {
         return visibleBooks.first
     }
 
+    /// The relationship is a set, not a sequence — for a per-comic section, reading order is
+    /// the only order that makes sense.
+    private func bookmarks(of book: ComicBook) -> [Bookmark] {
+        book.bookmarks.sorted { $0.pageIndex < $1.pageIndex }
+    }
+
+    private func sectionBook() -> ComicBook? {
+        guard showsBookmarks, let book = centeredBook, !book.bookmarks.isEmpty else { return nil }
+        return book
+    }
+
     var body: some View {
+        Group {
+            if showsBookmarks {
+                scrollingBody
+            } else {
+                // Recents: the deck and nothing else, exactly as it was before the bookmarks
+                // section existed — no vertical scroll view to compete with the carousel.
+                deck(proxy: nil)
+            }
+        }
+        .task { await backfillCoverAspects() }
+        .onAppear { if centeredID == nil { centeredID = visibleBooks.first?.id } }
+        .onChange(of: filterRaw) { _, _ in centeredID = visibleBooks.first?.id }
+        .onChange(of: randomTrigger) { _, _ in
+            scrollTopTick += 1
+            jumpToRandom()
+        }
+    }
+
+    /// Library: the deck fills exactly one screen, the centred comic's bookmarks sit on the
+    /// next one. A comic without bookmarks has content exactly one screen tall, so
+    /// `.basedOnSize` means it doesn't scroll or bounce at all — indistinguishable from the
+    /// deck-only layout.
+    private var scrollingBody: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                VStack(spacing: 0) {
+                    // One full container height, with the tab-bar room kept INSIDE the deck
+                    // (as the padding it always was). That keeps the resting layout identical
+                    // to the deck-only version, and makes the page boundary land exactly on
+                    // the section's first pixel — a deck sized `height - reservedSpace` would
+                    // put paging out of step by those 74pt and clip the section header.
+                    deck(proxy: proxy)
+                        .containerRelativeFrame(.vertical)
+                        .id(Self.deckAnchor)
+
+                    if let book = sectionBook() {
+                        bookmarkSection(book)
+                            .id(Self.bookmarksAnchor)
+                            .padding(.bottom, FloatingTabBar.reservedSpace)
+                    }
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollTargetBehavior(.paging)
+            .scrollIndicators(.hidden)
+            .onChange(of: scrollTopTick) { _, _ in
+                withAnimation(.snappy(duration: 0.3)) { proxy.scrollTo(Self.deckAnchor, anchor: .top) }
+            }
+        }
+    }
+
+    // MARK: Deck (filters + carousel + pinned panel)
+
+    private func deck(proxy: ScrollViewProxy?) -> some View {
         VStack(spacing: 16) {
             if showsFilters { filterPicker }
 
@@ -131,16 +213,12 @@ struct PeekCarouselView: View {
 
             // Pinned: it doesn't travel with the cards, only its contents change as you swipe.
             if let book = centeredBook {
-                infoPanel(book)
+                infoPanel(book, proxy: proxy)
                     .frame(height: panelHeight)
                     .padding(.horizontal)
             }
         }
         .padding(.bottom, FloatingTabBar.reservedSpace)
-        .task { await backfillCoverAspects() }
-        .onAppear { if centeredID == nil { centeredID = visibleBooks.first?.id } }
-        .onChange(of: filterRaw) { _, _ in centeredID = visibleBooks.first?.id }
-        .onChange(of: randomTrigger) { _, _ in jumpToRandom() }
     }
 
     // MARK: Filter segments
@@ -218,7 +296,7 @@ struct PeekCarouselView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 if isCentered {
-                    onOpen(book)      // its details are already on screen — a tap just reads it
+                    onOpen(book, nil)   // its details are already on screen — a tap just reads it
                 } else {
                     withAnimation(.snappy(duration: 0.28)) { centeredID = book.id }
                 }
@@ -238,8 +316,10 @@ struct PeekCarouselView: View {
 
     // MARK: Pinned info panel
 
-    private func infoPanel(_ book: ComicBook) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func infoPanel(_ book: ComicBook, proxy: ScrollViewProxy?) -> some View {
+        let marks = bookmarks(of: book)
+
+        return VStack(alignment: .leading, spacing: 8) {
             Text(book.title)
                 .font(.headline)
                 .lineLimit(1)
@@ -259,7 +339,7 @@ struct PeekCarouselView: View {
             // One control size for the row, and a shared label height, so every button is
             // exactly as tall as its neighbour.
             HStack(spacing: 10) {
-                Button { onOpen(book) } label: {
+                Button { onOpen(book, nil) } label: {
                     Label("Read", systemImage: "book")
                         .frame(maxWidth: .infinity, minHeight: buttonLabelHeight)
                 }
@@ -271,6 +351,23 @@ struct PeekCarouselView: View {
                 }
                 .buttonStyle(.bordered)
                 .accessibilityLabel(book.isRead ? "Mark as unread" : "Mark as read")
+
+                // Doubles as the "there's more below" hint: the bookmarks live a page down,
+                // where nothing is visible until you scroll, so their existence has to be
+                // announced up here. Only shown when there ARE some, which is exactly what
+                // makes the section free for everyone else.
+                if showsBookmarks, !marks.isEmpty, let proxy {
+                    Button {
+                        withAnimation(.snappy(duration: 0.35)) {
+                            proxy.scrollTo(Self.bookmarksAnchor, anchor: .top)
+                        }
+                    } label: {
+                        Label("\(marks.count)", systemImage: "bookmark.fill")
+                            .frame(minHeight: buttonLabelHeight)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("\(marks.count) bookmark\(marks.count == 1 ? "" : "s"), show below")
+                }
 
                 if let onRemoveFromRecents {
                     Button { onRemoveFromRecents(book) } label: {
@@ -292,6 +389,42 @@ struct PeekCarouselView: View {
 
     private func toggleRead(_ book: ComicBook) {
         book.isRead.toggle()
+        try? context.save()
+    }
+
+    // MARK: Bookmarks section (one page below the deck)
+
+    private func bookmarkSection(_ book: ComicBook) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // The panel is a screen up by the time this is on show, so the section has to say
+            // whose bookmarks these are itself.
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Bookmarks")
+                    .font(.title3.weight(.semibold))
+                Text(book.title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            LazyVGrid(columns: Self.bookmarkColumns, spacing: LibraryGridMetrics.spacing) {
+                ForEach(bookmarks(of: book)) { mark in
+                    BookmarkCard(bookmark: mark, showsTitle: false,
+                                 maxPixel: LibraryGridMetrics.coverMaxPixel(columns: 2)) {
+                        onOpen(book, mark.pageIndex)
+                    } onDelete: {
+                        delete(mark)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 24)
+    }
+
+    private func delete(_ bookmark: Bookmark) {
+        try? Storage.fm.removeItem(at: bookmark.thumbURL)
+        context.delete(bookmark)
         try? context.save()
     }
 

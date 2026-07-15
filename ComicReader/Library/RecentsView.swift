@@ -15,7 +15,7 @@ struct RecentsView: View {
            sort: \ComicBook.dateOpened, order: .reverse)
     private var books: [ComicBook]
 
-    @State private var openedBook: ComicBook?
+    @State private var target: ReaderTarget?
 
     var body: some View {
         NavigationStack {
@@ -29,9 +29,14 @@ struct RecentsView: View {
                     }
                 } else {
                     // The cover carousel, in the order the @Query already gives us (most
-                    // recently opened first) — so no filter segments here.
-                    PeekCarouselView(books: books, showsFilters: false,
-                                     onRemoveFromRecents: removeFromRecents) { openedBook = $0 }
+                    // recently opened first) — so no filter segments here. No bookmarks section
+                    // either: this is the "get me back into what I was reading" screen, and it
+                    // stays deliberately reduced. The Bookmarks tab and the Library's Discover
+                    // mode are where bookmarks belong.
+                    PeekCarouselView(books: books, showsFilters: false, showsBookmarks: false,
+                                     onRemoveFromRecents: removeFromRecents) { book, _ in
+                        target = ReaderTarget(book: book)
+                    }
                 }
             }
             .navigationTitle("Recents")
@@ -44,8 +49,8 @@ struct RecentsView: View {
                 }
             }
         }
-        .fullScreenCover(item: $openedBook) { book in
-            ReaderView(book: book)
+        .fullScreenCover(item: $target) { target in
+            ReaderView(book: target.book, initialPage: target.page)
         }
     }
 

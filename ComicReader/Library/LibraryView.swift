@@ -52,7 +52,9 @@ struct LibraryView: View {
     @State private var showImporter = false
     @State private var importError: String?
     @State private var importProgress: ImportProgress?
-    @State private var openedBook: ComicBook?
+    /// The comic being read, and optionally the page to land on — the carousel's bookmark
+    /// cards open straight to their page, everything else resumes where it left off.
+    @State private var target: ReaderTarget?
     @State private var didAutoOpen = false
 
     // Multi-select (standard iOS "Select" mode): tap toggles a cover instead of opening it,
@@ -104,16 +106,18 @@ struct LibraryView: View {
                 if books.isEmpty {
                     ScrollView { emptyState.padding(.top, 80) }
                 } else if viewMode == .discover {
-                    // Deliberately NOT inside a ScrollView: the carousel needs the real
-                    // available height to size its card, and a horizontal scroll nested in a
-                    // vertical one fights for the gesture. It gets `sortedBooks`, so Discover
-                    // follows the same sort menu as the grid — its segments only filter.
-                    PeekCarouselView(books: sortedBooks, randomTrigger: randomTick) { openedBook = $0 }
+                    // No ScrollView here: the carousel brings its own, sized to the container,
+                    // because it needs the real available height to size its card. It gets
+                    // `sortedBooks`, so Discover follows the same sort menu as the grid — its
+                    // segments only filter.
+                    PeekCarouselView(books: sortedBooks, randomTrigger: randomTick) { book, page in
+                        target = ReaderTarget(book: book, page: page)
+                    }
                 } else {
                     ScrollView {
                         LibraryGrid(books: sortedBooks, columns: columns, listMode: viewMode == .list,
                                     selectionMode: selectionMode, selectedIDs: selection,
-                                    onToggleSelect: toggleSelection) { openedBook = $0 }
+                                    onToggleSelect: toggleSelection) { target = ReaderTarget(book: $0) }
                             .padding(.horizontal)
                             .padding(.top, 8)
                             // Clear the floating tab bar: its `.safeAreaInset` in RootTabView
@@ -141,8 +145,8 @@ struct LibraryView: View {
                                                      set: { if !$0 { importError = nil } })) {
             Button("OK") { importError = nil }
         } message: { Text(importError ?? "") }
-        .fullScreenCover(item: $openedBook) { book in
-            ReaderView(book: book)
+        .fullScreenCover(item: $target) { target in
+            ReaderView(book: target.book, initialPage: target.page)
         }
         .overlay {
             if let progress = importProgress {
@@ -162,15 +166,15 @@ struct LibraryView: View {
         #if DEBUG
         // Screenshot mode: once the seeded comic lands, open it in the reader.
         .onChange(of: books.count) { _, count in
-            if ScreenshotSupport.shouldOpenReader, !didAutoOpen, count > 0 {
+            if ScreenshotSupport.shouldOpenReader, !didAutoOpen, let first = books.first {
                 didAutoOpen = true
-                openedBook = books.first
+                target = ReaderTarget(book: first)
             }
         }
         .onAppear {
             if ScreenshotSupport.shouldOpenReader, !didAutoOpen, let first = books.first {
                 didAutoOpen = true
-                openedBook = first
+                target = ReaderTarget(book: first)
             }
         }
         #endif
@@ -205,7 +209,7 @@ struct LibraryView: View {
                     // In the carousel, shuffling means "show me something else" — glide the
                     // deck to a random comic instead of yanking the reader open.
                     if viewMode == .discover { randomTick += 1 }
-                    else { openedBook = books.randomElement() }
+                    else { target = books.randomElement().map { ReaderTarget(book: $0) } }
                 } label: {
                     Image(systemName: "shuffle")
                 }
@@ -299,7 +303,7 @@ struct LibraryView: View {
     /// Picks up a comic (or error) handed over by the app after opening a file from
     /// outside — presents the reader, or shows the import-failure alert.
     private func consumePendingOpen() {
-        if let book = fileOpener.consumeBook() { openedBook = book }
+        if let book = fileOpener.consumeBook() { target = ReaderTarget(book: book) }
         if let error = fileOpener.consumeError() { importError = error }
     }
 

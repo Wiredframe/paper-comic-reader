@@ -22,6 +22,17 @@ struct PeekArt {
     var label: String
 }
 
+/// The art's own look. Its own type because `PeekDeck` is generic and generic types can't hold
+/// static stored properties — but it needs to be shared, because the zoom transition's source
+/// configuration has to draw the same rounding and the same shadow as the card. Let those drift
+/// and the transition renders a bare rectangle with the shadow snapping in at the end.
+private enum ArtStyle {
+    static let corner: CGFloat = 14
+    static let shadowColor = Color.black.opacity(0.4)
+    static let shadowRadius: CGFloat = 18
+    static let shadowOffsetY: CGFloat = 8
+}
+
 /// The item the deck centres on. The deck and whatever draws a panel beside it must not
 /// disagree about the answer, and before the first scroll reports an id there isn't one yet —
 /// so both resolve it through here, falling back to the first item.
@@ -56,6 +67,7 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
     // still clipped the tail against whatever sits underneath.
     private let shadowTop: CGFloat = 20
     private let shadowBottom: CGFloat = 40
+
 
     private var centered: Item? { peekCentered(in: items, id: centeredID) }
 
@@ -132,10 +144,22 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
     /// width and mostly empty, so anchoring there would grow the reader out of a transparent
     /// box around the cover rather than out of the cover. No-op for callers that don't want a
     /// zoom (`.matchedTransitionSource` takes no optional namespace, hence the branch).
+    ///
+    /// The configuration is what keeps the shadow alive through the transition. Left to
+    /// itself the zoom draws the source as a plain rectangle: the shadow is clipped away for
+    /// the whole animation and then reappears the instant the real card is back, with nothing
+    /// tweening it. Handing the same rounding and shadow to the source makes the transition
+    /// draw them, so there's nothing to snap back to.
     @ViewBuilder
     private func transitionSource(_ view: some View, id: UUID) -> some View {
         if let transitionNamespace {
-            view.matchedTransitionSource(id: id, in: transitionNamespace)
+            view.matchedTransitionSource(id: id, in: transitionNamespace) { config in
+                config
+                    .clipShape(.rect(cornerRadius: ArtStyle.corner, style: .continuous))
+                    .shadow(color: ArtStyle.shadowColor,
+                            radius: ArtStyle.shadowRadius,
+                            y: ArtStyle.shadowOffsetY)
+            }
         } else {
             view
         }
@@ -145,10 +169,10 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
         DiskImage(url: art.url, contentMode: .fit,
                   maxPixel: ImageDownsampler.libraryCardPixel)
             .frame(width: width, height: height)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .clipShape(RoundedRectangle(cornerRadius: ArtStyle.corner, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: ArtStyle.corner, style: .continuous)
                 .stroke(Color.primary.opacity(0.1)))
-            .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
+            .shadow(color: ArtStyle.shadowColor, radius: ArtStyle.shadowRadius, y: ArtStyle.shadowOffsetY)
             .accessibilityLabel(art.label)
     }
 }

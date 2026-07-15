@@ -82,6 +82,10 @@ struct ReaderView: View {
     /// Manual landscape override — session-only, not persisted. Toggling it also returns
     /// to portrait, so it's a plain landscape⇄portrait switch for rotation-locked devices.
     @State private var forcedLandscape = false
+    /// Whether the reader is currently sideways, measured rather than inferred from the size
+    /// class (which is regular in both orientations on iPad). Gates the drag-down dismiss —
+    /// see `body`.
+    @State private var isLandscape = false
 
     private var pageCount: Int { store?.pageCount ?? book.pageCount }
     private var isBookmarked: Bool {
@@ -120,6 +124,12 @@ struct ReaderView: View {
         }
         .statusBarHidden(!chromeVisible)
         .preferredColorScheme(AppAppearance.from(appearanceRaw).colorScheme)
+        // No drag-down dismiss while sideways. The zoom would have to land back on a cover
+        // that only exists in portrait, and the rotation can't be got out of the way first the
+        // way the Close button does it (`close()`) — an interactive dismiss is already under
+        // way by the time anyone could ask. Close and the manual portrait toggle still work.
+        .interactiveDismissDisabled(isLandscape)
+        .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isLandscape = $0 }
         .onAppear(perform: setup)
         .onDisappear {
             autoHide?.cancel()

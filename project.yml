@@ -37,10 +37,12 @@ settings:
     # Distributed via GitHub Releases (sideload), not the App Store, so the build
     # number is cosmetic — bump it with each tagged release if you like.
     CURRENT_PROJECT_VERSION: "9"
-    # App Store distribution: automatic signing with the team. Xcode manages the
-    # Apple Development / Apple Distribution certificates and provisioning profiles
-    # (the account must be added in Xcode → Settings → Accounts). Simulator builds
-    # need no profile; device/archive builds create one on first use.
+    # Signing here is only for building onto your OWN device from Xcode — Xcode manages the
+    # Apple Development certificate and profile (the account must be added in Xcode →
+    # Settings → Accounts), and simulator builds need no profile at all. NOT for shipping:
+    # the released .ipa is archived unsigned (build-ipa.sh passes CODE_SIGNING_ALLOWED=NO)
+    # and the nightly device refresh passes its own team on the command line, so neither
+    # path reads these two.
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: "7RN999S858"
     # Link the Core Image Metal kernel library as CI kernels.

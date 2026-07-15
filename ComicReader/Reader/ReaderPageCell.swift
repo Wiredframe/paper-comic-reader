@@ -19,6 +19,9 @@
 //  doesn't. Keeping the inset at zero is what makes a rotation smooth — only frames
 //  change, and those animate inside the turn, so nothing snaps.
 //
+//  One shadow tracks the union of those frames, so the page — or the whole spread —
+//  rests on the letterbox mat without a seam down the gutter (see `layoutShadow`).
+//
 
 import UIKit
 import VisionKit
@@ -42,7 +45,18 @@ final class ReaderPageCell: UICollectionViewCell {
         case focus(Int)        // both pages at fit-width each, scrolled to page 0 / 1
     }
 
+    /// The page shadow: soft, sitting a little below the page, as if lit from above. Sized
+    /// generously rather than tightly — a hard, tight shadow reads as a drop-shadowed graphic,
+    /// a wide diffuse one reads as paper resting on the mat.
+    private enum Shadow {
+        static let opacity: Float = 0.5
+        static let radius: CGFloat = 16
+        static let offset = CGSize(width: 0, height: 6)
+    }
+
     private let scrollView = UIScrollView()
+    /// Drawn behind the page(s) — see `layoutShadow(around:)`.
+    private let pageShadow = UIView()
     private let pageViews = [UIImageView(), UIImageView()]       // [left, right]
     private let liveText = [ImageAnalysisInteraction(), ImageAnalysisInteraction()]
     private let analyzer = ImageAnalyzer()
@@ -89,6 +103,15 @@ final class ReaderPageCell: UICollectionViewCell {
         scrollView.delegate = self
         contentView.addSubview(scrollView)
 
+        // Added before the pages, so it stays behind them however they're laid out.
+        pageShadow.isUserInteractionEnabled = false
+        pageShadow.isHidden = true
+        pageShadow.layer.shadowColor = UIColor.black.cgColor
+        pageShadow.layer.shadowOpacity = Shadow.opacity
+        pageShadow.layer.shadowRadius = Shadow.radius
+        pageShadow.layer.shadowOffset = Shadow.offset
+        scrollView.addSubview(pageShadow)
+
         for view in pageViews {
             view.backgroundColor = .clear
             view.contentMode = .scaleAspectFit
@@ -114,6 +137,7 @@ final class ReaderPageCell: UICollectionViewCell {
         pageIndices = []
         lastLaidOutBounds = .zero
         tapTargetY = nil
+        pageShadow.isHidden = true      // no stale shadow before the new slot lays out
         for (i, view) in pageViews.enumerated() {
             view.image = nil
             view.isHidden = true
@@ -293,6 +317,7 @@ final class ReaderPageCell: UICollectionViewCell {
             x += size.width
         }
         for i in sizes.count..<pageViews.count { pageViews[i].isHidden = true }
+        layoutShadow(around: sizes.count)
 
         scrollView.contentInset = .zero
         scrollView.contentSize = CGSize(width: contentW, height: contentH)
@@ -324,10 +349,39 @@ final class ReaderPageCell: UICollectionViewCell {
             x += pageW
         }
         for i in sizes.count..<pageViews.count { pageViews[i].isHidden = true }
+        layoutShadow(around: sizes.count)
 
         scrollView.contentInset = .zero
         scrollView.contentSize = CGSize(width: contentW, height: contentH)
         scrollView.contentOffset = CGPoint(x: focusColumnOffsetX(focused, in: bounds), y: 0)
+    }
+
+    /// Wrap the `count` pages just laid out in ONE shadow, sized to the union of their frames,
+    /// so the page reads as a sheet resting on the letterbox mat rather than a picture pasted
+    /// onto it.
+    ///
+    /// The union is what keeps the spread's gutter clean: the two halves touch, so a single
+    /// shadow around the pair has nowhere to draw between them — the whole spread casts one
+    /// shadow, like the real open comic it's imitating. (A shadow per page would seam straight
+    /// down the middle.) It follows that the shadow is only ever *seen* where a page doesn't
+    /// reach the slot's edge, since the scroll view clips there: above and below a portrait
+    /// page, and around a fit-height or a sub-full-width fit-width page. Where the page runs to
+    /// the screen edge there's no mat to catch a shadow anyway.
+    ///
+    /// `shadowPath` is set explicitly for two reasons: Core Animation then never derives the
+    /// shadow from the layer's alpha channel (an offscreen pass every frame, which the rotation
+    /// can't afford), and — being an animatable layer property, set here alongside the frames —
+    /// it tweens inside the rotation morph and the double-tap fit instead of snapping.
+    private func layoutShadow(around count: Int) {
+        guard settings?.pageShadow == true, count > 0 else {
+            pageShadow.isHidden = true
+            return
+        }
+        var union = pageViews[0].frame
+        for view in pageViews.prefix(count).dropFirst() { union = union.union(view.frame) }
+        pageShadow.isHidden = false
+        pageShadow.frame = union
+        pageShadow.layer.shadowPath = UIBezierPath(rect: pageShadow.bounds).cgPath
     }
 
     /// Content-offset x that centres focus column `col` — the source of truth for both

@@ -29,13 +29,14 @@ struct SettingsView: View {
             Form {
                 Section {
                     Toggle("Double Page (Landscape)", isOn: $reader.doublePage)
+                    Toggle("Page Shadow", isOn: $reader.pageShadow)
                     Toggle("Tap to Navigate", isOn: $reader.tapToNavigate)
                     Toggle("Live Text", isOn: $reader.liveText)
                     Toggle("Fast Animations", isOn: $reader.fastAnimations)
                 } header: {
                     Text("Reader")
                 } footer: {
-                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Tap to Navigate lets you tap the left/right edges to move through the page a third at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
+                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Page Shadow rests the page on its background with a soft shadow, wherever the page doesn't reach the screen edge; a double page casts one shadow around the pair, never down the middle. Tap to Navigate lets you tap the left/right edges to move through the page half a screen at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
                 }
 
                 Section {

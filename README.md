@@ -6,7 +6,7 @@
 
 A lean, native comic reader for iPhone and iPad that makes pages read like ink on paper instead of a backlit screen.
 
-[![Download](https://img.shields.io/badge/Download-.ipa-2563eb?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![Platform](https://img.shields.io/badge/iOS-18%2B-1d4ed8?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![License](https://img.shields.io/badge/License-MIT-64748b?style=for-the-badge)](LICENSE)
+[![Download](https://img.shields.io/badge/Download-.ipa-2563eb?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![Platform](https://img.shields.io/badge/iOS-26%2B-1d4ed8?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![License](https://img.shields.io/badge/License-MIT-64748b?style=for-the-badge)](LICENSE)
 
 <p align="center">
   <img src="docs/screenshot.jpg" alt="Paper Comic Reader on iPhone" width="260">
@@ -81,7 +81,7 @@ Vendor/UnrarKit/  Vendored UnrarKit + unrar engine (CBR; no clean SPM package ex
 
 ### The reader
 
-Full-bleed paged UIKit core — a horizontal, paging `UICollectionView` (`ReaderCollectionController`) of `ReaderPageCell`s — wrapped for SwiftUI. There is no pinch zoom: a **double-tap toggles the fit** instead (single page: fit-width ⇄ fit-height), which keeps the layout drift-free. In landscape, an optional **double-page** mode shows two pages side by side with a *fixed* pairing (cover alone, then 2·3, 4·5 …, so a right-half page never becomes a left half); a double-tap there focuses the tapped page at fit-width. Rotation re-fits the page animated. An optional "page-by-page" mode taps through the page in thirds. The reader resumes on the last read page and has a page-grid picker. Bookmarks (page screenshots) are added from the reader and browsed globally in the **Bookmarks tab** — tapping one opens that comic straight to the page.
+Full-bleed paged UIKit core — a horizontal, paging `UICollectionView` (`ReaderCollectionController`) of `ReaderPageCell`s — wrapped for SwiftUI. There is no pinch zoom: a **double-tap toggles the fit** instead (single page: fit-width ⇄ fit-height), which keeps the layout drift-free. In landscape, an optional **double-page** mode shows two pages side by side with a *fixed* pairing (cover alone, then 2·3, 4·5 …, so a right-half page never becomes a left half); a double-tap there focuses the tapped page at fit-width. Rotation re-fits the page animated. An optional "tap to navigate" mode taps through the page half a screen at a time. An optional **page shadow** rests the page on the letterbox mat — one shadow around the whole spread, so the gutter stays clean. The reader resumes on the last read page and has a page-grid picker. Bookmarks (page screenshots) are added from the reader and browsed globally in the **Bookmarks tab** — tapping one opens that comic straight to the page.
 
 ### The paper effect
 

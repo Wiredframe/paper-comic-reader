@@ -29,13 +29,11 @@ struct RecentsView: View {
                     }
                 } else {
                     // The cover carousel, in the order the @Query already gives us (most
-                    // recently opened first) — so no filter segments here. No bookmarks section
-                    // either: this is the "get me back into what I was reading" screen, and it
-                    // stays deliberately reduced. The Bookmarks tab and the Library's Discover
-                    // mode are where bookmarks belong.
-                    PeekCarouselView(books: books, showsFilters: false, showsBookmarks: false,
-                                     onRemoveFromRecents: removeFromRecents) { book, _ in
-                        target = ReaderTarget(book: book)
+                    // recently opened first) — so no filter segments here.
+                    PeekCarouselView(books: books,
+                                     showsFilters: false,
+                                     onRemoveFromRecents: removeFromRecents) { book, page in
+                        target = ReaderTarget(book: book, page: page)
                     }
                 }
             }

@@ -95,14 +95,77 @@ enum Importer {
         return book
     }
 
-    /// Imports the archive at `sourceURL` into `context` synchronously. Kept for the
-    /// single-file paths (a comic opened from Files / "Open With", DEBUG seeding); the
-    /// batch picker import runs `prepare` off-main and `commit` on-main itself so it can
-    /// report progress (see LibraryView).
+    /// Imports the archive at `sourceURL` into `context` synchronously — `prepare` and
+    /// `commit` back to back, all on the main actor.
+    ///
+    /// Only for DEBUG screenshot seeding, where blocking is fine and the archives are
+    /// known-small. Everything user-facing (the picker, and comics opened from Files /
+    /// "Open With") goes through `prepare` off-main + `commit` on-main so the UI stays
+    /// responsive and can report progress — see `LibraryView.runImport`.
     @MainActor @discardableResult
     static func importComic(from sourceURL: URL,
                             into context: ModelContext) throws -> ComicBook {
         commit(try prepare(from: sourceURL), into: context)
+    }
+
+    /// One archive already in the library, as plain data. The duplicate scan reads files and
+    /// so runs off the main actor, where the SwiftData models it came from can't go — this
+    /// carries the two things the scan needs across.
+    struct ExistingArchive: Sendable {
+        let id: UUID
+        let path: String
+    }
+
+    /// The book in `existing` whose archive is byte-for-byte the file at `sourceURL`, or nil
+    /// if this comic is new.
+    ///
+    /// Size first, bytes only on a match: importing a genuinely new comic costs one `stat`
+    /// per library entry and reads nothing. Content rather than file name on purpose — a
+    /// renamed copy is still the same comic, and two unrelated comics can share a name.
+    static func duplicate(of sourceURL: URL, among existing: [ExistingArchive]) -> UUID? {
+        let scoped = sourceURL.startAccessingSecurityScopedResource()
+        defer { if scoped { sourceURL.stopAccessingSecurityScopedResource() } }
+
+        guard let size = fileSize(sourceURL) else { return nil }
+        for candidate in existing {
+            let url = URL(fileURLWithPath: candidate.path)
+            guard fileSize(url) == size, sameContents(sourceURL, url) else { continue }
+            return candidate.id
+        }
+        return nil
+    }
+
+    private static func fileSize(_ url: URL) -> Int? {
+        (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+    }
+
+    /// Chunked, so comparing two 1 GB archives costs one buffer rather than two gigabytes
+    /// of RAM. Callers have already established that the lengths match.
+    private static func sameContents(_ a: URL, _ b: URL) -> Bool {
+        guard let handleA = try? FileHandle(forReadingFrom: a),
+              let handleB = try? FileHandle(forReadingFrom: b) else { return false }
+        defer { try? handleA.close(); try? handleB.close() }
+
+        let chunk = 1 << 20   // 1 MB
+        while true {
+            let dataA = (try? handleA.read(upToCount: chunk)) ?? Data()
+            let dataB = (try? handleB.read(upToCount: chunk)) ?? Data()
+            if dataA != dataB { return false }
+            if dataA.isEmpty { return true }   // both ran out together — identical
+        }
+    }
+
+    /// When another app opens a file "into" us, iOS drops a copy in Documents/Inbox.
+    /// Once `prepare` has copied the archive into permanent storage that leftover is
+    /// dead weight, so delete it. A no-op for anything outside Inbox — in-place opens
+    /// (from Files) and picker URLs live elsewhere and must not be touched.
+    static func discardInboxCopy(at url: URL) {
+        // Resolve symlinks on both sides so a /private/var… URL still matches the
+        // /var… Documents base (the two forms otherwise never share a prefix).
+        let inbox = URL.documentsDirectory.appendingPathComponent("Inbox", isDirectory: true)
+            .resolvingSymlinksInPath().path
+        guard url.resolvingSymlinksInPath().path.hasPrefix(inbox) else { return }
+        try? Storage.fm.removeItem(at: url)
     }
 
     /// Removes a book and its on-disk files.

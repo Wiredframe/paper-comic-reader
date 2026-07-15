@@ -82,6 +82,10 @@ struct PeekCarouselView: View {
     /// caller presents: the cover grows into the reader, and the presentation gains the
     /// system's interactive drag-down dismiss.
     var transitionNamespace: Namespace.ID? = nil
+    /// Set by the Library to bring one comic to the centre — used when a comic is opened from
+    /// outside the app, which focuses it here rather than opening the reader. One-shot: cleared
+    /// back to nil once the deck has moved, so returning to this view later doesn't re-snap.
+    var focusID: Binding<UUID?>? = nil
     /// The page is nil for "open where you left off", or a bookmark's page for a direct jump.
     let onOpen: (ComicBook, Int?) -> Void
 
@@ -89,6 +93,11 @@ struct PeekCarouselView: View {
     @AppStorage("library.discoveryMode") private var filterRaw = DiscoveryFilter.discover.rawValue
 
     @State private var centeredID: UUID?
+    /// The comic the delete menu is confirming, if any. Drives the confirmation dialog below.
+    @State private var bookToDelete: ComicBook?
+    /// A focus request that had to switch the filter to Discover first (the comic wasn't in the
+    /// current segment). Held until the filter change lands, then centred — see `focus(on:)`.
+    @State private var pendingFocusAfterFilterChange: UUID?
 
     /// Fixed, so swiping between comics with different title lengths can't resize the panel
     /// and make the covers jump.
@@ -106,7 +115,12 @@ struct PeekCarouselView: View {
 
     private var visibleBooks: [ComicBook] {
         guard showsFilters else { return books }
-        return books.filter { filter.matches($0) }
+        let filtered = books.filter { filter.matches($0) }
+        // Popular is *about* how often a comic was opened, so it orders itself — most-opened
+        // first — instead of following the library's sort menu like the other segments do.
+        // Tie-break on dateAdded so equal-count comics keep a stable order across recomputes.
+        guard filter == .popular else { return filtered }
+        return filtered.sorted { ($0.openCount, $0.dateAdded) > ($1.openCount, $1.dateAdded) }
     }
 
     /// The comic the pinned panel describes — the same one the deck draws as centred.
@@ -149,9 +163,41 @@ struct PeekCarouselView: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollTargetBehavior(.paging)
             .scrollIndicators(.hidden)
+            .confirmationDialog("Delete “\(bookToDelete?.title ?? "")”?",
+                                isPresented: Binding(get: { bookToDelete != nil },
+                                                     set: { if !$0 { bookToDelete = nil } }),
+                                titleVisibility: .visible, presenting: bookToDelete) { book in
+                Button("Delete", role: .destructive) { deleteFromCarousel(book) }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("This removes the comic and its bookmarks from your library.")
+            }
             .task { await backfillCoverAspects() }
-            .onAppear { if centeredID == nil { centeredID = visibleBooks.first?.id } }
-            .onChange(of: filterRaw) { _, _ in centeredID = visibleBooks.first?.id }
+            .onAppear {
+                // A focus set before this view existed (a cold-launch open) is handled here,
+                // since onChange won't fire for a value that arrived with the view.
+                if let id = focusID?.wrappedValue {
+                    focus(on: id)
+                    focusID?.wrappedValue = nil
+                } else if centeredID == nil {
+                    centeredID = visibleBooks.first?.id
+                }
+            }
+            .onChange(of: focusID?.wrappedValue) { _, id in
+                guard let id else { return }
+                focus(on: id)
+                focusID?.wrappedValue = nil   // one-shot
+            }
+            .onChange(of: filterRaw) { _, _ in
+                // A focus that needed Discover to become visible lands now that the segment has
+                // switched; otherwise a plain segment change just re-centres on the first card.
+                if let id = pendingFocusAfterFilterChange {
+                    pendingFocusAfterFilterChange = nil
+                    withAnimation(.snappy(duration: 0.3)) { centeredID = id }
+                } else {
+                    centeredID = visibleBooks.first?.id
+                }
+            }
             // The toolbar's shuffle is reachable while the bookmarks are on screen, so bring
             // the deck back up to show the comic it just moved to.
             .onChange(of: randomTrigger) { _, _ in
@@ -276,6 +322,12 @@ struct PeekCarouselView: View {
                             Label("Remove from Recents", systemImage: "clock.badge.xmark")
                         }
                     }
+                    Divider()
+                    // Same library delete the cover grid offers — with the same confirmation,
+                    // since it also drops the archive and bookmarks from disk.
+                    Button(role: .destructive) { bookToDelete = book } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 28, height: buttonLabelHeight)
@@ -295,6 +347,31 @@ struct PeekCarouselView: View {
     private func toggleRead(_ book: ComicBook) {
         book.isRead.toggle()
         try? context.save()
+    }
+
+    /// Brings a comic to the centre of the deck. If the current segment hides it (a brand-new
+    /// comic isn't "popular"), switch to Discover — which shows everything — and let the filter's
+    /// onChange finish the move, so the two don't fight over `centeredID` in one update.
+    private func focus(on id: UUID) {
+        if visibleBooks.contains(where: { $0.id == id }) {
+            withAnimation(.snappy(duration: 0.3)) { centeredID = id }
+        } else {
+            pendingFocusAfterFilterChange = id
+            filterRaw = DiscoveryFilter.discover.rawValue
+        }
+    }
+
+    /// Deletes the comic from the library. If it's the centred card, move to a neighbour
+    /// first so the deck slides there rather than snapping back to the first card (which is
+    /// what `peekCentered`'s fallback would do once the id no longer resolves).
+    private func deleteFromCarousel(_ book: ComicBook) {
+        if centeredID == book.id {
+            let ids = visibleBooks.map(\.id)
+            if let i = ids.firstIndex(of: book.id) {
+                centeredID = i + 1 < ids.count ? ids[i + 1] : (i > 0 ? ids[i - 1] : nil)
+            }
+        }
+        Importer.delete(book, from: context)
     }
 
     // MARK: Bookmarks section (one page below the deck)

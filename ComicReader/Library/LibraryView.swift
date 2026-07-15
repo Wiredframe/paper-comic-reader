@@ -55,6 +55,12 @@ struct LibraryView: View {
     @State private var showImporter = false
     @State private var importError: String?
     @State private var importProgress: ImportProgress?
+    /// A comic opened from outside the app is shown in the carousel, not the reader — this asks
+    /// the carousel to centre it. One-shot; the carousel clears it once it's moved.
+    @State private var focusBookID: UUID?
+    /// Note shown when a comic opened from outside was already in the library (so nothing new
+    /// was imported). Nil when there's nothing to say.
+    @State private var alreadyImportedNote: String?
     /// The comic being read, and optionally the page to land on — the carousel's bookmark
     /// cards open straight to their page, everything else resumes where it left off.
     @State private var target: ReaderTarget?
@@ -118,7 +124,7 @@ struct LibraryView: View {
                     // `sortedBooks`, so Discover follows the same sort menu as the grid — its
                     // segments only filter.
                     PeekCarouselView(books: sortedBooks, randomTrigger: randomTick,
-                                     transitionNamespace: readerZoom) { book, page in
+                                     transitionNamespace: readerZoom, focusID: $focusBookID) { book, page in
                         target = ReaderTarget(book: book, page: page)
                     }
                 } else {
@@ -149,6 +155,10 @@ struct LibraryView: View {
                                                      set: { if !$0 { importError = nil } })) {
             Button("OK") { importError = nil }
         } message: { Text(importError ?? "") }
+        .alert("Already imported", isPresented: Binding(get: { alreadyImportedNote != nil },
+                                                        set: { if !$0 { alreadyImportedNote = nil } })) {
+            Button("OK") { alreadyImportedNote = nil }
+        } message: { Text(alreadyImportedNote ?? "") }
         .fullScreenCover(item: $target) { target in
             ReaderView(book: target.book, initialPage: target.page)
                 // Resolves against the carousel's cover. In the grid and list there's no source
@@ -307,38 +317,91 @@ struct LibraryView: View {
         exitSelection()
     }
 
-    /// Picks up a comic (or error) handed over by the app after opening a file from
-    /// outside — presents the reader, or shows the import-failure alert.
+    /// Picks up a comic handed over by the app after being opened from outside, and
+    /// imports it on the same non-blocking path as the picker — importing it in
+    /// `onOpenURL` instead froze the app until the watchdog killed it.
     private func consumePendingOpen() {
-        if let book = fileOpener.consumeBook() { target = ReaderTarget(book: book) }
-        if let error = fileOpener.consumeError() { importError = error }
+        guard let url = fileOpener.consumeURL() else { return }
+        runImport([url], from: .external)
     }
 
-    /// Imports the picked files without blocking the UI: the slow half (`Importer.prepare`
-    /// — copy, decode, cover) runs off the main thread per file, the insert hops back to
-    /// the main context, and a progress overlay tracks "X of N". Comics appear in the grid
-    /// as each one lands.
     private func handleImport(_ result: Result<[URL], Error>) {
         switch result {
         case .failure(let error):
             importError = error.localizedDescription
         case .success(let urls):
-            guard !urls.isEmpty else { return }
-            importProgress = ImportProgress(done: 0, total: urls.count)
-            Task { @MainActor in
-                var failures = 0
-                for url in urls {
-                    do {
+            runImport(urls, from: .picker)
+        }
+    }
+
+    /// Where an import came from. The two differ in how they finish: a comic opened from
+    /// outside (always a single file) is shown in the carousel — focused, not opened in the
+    /// reader — and says so if it was already in the library; the picker just counts failures.
+    private enum ImportSource { case picker, external }
+
+    /// Imports `urls` without blocking the UI: the slow half (`Importer.prepare` — copy,
+    /// decode, cover) runs off the main thread per file, the insert hops back to the main
+    /// context, and a progress overlay tracks "X of N". Comics appear in the grid as each
+    /// one lands.
+    ///
+    /// A comic already in the library isn't imported again: the picker silently skips it
+    /// (so re-picking a folder only brings in what's new), and an outside "open" of one that
+    /// already exists just opens the copy that's there. Matching is by archive content, so a
+    /// renamed duplicate is still caught.
+    private func runImport(_ urls: [URL], from source: ImportSource) {
+        guard !urls.isEmpty else { return }
+        importProgress = ImportProgress(done: 0, total: urls.count)
+        Task { @MainActor in
+            var failures = 0
+            var firstBook: ComicBook?
+            var firstWasDuplicate = false
+            // What's already imported, by archive content. Snapshotted off the SwiftData
+            // models (which can't leave the main actor) and grown as each file lands, so a
+            // file that duplicates one earlier in the same batch is skipped too.
+            var existing = books.map { Importer.ExistingArchive(id: $0.id, path: $0.archiveURL.path) }
+            for url in urls {
+                do {
+                    let snapshot = existing
+                    if let dupID = await Task.detached(priority: .userInitiated, operation: {
+                        Importer.duplicate(of: url, among: snapshot)
+                    }).value {
+                        // Already here — don't add a second copy. An outside open still wants to
+                        // show it, so remember which existing book, and that it wasn't new.
+                        if firstBook == nil {
+                            firstBook = books.first { $0.id == dupID }
+                            firstWasDuplicate = true
+                        }
+                    } else {
                         let prepared = try await Task.detached(priority: .userInitiated) {
                             try Importer.prepare(from: url)
                         }.value
-                        Importer.commit(prepared, into: context)
-                    } catch {
-                        failures += 1
+                        let book = Importer.commit(prepared, into: context)
+                        existing.append(Importer.ExistingArchive(id: book.id, path: book.archiveURL.path))
+                        if firstBook == nil { firstBook = book }
                     }
-                    importProgress?.done += 1
+                } catch {
+                    failures += 1
                 }
-                importProgress = nil
+                Importer.discardInboxCopy(at: url)
+                importProgress?.done += 1
+            }
+            importProgress = nil
+
+            switch source {
+            case .external:
+                if let book = firstBook {
+                    // Show it where the library shows comics — centre it in the carousel — rather
+                    // than opening the reader. Focus only takes in Discover mode, where the
+                    // carousel is on screen; in the grid the comic is simply present.
+                    if viewMode == .discover { focusBookID = book.id }
+                    if firstWasDuplicate {
+                        alreadyImportedNote = "“\(book.title)” is already in your library."
+                    }
+                } else {
+                    let name = urls[0].deletingPathExtension().lastPathComponent
+                    importError = "Couldn't open “\(name)”. It may not be a valid CBZ or CBR."
+                }
+            case .picker:
                 if failures > 0 { importError = "Couldn't import \(failures) file(s)." }
             }
         }

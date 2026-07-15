@@ -50,11 +50,10 @@ struct RootTabView: View {
         }
         .preferredColorScheme(AppAppearance.from(appearanceRaw).colorScheme)
         .tint(.accentColor)
-        // A comic opened from outside the app lands in the Library — switch to it so
-        // the newly imported book (and the reader it opens), or the import-failure
-        // alert, is visible.
-        .onChange(of: fileOpener.token) { _, _ in
-            if fileOpener.pendingBook != nil || fileOpener.pendingError != nil { screen = .library }
-        }
+        // A comic opened from outside the app lands in the Library — switch to it so the
+        // import progress, the reader it opens, or the failure alert is visible. The token
+        // only bumps for those opens, so there's nothing to test: reading `pendingURL` here
+        // would race the Library's own onChange, which may already have consumed it.
+        .onChange(of: fileOpener.token) { _, _ in screen = .library }
     }
 }

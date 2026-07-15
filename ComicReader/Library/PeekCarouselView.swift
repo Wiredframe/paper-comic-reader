@@ -3,17 +3,20 @@
 //  Comic Reader
 //
 //  The cover carousel: one large, uncropped cover centred with its neighbours peeking in
-//  either side, swiped left/right, with the comic's details permanently below it. Used by
-//  the Library's "Discover" mode (which adds the mode switcher and its own orderings) and by
-//  Recents (which supplies its own most-recent-first order).
+//  either side, swiped left/right, with the centred comic's details pinned below. Used by the
+//  Library's "Discover" mode (which adds the filter segments) and by Recents.
+//
+//  Ordering is NOT decided here — the caller hands the books in already, so Discover follows
+//  the Library's sort menu and Recents its most-recent-first query. The segments only pick
+//  WHICH comics are in the deck.
 //
 
 import SwiftUI
 import SwiftData
 
-/// Which comics the Library's Discover mode shows, and in what order. Raw string in
-/// @AppStorage, like `LibrarySort` / `LibraryViewMode`.
-enum DiscoveryMode: String, CaseIterable, Identifiable {
+/// Which comics the Library's Discover mode puts in the deck. Order comes from the sort menu;
+/// this only filters. Raw string in @AppStorage, like `LibrarySort` / `LibraryViewMode`.
+enum DiscoveryFilter: String, CaseIterable, Identifiable {
     case discover, popular, dust
 
     var id: String { rawValue }
@@ -26,78 +29,121 @@ enum DiscoveryMode: String, CaseIterable, Identifiable {
         }
     }
 
-    static func from(_ raw: String) -> DiscoveryMode { DiscoveryMode(rawValue: raw) ?? .discover }
+    /// Popularity is "you came back to it" (opened more than once); dust is "you never opened
+    /// it at all". A comic opened exactly once is neither — it only shows under Discover.
+    func matches(_ book: ComicBook) -> Bool {
+        switch self {
+        case .discover: return true
+        case .popular:  return book.openCount >= 2
+        case .dust:     return book.openCount == 0
+        }
+    }
+
+    var emptyTitle: String {
+        switch self {
+        case .discover: return "No comics"
+        case .popular:  return "Nothing's popular yet"
+        case .dust:     return "Nothing's gathering dust"
+        }
+    }
+
+    var emptyMessage: String {
+        switch self {
+        case .discover: return "Import a CBZ or CBR to get started."
+        case .popular:  return "Comics you open more than once show up here."
+        case .dust:     return "You've opened every comic in your library."
+        }
+    }
+
+    var emptyIcon: String {
+        switch self {
+        case .discover: return "books.vertical"
+        case .popular:  return "flame"
+        case .dust:     return "wind"
+        }
+    }
+
+    static func from(_ raw: String) -> DiscoveryFilter { DiscoveryFilter(rawValue: raw) ?? .discover }
 }
 
 struct PeekCarouselView: View {
+    /// Already in the order they should appear — the Library passes its sorted books, Recents
+    /// its most-recently-opened-first query.
     let books: [ComicBook]
-    /// Library shows the Discover/Popular/Gathering Dust switcher and re-orders itself.
-    /// Recents passes false and keeps the order it was handed (most recently opened first).
-    var showsModes: Bool = true
-    /// Only Recents supplies this — it puts a "forget this one" button in the panel, which
-    /// the cover grid used to offer via its context menu.
+    /// Library shows the filter segments; Recents doesn't (its deck is simply "what you opened").
+    var showsFilters: Bool = true
+    /// Bumped by the Library's shuffle button to glide to a random comic in the current deck.
+    var randomTrigger: Int = 0
+    /// Only Recents supplies this — it puts a "forget this one" button in the panel, which the
+    /// cover grid used to offer via its context menu.
     var onRemoveFromRecents: ((ComicBook) -> Void)? = nil
     let onOpen: (ComicBook) -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("library.discoveryMode") private var modeRaw = DiscoveryMode.discover.rawValue
+    @AppStorage("library.discoveryMode") private var filterRaw = DiscoveryFilter.discover.rawValue
 
-    /// The carousel's order, as a snapshot of ids — deliberately NOT a computed property over
-    /// `books`: every `context.save()` anywhere republishes the @Query, which would reshuffle
-    /// the deck mid-swipe. Ids (not references) so a deleted book can't dangle.
-    @State private var order: [UUID] = []
     @State private var centeredID: UUID?
-
-    private var mode: DiscoveryMode { .from(modeRaw) }
 
     /// How much of each neighbour stays visible either side — this is what makes it a peek
     /// carousel, and it (not a height percentage) is what bounds the cover's size.
     private let peekInset: CGFloat = 52
     private let slotSpacing: CGFloat = 14
-    /// Room above the cover so its shadow isn't clipped by the ScrollView's bounds.
+    /// Room around the cover so its shadow isn't clipped by the ScrollView's bounds.
     private let shadowPad: CGFloat = 28
-    private let coverToPanel: CGFloat = 16
+    /// Fixed, so swiping between comics with different title lengths can't resize the panel
+    /// and make the covers jump.
     private let panelHeight: CGFloat = 132
 
-    private var orderedBooks: [ComicBook] {
-        let byID = Dictionary(books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return order.compactMap { byID[$0] }
+    private var filter: DiscoveryFilter { .from(filterRaw) }
+
+    private var visibleBooks: [ComicBook] {
+        guard showsFilters else { return books }
+        return books.filter { filter.matches($0) }
     }
 
-    /// "Popular" on a library nobody has opened yet would silently degrade to date-added order
-    /// and claim a popularity that doesn't exist.
-    private var popularIsEmpty: Bool {
-        showsModes && mode == .popular && books.allSatisfy { $0.openCount == 0 }
+    /// The comic the pinned panel describes. Falls back to the first so the panel has a
+    /// subject before the first scroll settles.
+    private var centeredBook: ComicBook? {
+        if let id = centeredID, let match = visibleBooks.first(where: { $0.id == id }) { return match }
+        return visibleBooks.first
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            if showsModes { modePicker }
+        VStack(spacing: 16) {
+            if showsFilters { filterPicker }
+
             GeometryReader { geo in
-                if popularIsEmpty {
-                    ContentUnavailableView("Nothing's popular yet",
-                                           systemImage: "flame",
-                                           description: Text("Comics you open often show up here."))
+                if visibleBooks.isEmpty {
+                    ContentUnavailableView(filter.emptyTitle,
+                                           systemImage: filter.emptyIcon,
+                                           description: Text(filter.emptyMessage))
                         .frame(width: geo.size.width, height: geo.size.height)
                 } else {
                     carousel(in: geo.size)
                 }
             }
+
+            // Pinned: it doesn't travel with the cards, only its contents change as you swipe.
+            if let book = centeredBook {
+                infoPanel(book)
+                    .frame(height: panelHeight)
+                    .padding(.horizontal)
+            }
         }
         .padding(.bottom, FloatingTabBar.reservedSpace)
         .task { await backfillCoverAspects() }
-        .onAppear { if order.isEmpty { reseed() } }
-        .onChange(of: modeRaw) { _, _ in reseed() }
-        .onChange(of: books.map(\.id)) { _, _ in reconcile() }
+        .onAppear { if centeredID == nil { centeredID = visibleBooks.first?.id } }
+        .onChange(of: filterRaw) { _, _ in centeredID = visibleBooks.first?.id }
+        .onChange(of: randomTrigger) { _, _ in jumpToRandom() }
     }
 
-    // MARK: Mode switcher
+    // MARK: Filter segments
 
-    private var modePicker: some View {
-        Picker("Discovery mode", selection: $modeRaw) {
-            ForEach(DiscoveryMode.allCases) { mode in
-                Text(mode.label).tag(mode.rawValue)
+    private var filterPicker: some View {
+        Picker("Show", selection: $filterRaw) {
+            ForEach(DiscoveryFilter.allCases) { filter in
+                Text(filter.label).tag(filter.rawValue)
             }
         }
         .pickerStyle(.segmented)
@@ -116,7 +162,7 @@ struct PeekCarouselView: View {
 
         return ScrollView(.horizontal) {
             LazyHStack(spacing: slotSpacing) {
-                ForEach(orderedBooks) { book in
+                ForEach(visibleBooks) { book in
                     card(book, slotW: slotW, boxH: size.height)
                         .frame(width: slotW)
                         // Visual only — the layout keeps a clean, even stride, so viewAligned
@@ -143,33 +189,23 @@ struct PeekCarouselView: View {
     // MARK: Card
 
     private func card(_ book: ComicBook, slotW: CGFloat, boxH: CGFloat) -> some View {
-        // Width-driven: the cover fills its slot, and only a very tall cover gets capped by
-        // what's left once the panel and the shadow's breathing room are taken out. Either
-        // way it is never cropped.
+        // Width-driven: the cover fills its slot, and only a very tall cover gets capped by the
+        // height left once the shadow has room. Either way it is never cropped.
         let aspect = book.coverAspect ?? (2.0 / 3.0)
-        // Exactly what's left once the shadow's top room, the gap and the panel are taken out
-        // — so a typical cover stays width-driven (filling its slot) rather than being
-        // needlessly capped by height.
-        let maxCoverH = max(80, boxH - shadowPad - coverToPanel - panelHeight)
-        let coverH = min(maxCoverH, slotW / aspect)
+        let coverH = min(max(80, boxH - shadowPad * 2), slotW / aspect)
         let coverW = coverH * aspect
         let isCentered = book.id == centeredID
 
-        return VStack(spacing: coverToPanel) {
-            cover(book, width: coverW, height: coverH)
-            infoPanel(book)
-                .frame(width: slotW, height: panelHeight)
-        }
-        .padding(.top, shadowPad)
-        .frame(width: slotW, height: boxH, alignment: .top)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if isCentered {
-                onOpen(book)          // the details are already on screen — a tap just reads it
-            } else {
-                withAnimation(.snappy(duration: 0.28)) { centeredID = book.id }
+        return cover(book, width: coverW, height: coverH)
+            .frame(width: slotW, height: boxH)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if isCentered {
+                    onOpen(book)      // its details are already on screen — a tap just reads it
+                } else {
+                    withAnimation(.snappy(duration: 0.28)) { centeredID = book.id }
+                }
             }
-        }
     }
 
     private func cover(_ book: ComicBook, width: CGFloat, height: CGFloat) -> some View {
@@ -183,7 +219,7 @@ struct PeekCarouselView: View {
             .accessibilityLabel(book.title)
     }
 
-    // MARK: Info panel
+    // MARK: Pinned info panel
 
     private func infoPanel(_ book: ComicBook) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -242,42 +278,15 @@ struct PeekCarouselView: View {
         try? context.save()
     }
 
-    // MARK: Order
+    // MARK: Random
 
-    private func reseed() {
-        order = ordered(books).map(\.id)
-        centeredID = order.first     // otherwise there's no subject until the first scroll
-    }
-
-    /// Keep the existing order and just fold the change in — an import landing (or a comic
-    /// being read, which re-sorts Recents) must not reshuffle the deck under the user.
-    private func reconcile() {
-        let live = Set(books.map(\.id))
-        var next = order.filter { live.contains($0) }
-        let known = Set(next)
-        next.append(contentsOf: ordered(books).map(\.id).filter { !known.contains($0) })
-        order = next
-        if let id = centeredID, live.contains(id) { return }
-        centeredID = order.first
-    }
-
-    private func ordered(_ books: [ComicBook]) -> [ComicBook] {
-        // Recents hands us its own order (most recently opened first) — don't second-guess it.
-        guard showsModes else { return books }
-        switch mode {
-        case .discover:
-            return books.shuffled()
-        case .popular:
-            return books.sorted { ($0.openCount, $0.dateAdded) > ($1.openCount, $1.dateAdded) }
-        case .dust:
-            // Least-opened first; among equals the one untouched longest (never opened =
-            // .distantPast) is the dustiest. Keyed on openCount, NOT dateOpened alone, because
-            // Recents' "Clear" nils every dateOpened and would make the whole library look dusty.
-            return books.sorted {
-                ($0.openCount, $0.dateOpened ?? .distantPast, $0.dateAdded)
-                    < ($1.openCount, $1.dateOpened ?? .distantPast, $1.dateAdded)
-            }
-        }
+    /// Glide to a random comic in the current deck — the Library's shuffle button in this mode
+    /// moves the carousel rather than opening something. Excludes the current one so it always
+    /// visibly goes somewhere.
+    private func jumpToRandom() {
+        let others = visibleBooks.filter { $0.id != centeredID }
+        guard let pick = others.randomElement() ?? visibleBooks.first else { return }
+        withAnimation(.snappy(duration: 0.45)) { centeredID = pick.id }
     }
 
     // MARK: Backfill

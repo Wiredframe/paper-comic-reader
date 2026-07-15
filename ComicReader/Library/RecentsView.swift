@@ -29,8 +29,8 @@ struct RecentsView: View {
                     }
                 } else {
                     // The cover carousel, in the order the @Query already gives us (most
-                    // recently opened first) — so no mode switcher here.
-                    PeekCarouselView(books: books, showsModes: false,
+                    // recently opened first) — so no filter segments here.
+                    PeekCarouselView(books: books, showsFilters: false,
                                      onRemoveFromRecents: removeFromRecents) { openedBook = $0 }
                 }
             }

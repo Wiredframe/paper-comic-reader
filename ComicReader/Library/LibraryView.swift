@@ -60,6 +60,9 @@ struct LibraryView: View {
     @State private var selectionMode = false
     @State private var selection = Set<UUID>()
     @State private var confirmingBatchDelete = false
+    /// Bumped by the shuffle button in Discover mode — the carousel glides to a random comic
+    /// rather than opening one.
+    @State private var randomTick = 0
 
     /// Live state of a running batch import, driving the progress overlay.
     struct ImportProgress: Equatable { var done: Int; var total: Int }
@@ -103,8 +106,9 @@ struct LibraryView: View {
                 } else if viewMode == .discover {
                     // Deliberately NOT inside a ScrollView: the carousel needs the real
                     // available height to size its card, and a horizontal scroll nested in a
-                    // vertical one fights for the gesture.
-                    PeekCarouselView(books: books) { openedBook = $0 }
+                    // vertical one fights for the gesture. It gets `sortedBooks`, so Discover
+                    // follows the same sort menu as the grid — its segments only filter.
+                    PeekCarouselView(books: sortedBooks, randomTrigger: randomTick) { openedBook = $0 }
                 } else {
                     ScrollView {
                         LibraryGrid(books: sortedBooks, columns: columns, listMode: viewMode == .list,
@@ -197,10 +201,15 @@ struct LibraryView: View {
             }
         } else {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { openedBook = books.randomElement() } label: {
+                Button {
+                    // In the carousel, shuffling means "show me something else" — glide the
+                    // deck to a random comic instead of yanking the reader open.
+                    if viewMode == .discover { randomTick += 1 }
+                    else { openedBook = books.randomElement() }
+                } label: {
                     Image(systemName: "shuffle")
                 }
-                .accessibilityLabel("Open a random comic")
+                .accessibilityLabel(viewMode == .discover ? "Show a random comic" : "Open a random comic")
                 .disabled(books.isEmpty)
             }
             ToolbarItem(placement: .topBarTrailing) {

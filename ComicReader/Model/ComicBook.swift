@@ -149,7 +149,7 @@ final class ComicBook {
     /// us, in the reader's locale. Out-of-range values are treated as absent rather than
     /// trusted: the date is decoration, and a tagger's "Month 13" shouldn't render as garbage.
     var dateLabel: String? {
-        guard let year else { return nil }
+        guard let year, (1...9999).contains(year) else { return nil }
         guard let month, (1...12).contains(month) else { return String(year) }
         var components = DateComponents(year: year, month: month)
         if let day, (1...31).contains(day) { components.day = day }

@@ -90,13 +90,16 @@ enum ComicInfoParser {
         var info = ComicInfoData()
         let fields = delegate.fields
         info.series = fields["Series"]
-        info.number = fields["Number"]
+        // ComicRack writes "-1" into an unset Number (and -1 into unset Year/Month/Day below).
+        // Treat those sentinels as absent so they never render as "-1" or light up the metadata
+        // section for a comic that was never actually numbered or dated.
+        info.number = fields["Number"].flatMap { $0 == "-1" ? nil : $0 }
         info.title = fields["Title"]
         info.summary = fields["Summary"]
         info.publisher = fields["Publisher"]
-        info.year = fields["Year"].flatMap(Int.init)
-        info.month = fields["Month"].flatMap(Int.init)
-        info.day = fields["Day"].flatMap(Int.init)
+        info.year = fields["Year"].flatMap(Int.init).flatMap { $0 > 0 ? $0 : nil }
+        info.month = fields["Month"].flatMap(Int.init).flatMap { $0 > 0 ? $0 : nil }
+        info.day = fields["Day"].flatMap(Int.init).flatMap { $0 > 0 ? $0 : nil }
         info.writer = fields["Writer"]
         info.penciller = fields["Penciller"]
         info.inker = fields["Inker"]
@@ -210,6 +213,14 @@ enum ComicInfoParser {
         func parser(_ parser: XMLParser, foundCharacters string: String) {
             guard current != nil else { return }
             text += string
+        }
+
+        // CDATA arrives here, not through foundCharacters. Taggers wrap <Summary> or <Notes>
+        // in <![CDATA[…]]> when the text carries « », markup or other reserved characters —
+        // without this hook that content (the story index included) is silently dropped.
+        func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
+            guard current != nil else { return }
+            text += String(decoding: CDATABlock, as: UTF8.self)
         }
 
         func parser(_ parser: XMLParser, didEndElement element: String,

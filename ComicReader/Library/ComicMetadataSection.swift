@@ -64,7 +64,10 @@ struct ComicMetadataSection: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle(book.storyCountLabel ?? "Stories")
             VStack(spacing: 0) {
-                ForEach(Array(book.stories.enumerated()), id: \.element.id) { index, story in
+                // Identify by position, not story.number: the number is parsed free-text and a
+                // tagger can repeat it (restarted numbering, two "0." rows), which would collapse
+                // rows under a duplicate id. The list is static, so positional identity is safe.
+                ForEach(Array(book.stories.enumerated()), id: \.offset) { index, story in
                     if index > 0 { Divider().padding(.leading, 30) }
                     StoryRow(story: story)
                 }

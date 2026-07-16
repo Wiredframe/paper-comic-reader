@@ -119,15 +119,25 @@ struct LibraryView: View {
             ascending = books.sorted { $0.dateAdded < $1.dateAdded }
         case .title:
             // By what the cards actually say — "Topolino 1900", not the file name behind it.
+            // Tie-break on dateAdded so equal titles keep a stable order across re-queries
+            // (sorted(by:) isn't stable), the same way .opened does below.
             ascending = books.sorted {
-                $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending
+                let order = $0.displayTitle.localizedStandardCompare($1.displayTitle)
+                return order == .orderedSame ? $0.dateAdded < $1.dateAdded
+                                             : order == .orderedAscending
             }
         case .opened:
             // Tie-break on dateAdded: a fresh library is all-zero openCount and sorted(by:)
             // isn't guaranteed stable, so ties would otherwise churn between recomputations.
             ascending = books.sorted { ($0.openCount, $0.dateAdded) < ($1.openCount, $1.dateAdded) }
         case .series:
-            ascending = books.sorted { $0.sortsBefore($1) }
+            // Same stability tie-break: sortsBefore is a strict weak ordering, but a tie
+            // (same series + issue) would otherwise churn between recomputations.
+            ascending = books.sorted {
+                if $0.sortsBefore($1) { return true }
+                if $1.sortsBefore($0) { return false }
+                return $0.dateAdded < $1.dateAdded
+            }
         }
         return sortAscending ? ascending : ascending.reversed()
     }
@@ -365,8 +375,9 @@ struct LibraryView: View {
     /// imports it on the same non-blocking path as the picker — importing it in
     /// `onOpenURL` instead froze the app until the watchdog killed it.
     private func consumePendingOpen() {
-        guard let url = fileOpener.consumeURL() else { return }
-        runImport([url], from: .external)
+        let urls = fileOpener.consumeURLs()
+        guard !urls.isEmpty else { return }
+        runImport(urls, from: .external)
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
@@ -378,9 +389,9 @@ struct LibraryView: View {
         }
     }
 
-    /// Where an import came from. The two differ in how they finish: a comic opened from
-    /// outside (always a single file) is shown in the carousel — focused, not opened in the
-    /// reader — and says so if it was already in the library; the picker just counts failures.
+    /// Where an import came from. The two differ in how they finish: comics opened from
+    /// outside are shown in the carousel — the first focused, not opened in the reader — and a
+    /// duplicate says so if it was already in the library; the picker just counts failures.
     private enum ImportSource { case picker, external }
 
     /// Imports `urls` without blocking the UI: the slow half (`Importer.prepare` — copy,

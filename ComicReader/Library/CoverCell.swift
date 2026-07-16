@@ -46,13 +46,11 @@ struct CoverCell: View {
                 // The lead story. One line, always reserved once anything in the grid has a
                 // subtitle — a cell that grows only for tagged comics would leave the row it
                 // sits in taller than its neighbours, and the covers would drift apart.
-                if let subtitle = book.displaySubtitle {
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+                Text(book.displaySubtitle ?? " ")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 HStack(spacing: 5) {
                     Text(book.pageCountLabel)

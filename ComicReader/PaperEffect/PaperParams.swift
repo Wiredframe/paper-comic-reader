@@ -7,7 +7,9 @@
 
 import CoreGraphics
 
-public struct PaperParams: Equatable {
+// Sendable: a pure value type (all CGFloat) that legitimately crosses to the page-decode
+// queue — see PageImageStore.open / setPaper, which hand it off in a @Sendable closure.
+public struct PaperParams: Equatable, Sendable {
 	/// Cream paper peeking THROUGH the ink (screen). 0…0.8
 	public var showThrough: CGFloat
 	/// Paper tooth on the light stock (multiply). 0…0.4

@@ -101,9 +101,14 @@ private struct PaperPreview: View {
 		guard enabled else { rendered = nil; return }
 		let base = SamplePage.preview
 		let p = params
-		rendered = await Task.detached(priority: .userInitiated) {
+		let output = await Task.detached(priority: .userInitiated) {
 			PaperFilter.shared.apply(to: base, params: p)
 		}.value
+		// .task(id:) cancels render() when params change, but the detached job above is
+		// unstructured and finishes regardless — drop its result once we've been superseded,
+		// so an out-of-order finish can't leave the preview showing stale settings.
+		guard !Task.isCancelled else { return }
+		rendered = output
 	}
 
 	private struct PreviewKey: Equatable { let params: PaperParams; let enabled: Bool }

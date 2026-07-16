@@ -8,10 +8,12 @@
 
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var paper: PaperSettings
     @EnvironmentObject private var reader: ReaderSettings
+    @Environment(\.modelContext) private var context
     @Query private var books: [ComicBook]
 
     @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.system.rawValue
@@ -20,6 +22,13 @@ struct SettingsView: View {
     // @Query republishes (every per-page-turn save while reading), and the size is a disk
     // walk over three folders — no need to repeat it on every render.
     @State private var storageText = "—"
+
+    // The optional library folder (see LibrarySource). `folderName` mirrors the stored display
+    // name so the row updates the moment a folder is chosen or removed; `scan` is non-nil while a
+    // scan runs, driving the inline progress.
+    @State private var folderName = LibrarySource.displayName
+    @State private var showFolderPicker = false
+    @State private var scan: (done: Int, total: Int)?
 
     private let repoURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader")!
     private let issuesURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader/issues")!
@@ -84,6 +93,38 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    if let folderName {
+                        LabeledContent("Folder", value: folderName)
+                        if let scan {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                Text("Scanning \(scan.done) of \(scan.total)…")
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                        } else {
+                            Button { startScan() } label: {
+                                Label("Scan for New Comics", systemImage: "arrow.clockwise")
+                            }
+                            Button { showFolderPicker = true } label: {
+                                Label("Change Folder…", systemImage: "folder")
+                            }
+                            Button(role: .destructive) { removeFolder() } label: {
+                                Label("Remove Folder", systemImage: "folder.badge.minus")
+                            }
+                        }
+                    } else {
+                        Button { showFolderPicker = true } label: {
+                            Label("Choose Comic Folder…", systemImage: "folder.badge.plus")
+                        }
+                    }
+                } header: {
+                    Text("Comic Folder")
+                } footer: {
+                    Text("Import every comic in a folder on a file server or iCloud Drive — anything the Files app can reach. Covers and details come in now; each comic downloads when you open it, and its download can be removed again to save space while the entry stays. Scan again to pick up new comics. A file server has to be reachable (on the right network) when you open or download a comic.")
+                }
+
                 Section("Project") {
                     Link(destination: repoURL) {
                         Label("View on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
@@ -119,6 +160,39 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .task { storageText = storageDescription }
+            .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
+                handleFolderChosen(result)
+            }
+        }
+    }
+
+    // MARK: Comic folder
+
+    private func handleFolderChosen(_ result: Result<URL, Error>) {
+        guard case .success(let url) = result else { return }
+        do { try LibrarySource.setFolder(url) } catch { return }
+        folderName = LibrarySource.displayName
+        startScan()
+    }
+
+    private func removeFolder() {
+        LibrarySource.clear()
+        folderName = nil
+    }
+
+    /// Scans the folder for comics not yet imported. Existing entries are matched by relative path,
+    /// so a rescan only brings in what's new. Progress drives the inline row; the storage figure is
+    /// refreshed at the end because the scan writes a cover per new comic.
+    private func startScan() {
+        guard scan == nil else { return }
+        let existing = Set(books.compactMap { $0.sourceRelativePath })
+        scan = (0, 0)
+        Task {
+            _ = try? await Importer.scanFolder(existing: existing, into: context) { done, total in
+                scan = (done, total)
+            }
+            scan = nil
+            storageText = storageDescription
         }
     }
 

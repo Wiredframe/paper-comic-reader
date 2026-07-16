@@ -71,6 +71,23 @@ final class ComicBook {
     /// every launch to find nothing again. Defaulted, so migration stays additive.
     var metadataScanned: Bool = false
 
+    /// Where this comic's bytes come from, for a comic imported by scanning a library folder
+    /// (see LibrarySource) rather than copied in from a single import. It's the file's path
+    /// relative to the folder root — "Topolino/1900.cbz" — the stable identity that survives the
+    /// folder being re-pointed to a new mount, and re-links every entry at once. Nil means an
+    /// "owned copy": imported straight in (picker / Files / share sheet), its archive always local
+    /// and with nowhere to re-fetch from. Optional with no initializer, so a store written before
+    /// this feature migrates additively (every existing comic reads back as nil = owned copy).
+    var sourceRelativePath: String?
+
+    /// Whether the archive bytes are on disk right now. Stored rather than derived from a stat so
+    /// SwiftUI actually re-renders the availability badge when a download or eviction flips it —
+    /// a computed `fileExists` would change without notifying any view. Set false only for a
+    /// folder-backed comic not yet downloaded; owned copies and every comic migrated from before
+    /// this feature default true, their archive always present. The reader still checks the file
+    /// system itself before opening and reconciles this flag if the two ever disagree.
+    var hasLocalArchive: Bool = true
+
     @Relationship(deleteRule: .cascade, inverse: \Bookmark.book)
     var bookmarks: [Bookmark] = []
 
@@ -93,6 +110,20 @@ final class ComicBook {
 
     var archiveURL: URL { Storage.comicURL(fileName) }
     var coverURL: URL? { coverName.map(Storage.coverURL) }
+
+    // MARK: Local availability
+    //
+    // A folder-backed comic (see `sourceRelativePath`) carries its cover and metadata locally but
+    // fetches its archive on demand, so "is it downloaded?" is a real, changing state the grid
+    // badge and the reader both read. An owned copy has no source to fetch from — its archive is
+    // simply always present, so `isRemote` never fires for it.
+
+    /// Whether this comic was brought in by a library-folder scan (vs. copied straight in).
+    var isFolderBacked: Bool { sourceRelativePath != nil }
+
+    /// A folder-backed comic whose bytes aren't local yet — what the availability badge marks and
+    /// what the reader downloads on open. Owned copies are never remote.
+    var isRemote: Bool { isFolderBacked && !hasLocalArchive }
 
     /// Copies parsed ComicInfo.xml values onto the book. A nil `info` (untagged comic, or one
     /// whose XML holds nothing useful) clears the fields rather than leaving stale ones behind,
@@ -181,6 +212,26 @@ final class ComicBook {
         let lhsNumber = issueNumber?.nonEmpty ?? title
         let rhsNumber = other.issueNumber?.nonEmpty ?? other.title
         return lhsNumber.localizedStandardCompare(rhsNumber) == .orderedAscending
+    }
+
+    // MARK: Search
+
+    /// Whether this comic matches a library search `query`, compared case- AND
+    /// diacritic-insensitively (so "asterix" finds "Astérix", "topolino" finds "Topolino").
+    /// Searches what a reader would name a comic by: its display title and file name, its series,
+    /// issue number and issue title, and every story title in the index. A blank query matches
+    /// everything, so callers can bind it straight to a search field without a guard.
+    func matches(searchQuery query: String) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        func has(_ field: String?) -> Bool {
+            guard let field else { return false }
+            return field.range(of: trimmed, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+        if has(displayTitle) || has(title) || has(series) || has(issueNumber) || has(issueTitle) {
+            return true
+        }
+        return stories.contains { has($0.title) }
     }
 
     /// 0…1 read progress for the cover pie.

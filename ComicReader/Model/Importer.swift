@@ -29,6 +29,10 @@ enum Importer {
         let coverAspect: Double?
         /// Parsed from the archive's ComicInfo.xml, when it has one.
         let info: ComicInfoData?
+        /// Set for a folder-scanned entry — the file's path relative to the library folder, which
+        /// the entry stores so its bytes can be fetched on demand. Nil for an owned copy (the
+        /// archive was copied straight in). See `prepareFolderEntry` and `ComicBook.sourceRelativePath`.
+        var sourceRelativePath: String? = nil
     }
 
     /// The heavy half of an import — copy the file into storage, read the archive and
@@ -63,8 +67,49 @@ enum Importer {
             throw ImportError.empty
         }
 
-        // Cover from the first page. Its aspect is captured here — the image is already in
-        // hand, so it costs nothing, and Discover needs it to size an uncropped card.
+        let (coverName, coverAspect, info) = coverAndInfo(from: archive, id: id)
+        let title = sourceURL.deletingPathExtension().lastPathComponent
+        return Prepared(id: id, title: title, fileName: fileName,
+                        pageCount: archive.pageCount,
+                        coverName: coverName, coverAspect: coverAspect, info: info)
+    }
+
+    /// Prepares a library entry from a comic in the configured library folder WITHOUT copying its
+    /// bytes in: only the cover (one page) and ComicInfo.xml are read, so a folder scan pulls a
+    /// fraction of each file over the network rather than the whole archive. `fileName` is the
+    /// name the bytes will take in local storage once the comic is actually downloaded (see
+    /// `downloadArchive`); `relativePath` is the file's path under the folder, stored as the
+    /// entry's stable source identity. Deliberately NOT main-actor — the read is slow I/O.
+    ///
+    /// `sourceURL` must be reachable when this runs: either a child of a folder whose security
+    /// scope the caller already holds (the scan — see `LibrarySource.withFolderAccess`), or a
+    /// picker URL that scopes itself (the reader's "choose another file" relink).
+    static func prepareFolderEntry(from sourceURL: URL, relativePath: String) throws -> Prepared {
+        let scoped = sourceURL.startAccessingSecurityScopedResource()
+        defer { if scoped { sourceURL.stopAccessingSecurityScopedResource() } }
+
+        guard ComicArchive.looksLikeComic(at: sourceURL) else { throw ImportError.unsupported }
+
+        let id = UUID()
+        let ext = sourceURL.pathExtension.isEmpty ? "cbz" : sourceURL.pathExtension.lowercased()
+        let fileName = "\(id.uuidString).\(ext)"
+
+        guard let archive = try? ComicArchive(url: sourceURL), archive.pageCount > 0 else {
+            throw ImportError.empty
+        }
+        let (coverName, coverAspect, info) = coverAndInfo(from: archive, id: id)
+        let title = sourceURL.deletingPathExtension().lastPathComponent
+        return Prepared(id: id, title: title, fileName: fileName,
+                        pageCount: archive.pageCount,
+                        coverName: coverName, coverAspect: coverAspect, info: info,
+                        sourceRelativePath: relativePath)
+    }
+
+    /// The cover thumbnail (written to Storage.covers, its aspect captured) and parsed ComicInfo
+    /// for a prepared import. Shared by the copy-in import and the folder scan so both render an
+    /// entry identically — the only difference between them is whether the archive was copied.
+    private static func coverAndInfo(from archive: ComicArchive, id: UUID)
+        -> (coverName: String?, coverAspect: Double?, info: ComicInfoData?) {
         var coverName: String?
         var coverAspect: Double?
         if let data = archive.pageData(at: 0),
@@ -75,12 +120,7 @@ enum Importer {
                 if cover.size.height > 0 { coverAspect = cover.size.width / cover.size.height }
             }
         }
-
-        let title = sourceURL.deletingPathExtension().lastPathComponent
-        return Prepared(id: id, title: title, fileName: fileName,
-                        pageCount: archive.pageCount,
-                        coverName: coverName, coverAspect: coverAspect,
-                        info: archive.metadataXML().flatMap(ComicInfoParser.parse))
+        return (coverName, coverAspect, archive.metadataXML().flatMap(ComicInfoParser.parse))
     }
 
     /// The light half — insert a prepared import into the store. Main-actor: SwiftData's
@@ -90,6 +130,10 @@ enum Importer {
         let book = ComicBook(id: prepared.id, title: prepared.title, fileName: prepared.fileName,
                              pageCount: prepared.pageCount,
                              coverName: prepared.coverName, coverAspect: prepared.coverAspect)
+        book.sourceRelativePath = prepared.sourceRelativePath
+        // A folder entry lands un-downloaded (only cover + metadata are in yet); an owned copy has
+        // its archive already, so it stays local.
+        book.hasLocalArchive = prepared.sourceRelativePath == nil
         book.apply(prepared.info)
         context.insert(book)
         try? context.save()
@@ -107,6 +151,177 @@ enum Importer {
     static func importComic(from sourceURL: URL,
                             into context: ModelContext) throws -> ComicBook {
         commit(try prepare(from: sourceURL), into: context)
+    }
+
+    // MARK: Folder-backed availability (download / evict / relink)
+
+    /// Fetches a folder-backed comic's bytes into local storage, reporting 0…1 progress. Resolves
+    /// the source (folder bookmark + the entry's relative path) and copies it to `dest` (the
+    /// comic's `archiveURL`) via a temp file, so a failed or cancelled fetch never leaves a
+    /// half-written archive that would read as present. Takes value types, not the `ComicBook`, so
+    /// nothing main-actor-bound crosses into the background — same discipline as `PageImageStore.open`.
+    /// NOT main-actor and not detached: it's awaited straight from the reader's `.task`, so it runs
+    /// off-main AND inherits that task's cancellation (closing the reader mid-fetch cancels it).
+    /// Throws `LibrarySource.SourceError` on any failure.
+    static func downloadArchive(relativePath: String, into dest: URL,
+                                onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let folder = try LibrarySource.resolveFolder()
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+
+        let source = folder.appendingPathComponent(relativePath)
+        guard Storage.fm.fileExists(atPath: source.path) else {
+            throw LibrarySource.SourceError.fileMissing
+        }
+
+        let temp = dest.appendingPathExtension("part")
+        try? Storage.fm.removeItem(at: temp)
+        do {
+            try copyWithProgress(from: source, to: temp, onProgress: onProgress)
+        } catch is CancellationError {
+            try? Storage.fm.removeItem(at: temp)
+            throw LibrarySource.SourceError.cancelled
+        } catch {
+            try? Storage.fm.removeItem(at: temp)
+            throw LibrarySource.SourceError.copyFailed
+        }
+        if Storage.fm.fileExists(atPath: dest.path) { try? Storage.fm.removeItem(at: dest) }
+        do {
+            try Storage.fm.moveItem(at: temp, to: dest)
+        } catch {
+            try? Storage.fm.removeItem(at: temp)
+            throw LibrarySource.SourceError.copyFailed
+        }
+    }
+
+    /// Chunked file copy that reports progress and honours task cancellation — `FileManager`'s own
+    /// copy offers neither, and a big comic over a slow share needs both. One 1 MB buffer, so the
+    /// copy costs the same whether the archive is 5 MB or 500.
+    private static func copyWithProgress(from source: URL, to dest: URL,
+                                         onProgress: (Double) -> Void) throws {
+        let total = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+        guard let reader = try? FileHandle(forReadingFrom: source) else {
+            throw LibrarySource.SourceError.copyFailed
+        }
+        defer { try? reader.close() }
+        Storage.fm.createFile(atPath: dest.path, contents: nil)
+        guard let writer = try? FileHandle(forWritingTo: dest) else {
+            throw LibrarySource.SourceError.copyFailed
+        }
+        defer { try? writer.close() }
+
+        let chunk = 1 << 20   // 1 MB
+        var written: Int64 = 0
+        while true {
+            try Task.checkCancellation()
+            let data = (try? reader.read(upToCount: chunk)) ?? Data()
+            if data.isEmpty { break }
+            do { try writer.write(contentsOf: data) }
+            catch { throw LibrarySource.SourceError.copyFailed }
+            written += Int64(data.count)
+            if total > 0 { onProgress(min(1, Double(written) / Double(total))) }
+        }
+        onProgress(1)
+    }
+
+    /// Drops a folder-backed comic's downloaded bytes, keeping the entry, cover and metadata so it
+    /// stays in the library marked "not downloaded". The page-grid thumbnails go too (regenerable,
+    /// and stale for a re-download); bookmarks stay — their shots live in Storage.bookmarkThumbs,
+    /// independent of the archive.
+    @MainActor static func evictDownload(_ book: ComicBook, from context: ModelContext) {
+        try? Storage.fm.removeItem(at: book.archiveURL)
+        try? Storage.fm.removeItem(at: Storage.pageThumbs(for: book.id))
+        book.hasLocalArchive = false
+        try? context.save()
+    }
+
+    /// Best-effort background pre-fetch of a folder-backed comic, for the library's "Download"
+    /// menu item. Fire-and-forget: it flips the badge when the bytes land and stays quiet on
+    /// failure — progress and errors belong to opening the comic, which shows both. A no-op for
+    /// an owned copy or one already local, so callers can wire it without pre-checking.
+    @MainActor static func prefetch(_ book: ComicBook, in context: ModelContext) {
+        guard let rel = book.sourceRelativePath, book.isRemote else { return }
+        let dest = book.archiveURL
+        Task {
+            do {
+                try await downloadArchive(relativePath: rel, into: dest) { _ in }
+                book.hasLocalArchive = true
+                try? context.save()
+            } catch {
+                // Left "not downloaded" — opening it surfaces the reason.
+            }
+        }
+    }
+
+    /// Copies a user-picked replacement archive into `destURL` (a comic's `archiveURL`) so a
+    /// comic whose source went missing opens right away. Returns the pick's path relative to the
+    /// library folder when it sits inside it — the caller stores that as the entry's new permanent
+    /// source — or nil when the pick was a one-off rescue from elsewhere and the old source stands.
+    /// Off-main (copy I/O); throws `LibrarySource.SourceError` on failure.
+    static func relink(from pickedURL: URL, into destURL: URL) throws -> String? {
+        let scoped = pickedURL.startAccessingSecurityScopedResource()
+        defer { if scoped { pickedURL.stopAccessingSecurityScopedResource() } }
+        guard ComicArchive.looksLikeComic(at: pickedURL) else {
+            throw LibrarySource.SourceError.copyFailed
+        }
+
+        let temp = destURL.appendingPathExtension("part")
+        try? Storage.fm.removeItem(at: temp)
+        do { try Storage.fm.copyItem(at: pickedURL, to: temp) }
+        catch { try? Storage.fm.removeItem(at: temp); throw LibrarySource.SourceError.copyFailed }
+        if Storage.fm.fileExists(atPath: destURL.path) { try? Storage.fm.removeItem(at: destURL) }
+        do { try Storage.fm.moveItem(at: temp, to: destURL) }
+        catch { try? Storage.fm.removeItem(at: temp); throw LibrarySource.SourceError.copyFailed }
+
+        if let folder = try? LibrarySource.resolveFolder() {
+            let f = folder.startAccessingSecurityScopedResource()
+            defer { if f { folder.stopAccessingSecurityScopedResource() } }
+            if LibrarySource.contains(pickedURL, in: folder) {
+                return LibrarySource.relativePath(of: pickedURL, in: folder)
+            }
+        }
+        return nil
+    }
+
+    // MARK: Folder scan
+
+    /// Scans the configured library folder and imports every comic not already an entry (matched
+    /// by relative path), creating a folder-backed entry — cover + metadata, no archive copy — for
+    /// each. Reports "done of total" as it goes; comics appear in the grid as each one lands.
+    ///
+    /// `existing` is the set of relative paths already imported, snapshotted on the main actor
+    /// (SwiftData models can't leave it). The walk and each per-file read run off-main, each inside
+    /// its own `withFolderAccess` so the folder's security scope is never held across an actor hop;
+    /// the inserts hop back here. A file that won't read (offline mid-scan, not a real archive) is
+    /// skipped, not fatal. Returns how many entries were added.
+    @MainActor @discardableResult
+    static func scanFolder(existing: Set<String>, into context: ModelContext,
+                           onProgress: @MainActor (_ done: Int, _ total: Int) -> Void) async throws -> Int {
+        let paths: [String] = try await Task.detached(priority: .userInitiated) {
+            try LibrarySource.withFolderAccess { folder in
+                LibrarySource.comicFiles(in: folder).map(\.relativePath)
+            }
+        }.value
+
+        let newPaths = paths.filter { !existing.contains($0) }
+        onProgress(0, newPaths.count)
+        guard !newPaths.isEmpty else { return 0 }
+
+        var added = 0
+        for (index, relativePath) in newPaths.enumerated() {
+            let prepared = try? await Task.detached(priority: .userInitiated) {
+                try LibrarySource.withFolderAccess { folder in
+                    try prepareFolderEntry(from: folder.appendingPathComponent(relativePath),
+                                           relativePath: relativePath)
+                }
+            }.value
+            if let prepared {
+                commit(prepared, into: context)
+                added += 1
+            }
+            onProgress(index + 1, newPaths.count)
+        }
+        return added
     }
 
     // MARK: Metadata backfill

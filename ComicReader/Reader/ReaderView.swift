@@ -11,12 +11,19 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import UniformTypeIdentifiers
 
 /// A request to open a comic, optionally at a specific page (e.g. from a bookmark).
 struct ReaderTarget: Identifiable {
     let id = UUID()
     let book: ComicBook
     var page: Int?
+    /// The `matchedTransitionSource` id the zoom presentation should grow out of. The Library
+    /// and Recents decks grow the reader from the *cover* (so this stays nil and they pass
+    /// `book.id`); the Bookmarks deck grows it from the *bookmarked page*, whose card is keyed by
+    /// the bookmark's id — different from the book's — so it sets this explicitly. A nil (or
+    /// unmatched) id simply falls back to the standard slide-up.
+    var sourceID: UUID?
 }
 
 struct ReaderView: View {
@@ -91,6 +98,20 @@ struct ReaderView: View {
     /// see `body`.
     @State private var isLandscape = false
 
+    // MARK: Folder-backed fetch (only used when this comic's bytes aren't local)
+    //
+    // The single funnel: every way into the reader lands here, so materialising a folder-backed
+    // comic's archive on demand is done once, in `ensureLocalThenOpen`, rather than at each call site.
+
+    /// True while the archive is being fetched from the library folder — shows the download state
+    /// instead of the plain open spinner.
+    @State private var isDownloading = false
+    /// Set when the fetch fails, which raises the resolve dialog (update folder path / choose a
+    /// file / cancel). Nil the rest of the time.
+    @State private var resolveError: LibrarySource.SourceError?
+    @State private var showFolderPicker = false
+    @State private var showFilePicker = false
+
     private var pageCount: Int { store?.pageCount ?? book.pageCount }
     private var isBookmarked: Bool {
         _ = bookmarkTick
@@ -115,6 +136,12 @@ struct ReaderView: View {
             } else if store != nil {
                 // Archive couldn't be opened (missing / corrupt after import).
                 ReaderUnavailableView()
+            } else if resolveError != nil {
+                // Fetch failed — the resolve dialog below drives the choice; this is what sits
+                // behind it (and what remains if the user dismisses without choosing).
+                ReaderNotDownloadedView()
+            } else if isDownloading {
+                ReaderDownloadingView()
             } else {
                 ProgressView().tint(.secondary)   // reads on both the dark and the light letterbox mat
             }
@@ -162,7 +189,32 @@ struct ReaderView: View {
                     jumpTarget = page
                     showGrid = false
                 }
+                // A default sheet is a narrow centred card on iPad — too skinny for a page grid.
+                // `.page` sizes it to near full-screen there so the thumbnails get the width;
+                // no effect on a phone, where sheets are already edge-to-edge.
+                .presentationSizing(.page)
             }
+        }
+        // A folder-backed comic that wouldn't fetch. The failure is deliberately surfaced only
+        // here, on open — never a background sweep. The three choices cover both real causes
+        // without guessing between them: the whole folder moved (update its path, which re-links
+        // every entry at once), or just this file did (pick it directly), or the share is simply
+        // offline right now (cancel and come back on the right network).
+        .confirmationDialog("Couldn’t load this comic",
+                            isPresented: Binding(get: { resolveError != nil },
+                                                 set: { if !$0 { resolveError = nil } }),
+                            titleVisibility: .visible) {
+            Button("Update Folder Path…") { showFolderPicker = true }
+            Button("Choose Another File…") { showFilePicker = true }
+            Button("Cancel", role: .cancel) { close() }
+        } message: {
+            Text(resolveMessage)
+        }
+        .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
+            handleFolderPicked(result)
+        }
+        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: ComicUTType.all) { result in
+            handleReplacementPicked(result)
         }
     }
 
@@ -334,6 +386,46 @@ struct ReaderView: View {
         // case the file changed underneath us since.
         currentPage = clampedStart(book.pageCount)
 
+        await ensureLocalThenOpen()
+    }
+
+    /// Fetches the archive first when this is a folder-backed comic without local bytes, then
+    /// opens it. On a fetch failure it raises the resolve dialog and stops — the retry paths
+    /// (`handleFolderPicked` / `handleReplacementPicked`) call back in here.
+    ///
+    /// The presence check is the file system, not `book.hasLocalArchive`: the flag drives the
+    /// library badge but can drift (a purged file), and the reader must act on what's actually
+    /// on disk. When they disagree, the flag is reconciled below.
+    private func ensureLocalThenOpen() async {
+        if book.isFolderBacked, !Storage.fm.fileExists(atPath: book.archiveURL.path) {
+            guard let relativePath = book.sourceRelativePath else {
+                presentResolve(.notConfigured); return
+            }
+            let dest = book.archiveURL
+            isDownloading = true
+            do {
+                try await Importer.downloadArchive(relativePath: relativePath, into: dest) { _ in }
+                isDownloading = false
+                book.hasLocalArchive = true
+                try? context.save()
+            } catch let error as LibrarySource.SourceError {
+                isDownloading = false
+                // Closing the reader mid-fetch cancels the task — nothing to resolve, just leave.
+                if case .cancelled = error { return }
+                presentResolve(error)
+                return
+            } catch {
+                isDownloading = false
+                presentResolve(.copyFailed)
+                return
+            }
+        }
+        await openStore()
+    }
+
+    /// Opens the (now-local) archive and settles the reader on it. The open runs OFF the main
+    /// actor (`PageImageStore.open`); everything that needs a real page count waits for it.
+    private func openStore() async {
         let opened = await PageImageStore.open(bookID: book.id, url: book.archiveURL,
                                                paperEnabled: paper.isEnabled, paperParams: paper.params)
         store = opened
@@ -344,7 +436,7 @@ struct ReaderView: View {
         // otherwise never be marked read despite reaching the end. Guard on pageCount so a
         // comic whose archive failed to open (pageCount 0) isn't marked read.
         if opened.pageCount > 0, currentPage >= opened.pageCount - 1 { markRead() }
-        // Count the open once per presentation, riding the save below. setup() is written to
+        // Count the open once per presentation, riding the save below. openStore() is written to
         // be re-runnable (re-setting a date is idempotent) — incrementing a counter is not,
         // and a double count would be silent and permanent. Guarded on pageCount like
         // markRead above, so a comic whose archive won't open can't gain popularity.
@@ -358,6 +450,61 @@ struct ReaderView: View {
         // a slow open doesn't spend the delay on the spinner — and never when the archive
         // wouldn't open, since Close is then the only way out and it must not fade away.
         if opened.pageCount > 0 { scheduleAutoHide() }
+    }
+
+    // MARK: Resolve a missing source
+
+    private func presentResolve(_ error: LibrarySource.SourceError) {
+        resolveError = error
+    }
+
+    /// The reason text for the resolve dialog, tuned to the failure but never over-committing:
+    /// "file missing" and "folder offline" look identical from here, so each message keeps the
+    /// "or the server is offline" door open rather than pushing the user to re-pick needlessly.
+    private var resolveMessage: String {
+        switch resolveError {
+        case .notConfigured:
+            return "This comic comes from a library folder that isn’t set up on this device. Choose the folder, or pick this comic’s file directly."
+        case .fileMissing:
+            return "“\(book.displayTitle)” isn’t where it used to be in your comic folder. If the whole folder moved, update its path — that re-links everything at once. If just this file moved or was renamed, choose it directly. Or the server may simply be offline — try again later."
+        default:   // .unresolved / .copyFailed
+            return "Your comic folder couldn’t be reached — the server may be offline, or the folder may have moved. Update the folder path, choose this file directly, or try again on the right network."
+        }
+    }
+
+    /// The user re-pointed the whole library folder. Every folder-backed entry now resolves
+    /// against the new location by its unchanged relative path, so just retry this open.
+    private func handleFolderPicked(_ result: Result<URL, Error>) {
+        guard case .success(let url) = result else { return }
+        do { try LibrarySource.setFolder(url) } catch { return }
+        resolveError = nil
+        Task { await ensureLocalThenOpen() }
+    }
+
+    /// The user picked a replacement file for just this comic. Copy it in now so it opens, and
+    /// re-point the entry's source when the pick lives inside the library folder (see
+    /// `Importer.relink`). Follows the shipping import path: security scope is taken inside the
+    /// detached task, exactly as `LibraryView.runImport` does with a picker URL.
+    private func handleReplacementPicked(_ result: Result<URL, Error>) {
+        guard case .success(let url) = result else { return }
+        let dest = book.archiveURL
+        resolveError = nil
+        isDownloading = true
+        Task {
+            do {
+                let newRelativePath = try await Task.detached(priority: .userInitiated) {
+                    try Importer.relink(from: url, into: dest)
+                }.value
+                if let newRelativePath { book.sourceRelativePath = newRelativePath }
+                book.hasLocalArchive = true
+                try? context.save()
+                isDownloading = false
+                await openStore()
+            } catch {
+                isDownloading = false
+                presentResolve(.copyFailed)
+            }
+        }
     }
 
     private func clampedStart(_ count: Int) -> Int {
@@ -440,6 +587,32 @@ private struct ReaderUnavailableView: View {
             "Couldn't open this comic",
             systemImage: "exclamationmark.triangle",
             description: Text("The file may have been moved, or is no longer a readable CBZ archive.")
+        )
+    }
+}
+
+/// Shown while a folder-backed comic's archive is being fetched from the library folder. The
+/// progress is deliberately indeterminate: a coordinated read over a share doesn't report a
+/// reliable byte count, and a spinner that says "working" beats a bar that lies.
+private struct ReaderDownloadingView: View {
+    var body: some View {
+        VStack(spacing: 14) {
+            ProgressView().tint(.secondary)
+            Text("Downloading from your library…")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Sits behind the resolve dialog when a folder-backed comic won't fetch, and remains if the
+/// user dismisses the dialog without choosing — the reader's Close button is then the way out.
+private struct ReaderNotDownloadedView: View {
+    var body: some View {
+        ContentUnavailableView(
+            "Not downloaded",
+            systemImage: "icloud.slash",
+            description: Text("This comic isn’t on your device yet.")
         )
     }
 }

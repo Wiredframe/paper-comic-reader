@@ -23,8 +23,13 @@ schemes:
     build:
       targets:
         ComicReader: all
+        ComicReaderTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - ComicReaderTests
     archive:
       config: Release
 
@@ -95,3 +100,19 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1,2"
+
+  # Unit tests for the library-stability invariants — above all that a bookmark can never be
+  # lost by removing a download (only a full delete clears them). Hosted by the app so
+  # `@testable import ComicReader` can reach the models and Importer. Local-only: it never ships
+  # in the sideloaded .ipa (build-ipa.sh archives the ComicReader target alone).
+  ComicReaderTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ComicReaderTests
+    dependencies:
+      - target: ComicReader
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.wiredframe.comicreadertests
+        GENERATE_INFOPLIST_FILE: YES

@@ -34,10 +34,10 @@ settings:
     # Patch for fixes and additions; minor only when a release stops installing on a phone it
     # used to — 1.2.0 was that one (iOS 26), and the version is the only place anyone would
     # learn it. Bump this, tag v<version>, and CI builds and publishes the .ipa.
-    MARKETING_VERSION: "1.2.2"
+    MARKETING_VERSION: "1.3.0"
     # Distributed via GitHub Releases (sideload), not the App Store, so the build
     # number is cosmetic — bump it with each tagged release if you like.
-    CURRENT_PROJECT_VERSION: "10"
+    CURRENT_PROJECT_VERSION: "11"
     # Signing here is only for building onto your OWN device from Xcode — Xcode manages the
     # Apple Development certificate and profile (the account must be added in Xcode →
     # Settings → Accounts), and simulator builds need no profile at all. NOT for shipping:

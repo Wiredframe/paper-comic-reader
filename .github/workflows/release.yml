@@ -37,6 +37,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: build/PaperComicReader-*.ipa
+          # Append an auto-generated changelog (commits since the previous tag) below the
+          # sideloading note, so every release carries "what changed" without hand-editing.
+          generate_release_notes: true
           body: |
             Unsigned `.ipa` for sideloading (AltStore / Sideloadly / TrollStore).
 

@@ -73,52 +73,10 @@ targets:
       - path: AppIcon/AppIcon.icon
         type: file
         buildPhase: resources
-      # Vendored UnrarKit (CBR/RAR). CBR has no clean SPM package, so the source
-      # is vendored flat under Vendor/UnrarKit. The unrar C++ engine compiles with
-      # -DSILENT -DRARDLL and warning suppression (mirrors UnrarKit.podspec). The
-      # excluded .cpp files are #included by other translation units and must NOT
-      # be compiled on their own (list = every unrar .cpp not in the podspec's
-      # unrar-lib source_files, computed against tag 2.10).
-      - path: Vendor/UnrarKit
-        compilerFlags: "-DSILENT -DRARDLL -Wno-return-type -Wno-logical-op-parentheses -Wno-conversion -Wno-parentheses -Wno-unused-function -Wno-unused-variable -Wno-switch -Wno-unused-command-line-argument -Wno-strict-prototypes -Wno-conditional-uninitialized"
-        excludes:
-          - "arccmt.cpp"
-          - "blake2s_sse.cpp"
-          - "blake2sp.cpp"
-          - "cmdfilter.cpp"
-          - "cmdmix.cpp"
-          - "coder.cpp"
-          - "crypt1.cpp"
-          - "crypt2.cpp"
-          - "crypt3.cpp"
-          - "crypt5.cpp"
-          - "hardlinks.cpp"
-          - "log.cpp"
-          - "model.cpp"
-          - "rarpch.cpp"
-          - "recvol3.cpp"
-          - "recvol5.cpp"
-          - "suballoc.cpp"
-          - "threadmisc.cpp"
-          - "uicommon.cpp"
-          - "uiconsole.cpp"
-          - "uisilent.cpp"
-          - "ulinks.cpp"
-          - "unpack15.cpp"
-          - "unpack20.cpp"
-          - "unpack30.cpp"
-          - "unpack50.cpp"
-          - "unpack50frag.cpp"
-          - "unpack50mt.cpp"
-          - "unpackinline.cpp"
-          - "uowners.cpp"
-          - "win32acl.cpp"
-          - "win32lnk.cpp"
-          - "win32stm.cpp"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.wiredframe.comicreader
-        # Keys with no INFOPLIST_KEY_ build-setting form (the CBZ/CBR file association,
+        # Keys with no INFOPLIST_KEY_ build-setting form (the CBZ file association,
         # ProMotion, export compliance) live in Info.plist. GENERATE_INFOPLIST_FILE merges
         # the INFOPLIST_KEY_* settings below into that file rather than replacing it, so
         # both halves survive.
@@ -137,9 +95,3 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1,2"
-        # Vendored UnrarKit needs ARC (Classes) + libc++/libz, and the unrar
-        # headers are reached via <UnrarKit/…> from Vendor/.
-        CLANG_ENABLE_OBJC_ARC: YES
-        SWIFT_OBJC_BRIDGING_HEADER: "ComicReader/ComicReader-Bridging-Header.h"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor"
-        OTHER_LDFLAGS: "$(inherited) -lz -lc++"

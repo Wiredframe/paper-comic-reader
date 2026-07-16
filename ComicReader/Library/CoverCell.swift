@@ -3,7 +3,7 @@
 //  Comic Reader
 //
 //  One comic in the gallery grid: cover + title + page count + progress pie,
-//  with a context menu to read, remove from Recents, or delete it.
+//  with a context menu to read, mark as read, or delete it.
 //
 
 import SwiftUI
@@ -11,12 +11,12 @@ import SwiftData
 
 struct CoverCell: View {
     let book: ComicBook
-    var inRecents: Bool = false
     var selectionMode: Bool = false
     var isSelected: Bool = false
     /// Decode the cover down to roughly the on-screen cell size (covers are stored at
     /// 1200px). Keeps grid scrolling smooth and the image cache from thrashing.
     var maxPixel: CGFloat? = nil
+    var onShowDetail: () -> Void = {}
     let onOpen: () -> Void
 
     @Environment(\.modelContext) private var context
@@ -37,11 +37,22 @@ struct CoverCell: View {
                     .overlay(alignment: .topTrailing) { selectionBadge }
                     .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
 
-                Text(book.title)
+                Text(book.displayTitle)
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
+
+                // The lead story. One line, always reserved once anything in the grid has a
+                // subtitle — a cell that grows only for tagged comics would leave the row it
+                // sits in taller than its neighbours, and the covers would drift apart.
+                if let subtitle = book.displaySubtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
 
                 HStack(spacing: 5) {
                     Text(book.pageCountLabel)
@@ -58,7 +69,7 @@ struct CoverCell: View {
         .accessibilityAddTraits(selectionMode && isSelected ? .isSelected : [])
         // No per-item context menu while selecting — the toolbar carries the batch actions.
         .contextMenu { if !selectionMode { menu } }
-        .confirmationDialog("Delete “\(book.title)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+        .confirmationDialog("Delete “\(book.displayTitle)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { Importer.delete(book, from: context) }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -82,6 +93,7 @@ struct CoverCell: View {
 
     @ViewBuilder private var menu: some View {
         Button(action: onOpen) { Label("Read", systemImage: "book") }
+        Button(action: onShowDetail) { Label("Details", systemImage: "info.circle") }
         Button {
             book.isRead.toggle()
             try? context.save()
@@ -89,21 +101,9 @@ struct CoverCell: View {
             Label(book.isRead ? "Mark as Unread" : "Mark as Read",
                   systemImage: book.isRead ? "circle" : "checkmark.circle")
         }
-        if inRecents {
-            Button { removeFromRecents() } label: {
-                Label("Remove from Recents", systemImage: "clock.badge.xmark")
-            }
-        }
         Divider()
         Button(role: .destructive) { confirmingDelete = true } label: {
             Label("Delete", systemImage: "trash")
         }
-    }
-
-    /// Drops the comic from the Recents tab without touching the library or its
-    /// bookmarks — just forgets when it was last opened.
-    private func removeFromRecents() {
-        book.dateOpened = nil
-        try? context.save()
     }
 }

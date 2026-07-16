@@ -12,12 +12,15 @@ struct LibraryGrid: View {
     let books: [ComicBook]
     var columns: Int = 2
     var listMode: Bool = false
-    var inRecents: Bool = false
     // Multi-select: when on, a tap toggles selection (via onToggleSelect) rather than
     // opening the comic. Off by default, so Recents / other callers are unaffected.
     var selectionMode: Bool = false
     var selectedIDs: Set<UUID> = []
     var onToggleSelect: (ComicBook) -> Void = { _ in }
+    /// Asks the caller to show the comic's details. Both layouts offer it from the context
+    /// menu; the caller owns the sheet, so there's one of it per screen rather than one per
+    /// cell — the same way `onOpen` hands the reader up.
+    var onShowDetail: (ComicBook) -> Void = { _ in }
     let onOpen: (ComicBook) -> Void
 
     var body: some View {
@@ -25,15 +28,17 @@ struct LibraryGrid: View {
             LazyVStack(spacing: 0) {
                 ForEach(books) { book in
                     LibraryRow(book: book, selectionMode: selectionMode,
-                               isSelected: selectedIDs.contains(book.id)) { tap(book) }
+                               isSelected: selectedIDs.contains(book.id),
+                               onShowDetail: { onShowDetail(book) }) { tap(book) }
                     Divider().padding(.leading, 76)
                 }
             }
         } else {
             LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
                 ForEach(books) { book in
-                    CoverCell(book: book, inRecents: inRecents, selectionMode: selectionMode,
-                              isSelected: selectedIDs.contains(book.id), maxPixel: coverMaxPixel) { tap(book) }
+                    CoverCell(book: book, selectionMode: selectionMode,
+                              isSelected: selectedIDs.contains(book.id), maxPixel: coverMaxPixel,
+                              onShowDetail: { onShowDetail(book) }) { tap(book) }
                 }
             }
         }
@@ -74,6 +79,7 @@ private struct LibraryRow: View {
     let book: ComicBook
     var selectionMode: Bool = false
     var isSelected: Bool = false
+    var onShowDetail: () -> Void = {}
     let onOpen: () -> Void
 
     var body: some View {
@@ -90,9 +96,19 @@ private struct LibraryRow: View {
                     .frame(width: 44, height: 62)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(book.title).font(.body).foregroundStyle(.primary).lineLimit(2)
+                    Text(book.displayTitle).font(.body).foregroundStyle(.primary).lineLimit(2)
+                    // The list has the width for it, so a tagged comic names its lead story
+                    // here — the one thing "Topolino 1900" doesn't tell you.
+                    if let subtitle = book.displaySubtitle {
+                        Text(subtitle)
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     HStack(spacing: 5) {
                         Text(book.pageCountLabel)
+                        if let stories = book.storyCountLabel {
+                            Text("·")
+                            Text(stories)
+                        }
                         if book.progress > 0 { ProgressPie(progress: book.progress, size: 13) }
                         if book.isRead { ReadCheck(size: 13) }
                     }
@@ -105,5 +121,13 @@ private struct LibraryRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selectionMode && isSelected ? .isSelected : [])
+        // No context menu while selecting — the toolbar carries the batch actions, same as
+        // the cover cell.
+        .contextMenu {
+            if !selectionMode {
+                Button(action: onOpen) { Label("Read", systemImage: "book") }
+                Button(action: onShowDetail) { Label("Details", systemImage: "info.circle") }
+            }
+        }
     }
 }

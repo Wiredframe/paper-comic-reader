@@ -48,5 +48,11 @@ enum ScreenshotSupport {
     static var shouldOpenReader: Bool { openPage != nil }
 
     static var openPage: Int? { env["SCREENSHOT_OPEN_PAGE"].flatMap(Int.init) }
+
+    /// When SCREENSHOT_DETAIL is set, LibraryView opens the first comic's detail sheet.
+    /// The sheet is otherwise only reachable through a context menu, which a screenshot run
+    /// can't perform — this is the one way to see `ComicMetadataSection` rendered without a
+    /// gesture.
+    static var shouldOpenDetail: Bool { env["SCREENSHOT_DETAIL"] != nil }
 }
 #endif

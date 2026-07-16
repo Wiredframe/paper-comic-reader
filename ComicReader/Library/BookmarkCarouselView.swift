@@ -57,14 +57,14 @@ struct BookmarkCarouselView: View {
     private func art(_ mark: Bookmark) -> PeekArt {
         PeekArt(url: mark.thumbURL,
                 aspect: mark.pageAspect ?? (2.0 / 3.0),
-                label: "\(mark.book?.title ?? "Bookmark"), \(mark.pageLabel)")
+                label: "\(mark.book?.displayTitle ?? "Bookmark"), \(mark.pageLabel)")
     }
 
     // MARK: Pinned info panel
 
     private func infoPanel(_ mark: Bookmark) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(mark.book?.title ?? "—")
+            Text(mark.book?.displayTitle ?? "—")
                 .font(.headline)
                 .lineLimit(1)
             HStack(spacing: 5) {

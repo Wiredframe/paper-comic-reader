@@ -24,10 +24,11 @@ enum Importer {
         let id: UUID
         let title: String
         let fileName: String
-        let format: ComicFormat
         let pageCount: Int
         let coverName: String?
         let coverAspect: Double?
+        /// Parsed from the archive's ComicInfo.xml, when it has one.
+        let info: ComicInfoData?
     }
 
     /// The heavy half of an import — copy the file into storage, read the archive and
@@ -39,14 +40,12 @@ enum Importer {
         let scoped = sourceURL.startAccessingSecurityScopedResource()
         defer { if scoped { sourceURL.stopAccessingSecurityScopedResource() } }
 
-        guard let format = ComicArchiveFactory.format(of: sourceURL) else {
+        guard ComicArchive.looksLikeComic(at: sourceURL) else {
             throw ImportError.unsupported
         }
 
         let id = UUID()
-        let ext = sourceURL.pathExtension.isEmpty
-            ? (format == .zip ? "cbz" : "cbr")
-            : sourceURL.pathExtension.lowercased()
+        let ext = sourceURL.pathExtension.isEmpty ? "cbz" : sourceURL.pathExtension.lowercased()
         let fileName = "\(id.uuidString).\(ext)"
         let destURL = Storage.comicURL(fileName)
 
@@ -59,7 +58,7 @@ enum Importer {
             throw ImportError.copyFailed
         }
 
-        guard let archive = try? ComicArchiveFactory.open(url: destURL), archive.pageCount > 0 else {
+        guard let archive = try? ComicArchive(url: destURL), archive.pageCount > 0 else {
             try? Storage.fm.removeItem(at: destURL)
             throw ImportError.empty
         }
@@ -79,8 +78,9 @@ enum Importer {
 
         let title = sourceURL.deletingPathExtension().lastPathComponent
         return Prepared(id: id, title: title, fileName: fileName,
-                        format: format, pageCount: archive.pageCount,
-                        coverName: coverName, coverAspect: coverAspect)
+                        pageCount: archive.pageCount,
+                        coverName: coverName, coverAspect: coverAspect,
+                        info: archive.metadataXML().flatMap(ComicInfoParser.parse))
     }
 
     /// The light half — insert a prepared import into the store. Main-actor: SwiftData's
@@ -88,8 +88,9 @@ enum Importer {
     @MainActor @discardableResult
     static func commit(_ prepared: Prepared, into context: ModelContext) -> ComicBook {
         let book = ComicBook(id: prepared.id, title: prepared.title, fileName: prepared.fileName,
-                             format: prepared.format, pageCount: prepared.pageCount,
+                             pageCount: prepared.pageCount,
                              coverName: prepared.coverName, coverAspect: prepared.coverAspect)
+        book.apply(prepared.info)
         context.insert(book)
         try? context.save()
         return book
@@ -106,6 +107,49 @@ enum Importer {
     static func importComic(from sourceURL: URL,
                             into context: ModelContext) throws -> ComicBook {
         commit(try prepare(from: sourceURL), into: context)
+    }
+
+    // MARK: Metadata backfill
+
+    /// One archive's ComicInfo.xml, read. Carries the result across the actor hop: the
+    /// SwiftData models it came from belong to the main actor and can't make the trip.
+    private struct ScannedMetadata: Sendable {
+        let id: UUID
+        let info: ComicInfoData?   // nil = untagged, or the archive wouldn't open
+    }
+
+    /// Reads ComicInfo.xml for every comic that hasn't been looked at — comics imported before
+    /// metadata existed, on the first launch after the update.
+    ///
+    /// Opens each archive off the main actor (a ZIP central-directory walk apiece, which is
+    /// exactly the work that used to freeze the app when it ran on-main — see `PageImageStore.open`),
+    /// then applies the whole batch with a SINGLE save: a per-book save would republish the
+    /// @Query once per comic and stutter the grid while it ran.
+    @MainActor
+    static func backfillMetadata(for books: [ComicBook], into context: ModelContext) async {
+        let pending: [(id: UUID, url: URL)] = books
+            .filter { !$0.metadataScanned }
+            .map { ($0.id, $0.archiveURL) }
+        guard !pending.isEmpty else { return }
+
+        let scanned: [ScannedMetadata] = await Task.detached(priority: .utility) {
+            pending.map { book in
+                ScannedMetadata(id: book.id,
+                                info: (try? ComicArchive(url: book.url))?
+                                    .metadataXML()
+                                    .flatMap(ComicInfoParser.parse))
+            }
+        }.value
+
+        let byID = Dictionary(scanned.map { ($0.id, $0.info) }, uniquingKeysWith: { first, _ in first })
+        for book in books where !book.metadataScanned {
+            // `apply` marks the book scanned either way, including for an archive that wouldn't
+            // open: that comic can't be read at all, and retrying it on every launch would only
+            // pay the open cost forever to learn the same thing.
+            guard let info = byID[book.id] else { continue }
+            book.apply(info)
+        }
+        try? context.save()
     }
 
     /// One archive already in the library, as plain data. The duplicate scan reads files and

@@ -434,7 +434,7 @@ private struct ReaderUnavailableView: View {
         ContentUnavailableView(
             "Couldn't open this comic",
             systemImage: "exclamationmark.triangle",
-            description: Text("The file may have been moved, or is no longer a readable CBZ or CBR archive.")
+            description: Text("The file may have been moved, or is no longer a readable CBZ archive.")
         )
     }
 }

@@ -57,7 +57,7 @@ struct BookmarksView: View {
             // Keep a comic's bookmarks together, in reading order within it — a flat title sort
             // would scatter the pages of the same comic by whenever they happened to be made.
             ascending = validBookmarks.sorted {
-                let lhs = $0.book?.title ?? "", rhs = $1.book?.title ?? ""
+                let lhs = $0.book?.displayTitle ?? "", rhs = $1.book?.displayTitle ?? ""
                 if lhs != rhs { return lhs.localizedStandardCompare(rhs) == .orderedAscending }
                 return $0.pageIndex < $1.pageIndex
             }
@@ -201,7 +201,7 @@ private struct BookmarkRow: View {
                     .frame(width: 44, height: 62)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(bookmark.book?.title ?? "—")
+                    Text(bookmark.book?.displayTitle ?? "—")
                         .font(.body).foregroundStyle(.primary).lineLimit(2)
                     Text(bookmark.pageLabel)
                         .font(.caption).foregroundStyle(.secondary)

@@ -3,16 +3,16 @@
 //  Comic Reader
 //
 //  Decodes comic pages off the main thread, applies the paper effect, and caches
-//  the display-ready images. Archive access is serialised on one queue (the ZIP /
-//  RAR readers are not thread-safe). Also vends small thumbnails for the page
-//  grid and bookmarks.
+//  the display-ready images. Archive access is serialised on one queue (the ZIP
+//  reader is not thread-safe). Also vends small thumbnails for the page grid and
+//  bookmarks.
 //
 
 import UIKit
 
 /// `@unchecked Sendable` is the design, not a shortcut: every archive read and every mutation
-/// of `paperEnabled` / `paperParams` happens on the private `work` queue (the ZIP/RAR readers
-/// are not thread-safe), and both caches are `NSCache`, which is. The type is handed between
+/// of `paperEnabled` / `paperParams` happens on the private `work` queue (the ZIP reader is
+/// not thread-safe), and both caches are `NSCache`, which is. The type is handed between
 /// the main actor and that queue on every page request. The archive is opened once on
 /// `openQueue` before the store is handed to anyone (see `open`), so that can't race a read.
 final class PageImageStore: @unchecked Sendable {
@@ -44,10 +44,10 @@ final class PageImageStore: @unchecked Sendable {
     /// archive is file I/O whose cost scales with the archive, not with the page being read:
     /// ZIPFoundation walks the CBZ's central directory entry by entry and seeks to each page's
     /// *local* header on the way — offsets scattered across the whole file — plus a second seek
-    /// past a page's compressed bytes for the streamed ZIPs that carry a data descriptor; a CBR
-    /// is worse still, since UnrarKit skips through every RAR header end to end. On a big comic,
-    /// or one whose bytes aren't in the page cache yet, that is hundreds of milliseconds to
-    /// seconds — which is exactly how long the app froze while `init` ran on the main thread.
+    /// past a page's compressed bytes for the streamed ZIPs that carry a data descriptor. On a
+    /// big comic, or one whose bytes aren't in the page cache yet, that is hundreds of
+    /// milliseconds to seconds — which is exactly how long the app froze while `init` ran on
+    /// the main thread.
     static func open(bookID: UUID, url: URL,
                      paperEnabled: Bool, paperParams: PaperParams) async -> PageImageStore {
         await withCheckedContinuation { continuation in
@@ -64,7 +64,7 @@ final class PageImageStore: @unchecked Sendable {
     /// main actor's SwiftData context and must not be read from the queue this runs on.
     private init(bookID: UUID, url: URL, paperEnabled: Bool, paperParams: PaperParams) {
         self.bookID = bookID
-        self.archive = try? ComicArchiveFactory.open(url: url)
+        self.archive = try? ComicArchive(url: url)
         self.pageCount = archive?.pageCount ?? 0
         self.paperEnabled = paperEnabled
         self.paperParams = paperParams

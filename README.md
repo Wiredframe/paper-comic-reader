@@ -14,7 +14,7 @@ A lean, native comic reader for iPhone and iPad that makes pages read like ink o
   <img src="docs/screenshot-paper.jpg" alt="Paper effect settings on iPhone" width="260">
 </p>
 
-Paper Comic Reader opens **CBZ and CBR** archives, keeps a library with reading progress and bookmarks, and can render every page with a realistic **paper effect** (ported from the Simple Comic fork) — a warm tonal remap plus a fine paper grain, so pages read like they were printed.
+Paper Comic Reader opens **CBZ** archives, keeps a library with reading progress and bookmarks, and can render every page with a realistic **paper effect** (ported from the Simple Comic fork) — a warm tonal remap plus a fine paper grain, so pages read like they were printed.
 
 Built with SwiftUI and a UIKit reader core, Core Image and Metal for the paper effect. Everything runs on-device: no accounts, no network requests, no tracking or analytics.
 
@@ -63,21 +63,21 @@ The `.ipa` is deliberately unsigned; sideload tools re-sign it per user (see **I
 ```
 ComicReader/
   App/            ComicReaderApp (@main, SwiftData container) · RootTabView (floating tab bar)
-  Archive/        ComicArchive protocol + ZipComicArchive (ZIPFoundation) / RarComicArchive (UnrarKit)
-  Model/          SwiftData models (ComicBook, Bookmark) · Storage · ImageDownsampler · Importer
+  Archive/        ComicArchive — CBZ reading (ZIPFoundation)
+  Model/          SwiftData models (ComicBook, Bookmark) · ComicInfo parser · Storage · ImageDownsampler · Importer
   Library/        Recents / Library / Bookmarks tabs, cover grid, gallery/list, import
   Reader/         UIKit paged, zoomable reader core + SwiftUI chrome, page grid, bookmarks
   PaperEffect/    Platform-neutral paper engine (PaperFilter + PaperKernels.metal) + settings
   Settings/       Reader / paper / library settings
   Resources/      Assets.xcassets (AppIcon + AccentColor)
-Vendor/UnrarKit/  Vendored UnrarKit + unrar engine (CBR; no clean SPM package exists)
 ```
 
 ### Formats and persistence
 
-- **CBZ** via [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) (SPM).
-- **CBR** via [UnrarKit](https://github.com/abbeycode/UnrarKit), vendored flat under `Vendor/UnrarKit` (unrar C++ compiled with `-DSILENT -DRARDLL`; see `project.yml` for the exact source and exclude list). Reached from Swift via the bridging header.
+- **CBZ** via [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) (SPM). CBR/RAR was supported until 1.2.2 through a vendored UnrarKit; it was dropped in favour of a CBZ-only library, which removed ~160 vendored C++ files and the Objective-C bridging header along with it.
 - **Library** is a [SwiftData](https://developer.apple.com/xcode/swiftdata/) store; archives, covers and bookmark thumbnails are files on disk (see `Storage`).
+- **Metadata** is the archive's `ComicInfo.xml` (the ComicRack schema every tagger writes), parsed once at import by `ComicInfoParser` onto the `ComicBook` — no view ever touches XML. Comics imported before a tagging run are read on the next launch (`Importer.backfillMetadata`), which is what `metadataScanned` is for. Every view then names a comic through `displayTitle` / `displaySubtitle` ("Topolino 1900" / its lead story, falling back to the file name), and `ComicMetadataSection` renders the full picture — inline under the Discover carousel's bookmarks, and inside `ComicDetailView`'s sheet for the grid and the list.
+  ComicInfo has no field for an issue's *contents*, so taggers write the index into `<Summary>` as free text; the parser lifts it back out into `ComicStory` rows, and falls back to showing the raw summary when the format doesn't match.
 
 ### The reader
 
@@ -94,11 +94,11 @@ Full-bleed paged UIKit core — a horizontal, paging `UICollectionView` (`Reader
 
 The goal above everything: **stay lean and fast**. Panel detection must run on-device as efficiently and battery-friendly as possible.
 
-**Done** — open CBZ/CBR, library with folders, paged zoomable reader, resume, global bookmarks with thumbnails, page-grid picker, paper effect, Live Text setting, double-page landscape layout, random comic picker.
+**Done** — open CBZ, library with folders, paged zoomable reader, resume, global bookmarks with thumbnails, page-grid picker, paper effect, Live Text setting, double-page landscape layout, random comic picker, ComicInfo.xml metadata.
 
 **Next**
 
 1. **Deeper Live Text / OCR** — native VisionKit Live Text (press-and-hold to select) is already toggleable in Settings; copy, speak and per-page caching come next.
 2. **Panel detection and smart zoom** — detect panels once per page (cache the rects), then guided zoom. Don't over-zoom: the priority is only that the target panel is in view, and *equally* that the comic fills the **full screen width** whenever possible. Adjustable min/max, hysteresis; detection downscaled on a background queue.
 
-Out of scope (dropped): library search, OPDS, metadata and backstories. A page-curl open/close transition was prototyped and removed; it may be redone later.
+Out of scope (dropped): library search, OPDS. A page-curl open/close transition was prototyped and removed; it may be redone later.

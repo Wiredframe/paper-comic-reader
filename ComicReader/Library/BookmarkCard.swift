@@ -30,7 +30,7 @@ struct BookmarkCard: View {
 
                 VStack(spacing: 2) {
                     if showsTitle {
-                        Text(bookmark.book?.title ?? "—")
+                        Text(bookmark.book?.displayTitle ?? "—")
                             .font(.subheadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)

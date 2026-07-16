@@ -21,9 +21,8 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 
-	<!-- Our own UTIs for cbz/cbr, mapping the file extensions to them (the OS
-	     otherwise invents a dynamic type per app). cbz conforms to public.zip-archive;
-	     cbr is just data, since there is no system RAR type. -->
+	<!-- Our own UTI for cbz, mapping the file extension to it (the OS otherwise
+	     invents a dynamic type per app). cbz conforms to public.zip-archive. -->
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -48,31 +47,9 @@
 				</array>
 			</dict>
 		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>de.wiredframe.comicreader.cbr</string>
-			<key>UTTypeDescription</key>
-			<string>Comic Book Archive (RAR)</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>cbr</string>
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>application/vnd.comicbook-rar</string>
-					<string>application/x-cbr</string>
-				</array>
-			</dict>
-		</dict>
 	</array>
 
-	<!-- Declare the app opens those two UTIs as a viewer, so it shows up in the Files
+	<!-- Declare the app opens that UTI as a viewer, so it shows up in the Files
 	     app ("Open"), in other apps' "Open With" / share sheet, and can be the default
 	     handler. -->
 	<key>CFBundleDocumentTypes</key>
@@ -87,18 +64,6 @@
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>de.wiredframe.comicreader.cbz</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Comic Book Archive (RAR)</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>Owner</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>de.wiredframe.comicreader.cbr</string>
 			</array>
 		</dict>
 	</array>

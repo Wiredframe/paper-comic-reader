@@ -16,6 +16,10 @@ enum LibrarySort: String, CaseIterable {
     /// Times opened. One field, both readings: descending = most-opened ("popular"),
     /// ascending = least-opened ("gathering dust") — the existing order toggle covers both.
     case opened
+    /// Series, then issue number — "Topolino 2" before "Topolino 10". The order a run of a
+    /// series is actually collected in, which no file-name sort can reproduce. Only useful
+    /// once comics carry metadata, so the menu hides it until some do.
+    case series
 }
 
 /// Which layout the Library tab shows. Raw string in @AppStorage, like `LibrarySort`.
@@ -64,6 +68,12 @@ struct LibraryView: View {
     /// The comic being read, and optionally the page to land on — the carousel's bookmark
     /// cards open straight to their page, everything else resumes where it left off.
     @State private var target: ReaderTarget?
+    /// The comic whose details are showing, if any. Owned here rather than by the cell, so the
+    /// grid presents one sheet instead of one per cover.
+    @State private var detailBook: ComicBook?
+    /// Set by the detail sheet's "Read" and consumed once the sheet has fully dismissed —
+    /// raising the reader before then would collide with the sheet still on screen.
+    @State private var pendingReadFromDetail: ComicBook?
     @State private var didAutoOpen = false
 
     // Multi-select (standard iOS "Select" mode): tap toggles a cover instead of opening it,
@@ -96,6 +106,10 @@ struct LibraryView: View {
         return "Delete \(n) comic\(n == 1 ? "" : "s")?"
     }
 
+    /// Whether any comic carries a series — gates the Series sort, which would otherwise be a
+    /// menu entry that does nothing until the library is tagged.
+    private var hasSeries: Bool { books.contains { $0.series?.nonEmpty != nil } }
+
     /// Books ordered by the current sort choice. Sorted in memory so the field/order can
     /// change live without a new @Query.
     private var sortedBooks: [ComicBook] {
@@ -104,11 +118,16 @@ struct LibraryView: View {
         case .dateAdded:
             ascending = books.sorted { $0.dateAdded < $1.dateAdded }
         case .title:
-            ascending = books.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            // By what the cards actually say — "Topolino 1900", not the file name behind it.
+            ascending = books.sorted {
+                $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending
+            }
         case .opened:
             // Tie-break on dateAdded: a fresh library is all-zero openCount and sorted(by:)
             // isn't guaranteed stable, so ties would otherwise churn between recomputations.
             ascending = books.sorted { ($0.openCount, $0.dateAdded) < ($1.openCount, $1.dateAdded) }
+        case .series:
+            ascending = books.sorted { $0.sortsBefore($1) }
         }
         return sortAscending ? ascending : ascending.reversed()
     }
@@ -131,7 +150,8 @@ struct LibraryView: View {
                     ScrollView {
                         LibraryGrid(books: sortedBooks, columns: columns, listMode: viewMode == .list,
                                     selectionMode: selectionMode, selectedIDs: selection,
-                                    onToggleSelect: toggleSelection) { target = ReaderTarget(book: $0) }
+                                    onToggleSelect: toggleSelection,
+                                    onShowDetail: { detailBook = $0 }) { target = ReaderTarget(book: $0) }
                             .padding(.horizontal)
                             .padding(.top, 8)
                     }
@@ -165,6 +185,16 @@ struct LibraryView: View {
                 // with this id, and the presentation falls back to the standard slide-up.
                 .navigationTransition(.zoom(sourceID: target.book.id, in: readerZoom))
         }
+        .sheet(item: $detailBook, onDismiss: {
+            // Open the reader only now the sheet is gone — presenting a full-screen cover while
+            // it was still dismissing raced the two presentations. See `ComicDetailView.onRead`.
+            if let book = pendingReadFromDetail {
+                pendingReadFromDetail = nil
+                target = ReaderTarget(book: book)
+            }
+        }) { book in
+            ComicDetailView(book: book) { pendingReadFromDetail = book }
+        }
         .overlay {
             if let progress = importProgress {
                 ImportProgressOverlay(done: progress.done, total: progress.total)
@@ -172,6 +202,11 @@ struct LibraryView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: importProgress)
+        // Read ComicInfo.xml for comics imported before metadata existed. Here rather than in
+        // the app shell because this is the default tab and the one whose cards, sort menu and
+        // detail sheet the metadata feeds — a @Query in RootTabView would republish the whole
+        // shell on every progress save just to run this once.
+        .task { await Importer.backfillMetadata(for: books, into: context) }
         // Present a comic opened from outside the app (Files / "Open With"). onAppear
         // covers arriving here via a tab switch; onChange covers already being here.
         .onAppear(perform: consumePendingOpen)
@@ -181,21 +216,27 @@ struct LibraryView: View {
             if LibraryViewMode.from(raw) == .discover { exitSelection() }
         }
         #if DEBUG
-        // Screenshot mode: once the seeded comic lands, open it in the reader.
-        .onChange(of: books.count) { _, count in
-            if ScreenshotSupport.shouldOpenReader, !didAutoOpen, let first = books.first {
-                didAutoOpen = true
-                target = ReaderTarget(book: first)
-            }
-        }
-        .onAppear {
-            if ScreenshotSupport.shouldOpenReader, !didAutoOpen, let first = books.first {
-                didAutoOpen = true
-                target = ReaderTarget(book: first)
-            }
-        }
+        // Screenshot mode: once the seeded comic lands, present what was asked for. onChange
+        // covers the seed arriving after this view; onAppear covers it already being there.
+        .onChange(of: books.count) { _, _ in autoPresentIfRequested() }
+        .onAppear(perform: autoPresentIfRequested)
         #endif
     }
+
+    #if DEBUG
+    /// Opens the first comic in the reader (SCREENSHOT_OPEN_PAGE) or its detail sheet
+    /// (SCREENSHOT_DETAIL). One-shot, so a later library change can't reopen it.
+    private func autoPresentIfRequested() {
+        guard !didAutoOpen, let first = books.first else { return }
+        if ScreenshotSupport.shouldOpenReader {
+            didAutoOpen = true
+            target = ReaderTarget(book: first)
+        } else if ScreenshotSupport.shouldOpenDetail {
+            didAutoOpen = true
+            detailBook = first
+        }
+    }
+    #endif
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if selectionMode {
@@ -244,6 +285,9 @@ struct LibraryView: View {
                         Picker("Sort By", selection: $sortField) {
                             Label("Date Added", systemImage: "calendar").tag(LibrarySort.dateAdded.rawValue)
                             Label("Title", systemImage: "textformat").tag(LibrarySort.title.rawValue)
+                            if hasSeries {
+                                Label("Series", systemImage: "books.vertical").tag(LibrarySort.series.rawValue)
+                            }
                             Label("Times Opened", systemImage: "flame").tag(LibrarySort.opened.rawValue)
                         }
                         Divider()
@@ -279,7 +323,7 @@ struct LibraryView: View {
         ContentUnavailableView {
             Label("No comics yet", systemImage: "books.vertical")
         } description: {
-            Text("Import a CBZ or CBR to get started.")
+            Text("Import a CBZ to get started.")
         } actions: {
             Button { showImporter = true } label: {
                 Label("Import", systemImage: "square.and.arrow.down")
@@ -395,11 +439,11 @@ struct LibraryView: View {
                     // carousel is on screen; in the grid the comic is simply present.
                     if viewMode == .discover { focusBookID = book.id }
                     if firstWasDuplicate {
-                        alreadyImportedNote = "“\(book.title)” is already in your library."
+                        alreadyImportedNote = "“\(book.displayTitle)” is already in your library."
                     }
                 } else {
                     let name = urls[0].deletingPathExtension().lastPathComponent
-                    importError = "Couldn't open “\(name)”. It may not be a valid CBZ or CBR."
+                    importError = "Couldn't open “\(name)”. It may not be a valid CBZ."
                 }
             case .picker:
                 if failures > 0 { importError = "Couldn't import \(failures) file(s)." }

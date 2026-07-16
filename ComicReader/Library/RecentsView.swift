@@ -16,8 +16,17 @@ struct RecentsView: View {
     private var books: [ComicBook]
 
     @State private var target: ReaderTarget?
+    /// Live search query — narrows the recents to matches on title / story title / issue number.
+    @State private var searchText = ""
     /// Ties the carousel's cover to the reader it opens — see LibraryView.
     @Namespace private var readerZoom
+
+    private var trimmedQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Recents narrowed by the search query, in the @Query's most-recent-first order.
+    private var shownBooks: [ComicBook] {
+        trimmedQuery.isEmpty ? books : books.filter { $0.matches(searchQuery: trimmedQuery) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -29,10 +38,12 @@ struct RecentsView: View {
                                                description: Text("Comics you open show up here."))
                             .padding(.top, 80)
                     }
+                } else if shownBooks.isEmpty {
+                    ScrollView { ContentUnavailableView.search(text: trimmedQuery).padding(.top, 80) }
                 } else {
                     // The cover carousel, in the order the @Query already gives us (most
                     // recently opened first) — so no filter segments here.
-                    PeekCarouselView(books: books,
+                    PeekCarouselView(books: shownBooks,
                                      showsFilters: false,
                                      onRemoveFromRecents: removeFromRecents,
                                      transitionNamespace: readerZoom) { book, page in
@@ -42,6 +53,7 @@ struct RecentsView: View {
             }
             .navigationTitle("Recents")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Comics, stories, issue #")
             .toolbar {
                 if !books.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {

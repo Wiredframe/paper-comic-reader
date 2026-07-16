@@ -55,6 +55,12 @@ struct LibraryView: View {
     @AppStorage(LibraryViewMode.storageKey) private var viewModeRaw = LibraryViewMode.defaultMode.rawValue
     @AppStorage("library.sortField") private var sortField = LibrarySort.dateAdded.rawValue
     @AppStorage("library.sortAscending") private var sortAscending = false
+    /// "Only Downloaded" — hides folder-backed comics whose bytes aren't local. Off by default.
+    @AppStorage("library.onlyDownloaded") private var onlyDownloaded = false
+
+    /// Live search query, bound to the `.searchable` field. Narrows every layout through
+    /// `displayedBooks`, matching on title / story title / issue number (see `ComicBook.matches`).
+    @State private var searchText = ""
 
     @State private var showImporter = false
     @State private var importError: String?
@@ -110,6 +116,10 @@ struct LibraryView: View {
     /// menu entry that does nothing until the library is tagged.
     private var hasSeries: Bool { books.contains { $0.series?.nonEmpty != nil } }
 
+    /// Whether any comic comes from a library folder — gates the "Only Downloaded" filter, which
+    /// otherwise would be a control that hides nothing (owned copies are always downloaded).
+    private var hasFolderComics: Bool { books.contains { $0.isFolderBacked } }
+
     /// Books ordered by the current sort choice. Sorted in memory so the field/order can
     /// change live without a new @Query.
     private var sortedBooks: [ComicBook] {
@@ -142,23 +152,45 @@ struct LibraryView: View {
         return sortAscending ? ascending : ascending.reversed()
     }
 
+    private var trimmedQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// `sortedBooks` narrowed by the active filter and the search query — the single list every
+    /// layout renders, so both reach the grid, the list and the carousel alike. "Downloaded"
+    /// includes owned copies (their archive is always local); only not-yet-fetched folder comics
+    /// drop out. Search matches title / story title / issue number (see `ComicBook.matches`).
+    private var displayedBooks: [ComicBook] {
+        var result = onlyDownloaded ? sortedBooks.filter { $0.hasLocalArchive } : sortedBooks
+        if !trimmedQuery.isEmpty { result = result.filter { $0.matches(searchQuery: trimmedQuery) } }
+        return result
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 if books.isEmpty {
                     ScrollView { emptyState.padding(.top, 80) }
+                } else if displayedBooks.isEmpty {
+                    // Nothing to show once narrowed — a blank grid or a zero-item carousel (which
+                    // the deck can't render) would be wrong. A search that found nothing says so;
+                    // otherwise it's the "Only Downloaded" filter hiding everything.
+                    ScrollView {
+                        if !trimmedQuery.isEmpty {
+                            ContentUnavailableView.search(text: trimmedQuery).padding(.top, 80)
+                        } else {
+                            filteredEmptyState.padding(.top, 80)
+                        }
+                    }
                 } else if viewMode == .discover {
                     // No ScrollView here: the carousel brings its own, sized to the container,
                     // because it needs the real available height to size its card. It gets
-                    // `sortedBooks`, so Discover follows the same sort menu as the grid — its
-                    // segments only filter.
-                    PeekCarouselView(books: sortedBooks, randomTrigger: randomTick,
+                    // `displayedBooks`, so Discover follows the same sort + filter as the grid.
+                    PeekCarouselView(books: displayedBooks, randomTrigger: randomTick,
                                      transitionNamespace: readerZoom, focusID: $focusBookID) { book, page in
                         target = ReaderTarget(book: book, page: page)
                     }
                 } else {
                     ScrollView {
-                        LibraryGrid(books: sortedBooks, columns: columns, listMode: viewMode == .list,
+                        LibraryGrid(books: displayedBooks, columns: columns, listMode: viewMode == .list,
                                     selectionMode: selectionMode, selectedIDs: selection,
                                     onToggleSelect: toggleSelection,
                                     onShowDetail: { detailBook = $0 }) { target = ReaderTarget(book: $0) }
@@ -169,6 +201,10 @@ struct LibraryView: View {
             }
             .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)
+            // Search belongs to the browse layouts, not Discover — the carousel is for
+            // serendipity, and a lookup field there reads as the wrong tool. Dropped in that mode
+            // (searchText is cleared on the way in, below, so no stale query keeps filtering).
+            .librarySearchable(active: viewMode != .discover, text: $searchText)
             .toolbar { toolbar }
             .confirmationDialog(deleteConfirmTitle,
                                 isPresented: $confirmingBatchDelete, titleVisibility: .visible) {
@@ -221,9 +257,11 @@ struct LibraryView: View {
         // covers arriving here via a tab switch; onChange covers already being here.
         .onAppear(perform: consumePendingOpen)
         .onChange(of: fileOpener.token) { _, _ in consumePendingOpen() }
-        // Selecting is meaningless over a carousel — don't strand the user in "3 Selected".
+        // Selecting is meaningless over a carousel — don't strand the user in "3 Selected". And
+        // Discover has no search field, so clear the query too, or it would keep narrowing the
+        // deck invisibly with no way to see or cancel it.
         .onChange(of: viewModeRaw) { _, raw in
-            if LibraryViewMode.from(raw) == .discover { exitSelection() }
+            if LibraryViewMode.from(raw) == .discover { exitSelection(); searchText = "" }
         }
         #if DEBUG
         // Screenshot mode: once the seeded comic lands, present what was asked for. onChange
@@ -308,6 +346,13 @@ struct LibraryView: View {
                     } label: {
                         Label("Sort", systemImage: "arrow.up.arrow.down")
                     }
+                    // Only meaningful once some comics live in a library folder; hidden otherwise
+                    // so it can't be a toggle that does nothing.
+                    if hasFolderComics {
+                        Toggle(isOn: $onlyDownloaded) {
+                            Label("Only Downloaded", systemImage: "arrow.down.circle")
+                        }
+                    }
                     Divider()
                     Picker("View", selection: $viewModeRaw) {
                         Label("Gallery", systemImage: "square.grid.2x2").tag(LibraryViewMode.gallery.rawValue)
@@ -337,6 +382,21 @@ struct LibraryView: View {
         } actions: {
             Button { showImporter = true } label: {
                 Label("Import", systemImage: "square.and.arrow.down")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    /// Shown when "Only Downloaded" is on but nothing is local — with the one-tap way back out,
+    /// so the filter can never strand the user on a blank screen.
+    private var filteredEmptyState: some View {
+        ContentUnavailableView {
+            Label("No downloaded comics", systemImage: "arrow.down.circle")
+        } description: {
+            Text("Only comics downloaded to this device are shown. Turn the filter off to see everything in your library.")
+        } actions: {
+            Button { onlyDownloaded = false } label: {
+                Label("Show All", systemImage: "line.3.horizontal.decrease.circle")
             }
             .buttonStyle(.borderedProminent)
         }
@@ -485,6 +545,20 @@ private struct ImportProgressOverlay: View {
             }
             .padding(28)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+    }
+}
+
+private extension View {
+    /// Attaches the library search field only in the browse layouts; in Discover it's left off
+    /// entirely (see the call site for why). A plain conditional, so switching to Discover
+    /// removes the bar and switching back restores it.
+    @ViewBuilder
+    func librarySearchable(active: Bool, text: Binding<String>) -> some View {
+        if active {
+            searchable(text: text, prompt: "Comics, stories, issue #")
+        } else {
+            self
         }
     }
 }

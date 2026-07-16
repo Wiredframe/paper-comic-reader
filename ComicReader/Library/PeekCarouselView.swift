@@ -111,11 +111,13 @@ struct PeekCarouselView: View {
 
     private static let deckAnchor = "deck"
     private static let detailAnchor = "detail"
-    /// Two columns regardless of the library's zoom setting: this section exists to show the
-    /// bookmarked pages BIG, which is the whole reason it's worth a screen of its own.
-    private static let bookmarkColumns = Array(repeating: GridItem(.flexible(),
-                                                                   spacing: LibraryGridMetrics.spacing),
-                                               count: 2)
+    /// The bookmarked pages, sized to the width rather than to a fixed count: two up on a phone
+    /// (big, which is the whole reason this section earns its own screen), and as many as fit on
+    /// an iPad — roughly four upright, six in landscape — so the pages are a comfortable size
+    /// there instead of two half-screen slabs. `.adaptive` picks the column count itself, so it
+    /// tracks orientation with no size-class branch.
+    private static let bookmarkColumns = [GridItem(.adaptive(minimum: 170),
+                                                   spacing: LibraryGridMetrics.spacing)]
 
     private var filter: DiscoveryFilter { .from(filterRaw) }
 
@@ -177,8 +179,10 @@ struct PeekCarouselView: View {
                                 titleVisibility: .visible, presenting: bookToDelete) { book in
                 Button("Delete", role: .destructive) { deleteFromCarousel(book) }
                 Button("Cancel", role: .cancel) {}
-            } message: { _ in
-                Text("This removes the comic and its bookmarks from your library.")
+            } message: { book in
+                Text(book.isFolderBacked
+                     ? "This removes the entry and its bookmarks from your library. The file in your comic folder is left untouched."
+                     : "This removes the comic and its bookmarks from your library.")
             }
             .task { await backfillCoverAspects() }
             .onAppear {
@@ -288,6 +292,7 @@ struct PeekCarouselView: View {
                     .lineLimit(1)
             }
             HStack(spacing: 5) {
+                if book.isRemote { AvailabilityBadge(size: 12) }
                 if let date = book.year.map(String.init) {
                     Text(date)
                     Text("·")
@@ -344,16 +349,26 @@ struct PeekCarouselView: View {
                         Label(book.isRead ? "Mark as Unread" : "Mark as Read",
                               systemImage: book.isRead ? "circle" : "checkmark.circle")
                     }
+                    // Same folder-backed availability actions the cover grid and list offer.
+                    if book.isRemote {
+                        Button { Importer.prefetch(book, in: context) } label: {
+                            Label("Download", systemImage: "arrow.down.circle")
+                        }
+                    } else if book.isFolderBacked {
+                        Button { Importer.evictDownload(book, from: context) } label: {
+                            Label("Remove Download", systemImage: "arrow.down.circle.dotted")
+                        }
+                    }
                     if let onRemoveFromRecents {
                         Button { onRemoveFromRecents(book) } label: {
                             Label("Remove from Recents", systemImage: "clock.badge.xmark")
                         }
                     }
                     Divider()
-                    // Same library delete the cover grid offers — with the same confirmation,
-                    // since it also drops the archive and bookmarks from disk.
+                    // Same library delete the cover grid offers — with the same confirmation.
+                    // For a folder-backed comic this drops only the entry; the server file stays.
                     Button(role: .destructive) { bookToDelete = book } label: {
-                        Label("Delete", systemImage: "trash")
+                        Label(book.isFolderBacked ? "Delete Entry" : "Delete", systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis")

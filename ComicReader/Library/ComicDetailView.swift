@@ -75,6 +75,7 @@ struct ComicDetailView: View {
                 }
 
                 HStack(spacing: 5) {
+                    if book.isRemote { AvailabilityBadge(size: 12) }
                     Text(book.pageCountLabel)
                     if book.progress > 0 { ProgressPie(progress: book.progress, size: 12) }
                     if book.isRead { ReadCheck(size: 12) }

@@ -53,6 +53,9 @@ struct CoverCell: View {
                     .truncationMode(.tail)
 
                 HStack(spacing: 5) {
+                    // Availability leads the row: whether the comic is on the device at all comes
+                    // before how far into it you've read.
+                    if book.isRemote { AvailabilityBadge() }
                     Text(book.pageCountLabel)
                     if book.progress > 0 { ProgressPie(progress: book.progress) }
                     // "Read" is independent of progress (browsing never overwrites it),
@@ -71,7 +74,9 @@ struct CoverCell: View {
             Button("Delete", role: .destructive) { Importer.delete(book, from: context) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the comic and its bookmarks from your library.")
+            Text(book.isFolderBacked
+                 ? "This removes the entry and its bookmarks from your library. The file in your comic folder is left untouched."
+                 : "This removes the comic and its bookmarks from your library.")
         }
     }
 
@@ -99,9 +104,20 @@ struct CoverCell: View {
             Label(book.isRead ? "Mark as Unread" : "Mark as Read",
                   systemImage: book.isRead ? "circle" : "checkmark.circle")
         }
+        // Folder-backed comics can be pre-fetched or freed here — an owned copy has neither
+        // choice (its archive is simply always local).
+        if book.isRemote {
+            Button { Importer.prefetch(book, in: context) } label: {
+                Label("Download", systemImage: "arrow.down.circle")
+            }
+        } else if book.isFolderBacked {
+            Button { Importer.evictDownload(book, from: context) } label: {
+                Label("Remove Download", systemImage: "arrow.down.circle.dotted")
+            }
+        }
         Divider()
         Button(role: .destructive) { confirmingDelete = true } label: {
-            Label("Delete", systemImage: "trash")
+            Label(book.isFolderBacked ? "Delete Entry" : "Delete", systemImage: "trash")
         }
     }
 }

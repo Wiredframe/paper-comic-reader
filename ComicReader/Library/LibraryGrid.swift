@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct LibraryGrid: View {
     let books: [ComicBook]
@@ -82,6 +83,8 @@ private struct LibraryRow: View {
     var onShowDetail: () -> Void = {}
     let onOpen: () -> Void
 
+    @Environment(\.modelContext) private var context
+
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: 12) {
@@ -104,6 +107,7 @@ private struct LibraryRow: View {
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     HStack(spacing: 5) {
+                        if book.isRemote { AvailabilityBadge(size: 13) }
                         Text(book.pageCountLabel)
                         if let stories = book.storyCountLabel {
                             Text("·")
@@ -127,6 +131,15 @@ private struct LibraryRow: View {
             if !selectionMode {
                 Button(action: onOpen) { Label("Read", systemImage: "book") }
                 Button(action: onShowDetail) { Label("Details", systemImage: "info.circle") }
+                if book.isRemote {
+                    Button { Importer.prefetch(book, in: context) } label: {
+                        Label("Download", systemImage: "arrow.down.circle")
+                    }
+                } else if book.isFolderBacked {
+                    Button { Importer.evictDownload(book, from: context) } label: {
+                        Label("Remove Download", systemImage: "arrow.down.circle.dotted")
+                    }
+                }
             }
         }
     }

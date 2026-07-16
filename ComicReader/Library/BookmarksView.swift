@@ -138,7 +138,14 @@ struct BookmarksView: View {
             }
             .navigationTitle("Bookmarks")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Comics, stories, issue #")
+            // Search only in the browse layouts — the carousel is a swipe-deck, where a lookup
+            // field is the wrong tool (same reasoning as Library's Discover).
+            .comicSearchable(active: viewMode != .carousel, text: $searchText)
+            // Entering the carousel has no field to clear the query, so clear it here or it would
+            // keep narrowing the deck invisibly.
+            .onChange(of: viewModeRaw) { _, raw in
+                if BookmarksViewMode.from(raw) == .carousel { searchText = "" }
+            }
             .toolbar { toolbar }
         }
         .fullScreenCover(item: $target) { target in

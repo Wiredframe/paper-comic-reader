@@ -57,6 +57,21 @@ struct LibraryGrid: View {
     private var coverMaxPixel: CGFloat { LibraryGridMetrics.coverMaxPixel(columns: columns) }
 }
 
+extension View {
+    /// The comic search field, shown only in the browse layouts (grid / list). The carousel decks
+    /// — Library's Discover, Recents, the Bookmarks carousel — are for browsing by swipe, where a
+    /// lookup field reads as the wrong tool, so search is dropped there. Callers clear the bound
+    /// text when leaving a searchable layout, so no hidden query keeps filtering behind the deck.
+    @ViewBuilder
+    func comicSearchable(active: Bool, text: Binding<String>) -> some View {
+        if active {
+            searchable(text: text, prompt: "Comics, stories, issue #")
+        } else {
+            self
+        }
+    }
+}
+
 /// Shared cover-grid spacing so Recents / Library / Bookmarks stay identical and
 /// the gap between columns is clearly visible (equal horizontally and vertically).
 enum LibraryGridMetrics {

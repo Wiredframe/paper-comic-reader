@@ -204,7 +204,7 @@ struct LibraryView: View {
             // Search belongs to the browse layouts, not Discover — the carousel is for
             // serendipity, and a lookup field there reads as the wrong tool. Dropped in that mode
             // (searchText is cleared on the way in, below, so no stale query keeps filtering).
-            .librarySearchable(active: viewMode != .discover, text: $searchText)
+            .comicSearchable(active: viewMode != .discover, text: $searchText)
             .toolbar { toolbar }
             .confirmationDialog(deleteConfirmTitle,
                                 isPresented: $confirmingBatchDelete, titleVisibility: .visible) {
@@ -545,20 +545,6 @@ private struct ImportProgressOverlay: View {
             }
             .padding(28)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-    }
-}
-
-private extension View {
-    /// Attaches the library search field only in the browse layouts; in Discover it's left off
-    /// entirely (see the call site for why). A plain conditional, so switching to Discover
-    /// removes the bar and switching back restores it.
-    @ViewBuilder
-    func librarySearchable(active: Bool, text: Binding<String>) -> some View {
-        if active {
-            searchable(text: text, prompt: "Comics, stories, issue #")
-        } else {
-            self
         }
     }
 }

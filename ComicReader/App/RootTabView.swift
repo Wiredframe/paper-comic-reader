@@ -25,12 +25,16 @@ struct RootTabView: View {
         #if DEBUG
         switch ScreenshotSupport.initialTab {
         case "recents":   return .recents
+        case "library":   return .library
         case "bookmarks": return .bookmarks
         case "settings":  return .settings
         default:          break
         }
         #endif
-        return .library
+        // Open on Recents — the shelf you actually reach for is "what was I just reading",
+        // not the whole collection. A first-run library with nothing opened yet shows Recents'
+        // own empty state, which points at the other tabs.
+        return .recents
     }
 
     var body: some View {

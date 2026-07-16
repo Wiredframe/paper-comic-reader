@@ -15,7 +15,14 @@ struct PageGridView: View {
     let onSelect: (Int) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    private let columns = [GridItem(.adaptive(minimum: 96), spacing: 16)]
+    @Environment(\.horizontalSizeClass) private var hSize
+
+    /// Larger thumbnails on the roomy iPad sheet (which `.presentationSizing(.page)` widens to
+    /// near full-screen), the compact grid on a phone. `.adaptive` fills the width with as many
+    /// as fit at that minimum.
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: hSize == .regular ? 140 : 96), spacing: 16)]
+    }
 
     var body: some View {
         NavigationStack {

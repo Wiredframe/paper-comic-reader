@@ -75,10 +75,29 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
         GeometryReader { geo in carousel(in: geo.size) }
     }
 
+    /// How wide one slot is. On a phone in any orientation, and on an iPad held upright, it's the
+    /// full width less the two peeks — the single centred hero the deck is designed around. But an
+    /// iPad in landscape is wide and short: a lone cover there is capped small by the height and
+    /// left stranded in empty margin. On that one shape, size the slot to about a single cover's
+    /// natural width so as many as fit sit side by side — still snapped one at a time, still with
+    /// the outermost cut off at the edges to invite a swipe.
+    private func slotWidth(in size: CGSize) -> CGFloat {
+        let singleHero = max(120, size.width - 2 * peekInset)
+        // Wide AND short — i.e. iPad landscape only. 1000pt clears every iPad's landscape width
+        // while staying comfortably above the largest iPhone's, so no iPhone and no upright iPad
+        // is touched: they all keep the untouched single-hero deck.
+        guard size.width > size.height, size.width >= 1000 else { return singleHero }
+        let coverHeight = max(80, size.height - shadowTop - shadowBottom)
+        let heroWidth = coverHeight * (2.0 / 3.0)   // a typical comic cover at this height
+        // Floored so covers never shrink to thumbnails, and capped at the single-hero width so
+        // this can only ever add covers beside the centre, never blow one up past the phone size.
+        return min(singleHero, max(320, heroWidth + 56))
+    }
+
     private func carousel(in size: CGSize) -> some View {
         // The slot is what the peek leaves over; the art then fills it (unless it's so tall
         // that the height caps it first — see `card`).
-        let slotW = max(120, size.width - 2 * peekInset)
+        let slotW = slotWidth(in: size)
         // Read once here: `.scrollTransition`'s closure is @Sendable and can't touch
         // main-actor state like the environment.
         let animate = !reduceMotion

@@ -16,9 +16,13 @@ struct BookmarkCarouselView: View {
     let bookmarks: [Bookmark]
     /// Bumped by the shuffle button to glide to a random bookmark in the deck.
     var randomTrigger: Int = 0
+    /// Pair with `.navigationTransition(.zoom(sourceID: bookmark.id, in:))` on the reader the
+    /// caller presents: the page card grows into the reader, and the presentation gains the
+    /// system's interactive drag-down dismiss.
+    var transitionNamespace: Namespace.ID? = nil
     /// Jump into the comic at the bookmarked page.
     let onOpenBookmark: (Bookmark) -> Void
-    /// Open the comic the bookmark belongs to, where reading left off.
+    /// Open the comic itself, from the first page.
     let onOpenComic: (ComicBook) -> Void
 
     @Environment(\.modelContext) private var context
@@ -34,7 +38,8 @@ struct BookmarkCarouselView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            PeekDeck(items: bookmarks, centeredID: $centeredID, art: art, onOpen: onOpenBookmark)
+            PeekDeck(items: bookmarks, centeredID: $centeredID, art: art,
+                     onOpen: onOpenBookmark, transitionNamespace: transitionNamespace)
 
             if let mark = centered {
                 infoPanel(mark)

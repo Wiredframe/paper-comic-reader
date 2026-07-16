@@ -37,9 +37,17 @@ struct BookmarksView: View {
     @AppStorage("bookmarks.sortAscending") private var sortAscending = false
 
     @State private var target: ReaderTarget?
+    /// Live search query — narrows to bookmarks whose comic matches on title / story title /
+    /// issue number (see `ComicBook.matches`).
+    @State private var searchText = ""
     /// Bumped by the shuffle button in carousel mode — the deck glides to a random bookmark
     /// rather than opening one.
     @State private var randomTick = 0
+    /// Ties a bookmark's page card to the reader it opens, so the page grows into the reader
+    /// instead of the reader sliding up over it — and the reader gains the system's drag-down
+    /// dismiss along with it. Mirrors Library / Recents; the source is the *bookmark*, not the
+    /// comic, so several bookmarks of one comic each zoom from their own card.
+    @Namespace private var readerZoom
 
     private var viewMode: BookmarksViewMode { .from(viewModeRaw) }
 
@@ -69,6 +77,15 @@ struct BookmarksView: View {
         return sortAscending ? ascending : ascending.reversed()
     }
 
+    private var trimmedQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// `sortedBookmarks` narrowed by the search query — a bookmark matches when its comic does.
+    /// The single list all three layouts render, so search reaches the carousel, list and grid.
+    private var displayedBookmarks: [Bookmark] {
+        guard !trimmedQuery.isEmpty else { return sortedBookmarks }
+        return sortedBookmarks.filter { $0.book?.matches(searchQuery: trimmedQuery) ?? false }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -79,18 +96,23 @@ struct BookmarksView: View {
                                                description: Text("Tap the bookmark button while reading a comic."))
                             .padding(.top, 80)
                     }
+                } else if displayedBookmarks.isEmpty {
+                    ScrollView { ContentUnavailableView.search(text: trimmedQuery).padding(.top, 80) }
                 } else if viewMode == .carousel {
                     // No ScrollView here: the deck sizes its card from the real available
                     // height, the same way the Library's carousel does.
-                    BookmarkCarouselView(bookmarks: sortedBookmarks, randomTrigger: randomTick) { mark in
+                    BookmarkCarouselView(bookmarks: displayedBookmarks, randomTrigger: randomTick,
+                                         transitionNamespace: readerZoom) { mark in
                         open(mark)
                     } onOpenComic: { book in
-                        target = ReaderTarget(book: book)
+                        // "Comic" opens the book itself, from the start — the counterpart to
+                        // "Read", which lands on the bookmarked page. Page 0, not the resume page.
+                        target = ReaderTarget(book: book, page: 0)
                     }
                 } else if viewMode == .list {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(sortedBookmarks) { mark in
+                            ForEach(displayedBookmarks) { mark in
                                 BookmarkRow(bookmark: mark) { open(mark) } onDelete: { delete(mark) }
                                 Divider().padding(.leading, 76)
                             }
@@ -100,7 +122,7 @@ struct BookmarksView: View {
                 } else {
                     ScrollView {
                         LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
-                            ForEach(sortedBookmarks) { mark in
+                            ForEach(displayedBookmarks) { mark in
                                 BookmarkCard(bookmark: mark,
                                              maxPixel: LibraryGridMetrics.coverMaxPixel(columns: columns)) {
                                     open(mark)
@@ -116,10 +138,15 @@ struct BookmarksView: View {
             }
             .navigationTitle("Bookmarks")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Comics, stories, issue #")
             .toolbar { toolbar }
         }
         .fullScreenCover(item: $target) { target in
             ReaderView(book: target.book, initialPage: target.page)
+                // Resolves against the centred bookmark's page card in the carousel deck, which
+                // is keyed by the bookmark's id. Opens from the "Comic" button, the list and the
+                // grid carry no matching source, so those fall back to the standard slide-up.
+                .navigationTransition(.zoom(sourceID: target.sourceID ?? target.book.id, in: readerZoom))
         }
     }
 
@@ -127,14 +154,15 @@ struct BookmarksView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 // In the carousel, shuffling means "show me something else" — glide the deck to
-                // a random bookmark instead of yanking the reader open.
+                // a random bookmark instead of yanking the reader open. Stays within the current
+                // search results, like the deck it drives.
                 if viewMode == .carousel { randomTick += 1 }
-                else if let mark = validBookmarks.randomElement() { open(mark) }
+                else if let mark = displayedBookmarks.randomElement() { open(mark) }
             } label: {
                 Image(systemName: "shuffle")
             }
             .accessibilityLabel(viewMode == .carousel ? "Show a random bookmark" : "Open a random bookmark")
-            .disabled(validBookmarks.isEmpty)
+            .disabled(displayedBookmarks.isEmpty)
         }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
@@ -178,7 +206,10 @@ struct BookmarksView: View {
 
     private func open(_ bookmark: Bookmark) {
         guard let book = bookmark.book else { return }
-        target = ReaderTarget(book: book, page: bookmark.pageIndex)
+        // sourceID is the bookmark's own id — the key its card carries in the carousel deck — so
+        // the reader zooms out of that page. In list / gallery there's no such source and it
+        // falls back to the slide-up.
+        target = ReaderTarget(book: book, page: bookmark.pageIndex, sourceID: bookmark.id)
     }
 
     private func delete(_ bookmark: Bookmark) {

@@ -81,6 +81,11 @@ final class ReaderCollectionController: UIViewController,
     private var turnSnapshot: UIView?
 
     var onPageChanged: ((Int) -> Void)?
+    /// Fires when the slot now on screen holds the FINAL page. Separate from onPageChanged
+    /// because `currentPage` is the slot's LEFT half: for an odd-length comic in double-page
+    /// mode the last page is the right half of the closing spread and so never equals
+    /// currentPage — a `currentPage == last` read check would never fire (see ReaderView.markRead).
+    var onReachedEnd: (() -> Void)?
     var onToggleChrome: (() -> Void)?
 
     private let layout = PagingFlowLayout()
@@ -303,7 +308,7 @@ final class ReaderCollectionController: UIViewController,
         if let offset = offset(forSlot: paging.slot(forPage: target)) {
             collectionView.setContentOffset(offset, animated: false)
         }
-        onPageChanged?(target)
+        notifyPageChange()
         prefetchNeighbours(of: target)
     }
 
@@ -319,7 +324,7 @@ final class ReaderCollectionController: UIViewController,
             endActiveTurn()
             collectionView.setContentOffset(offset, animated: false)
         }
-        onPageChanged?(currentPage)
+        notifyPageChange()
         prefetchNeighbours(of: currentPage)
     }
 
@@ -387,6 +392,18 @@ final class ReaderCollectionController: UIViewController,
     private func clampPage(_ page: Int) -> Int { min(max(page, 0), max(pageCount - 1, 0)) }
     private func wantsDouble(for size: CGSize) -> Bool { settings.doublePage && size.width > size.height }
 
+    /// Report the current page, then — separately — whether the slot on screen holds the final
+    /// page. `currentPage` is the slot's left half, so the last page of an odd-length comic in
+    /// double mode is the right half of the closing spread and never equals it; downstream
+    /// read-status would otherwise never fire. See `onReachedEnd`.
+    private func notifyPageChange() {
+        onPageChanged?(currentPage)
+        if pageCount > 0,
+           paging.pages(inSlot: paging.slot(forPage: currentPage)).contains(pageCount - 1) {
+            onReachedEnd?()
+        }
+    }
+
     /// Warm the neighbouring pages. In double-page mode we also prefetch around the
     /// spread's right half so the *next* spread arrives with both pages ready —
     /// otherwise its right page would fade in on the swipe.
@@ -451,7 +468,7 @@ final class ReaderCollectionController: UIViewController,
         let landed = paging.pages(inSlot: clamped).first ?? 0
         guard landed != currentPage else { return }
         currentPage = landed
-        onPageChanged?(landed)
+        notifyPageChange()
         prefetchNeighbours(of: landed)
     }
 

@@ -75,6 +75,7 @@ struct ReaderView: View {
     @State private var jumpTarget: Int?
     @State private var showGrid = false
     @State private var bookmarkTick = 0   // nudges the view when bookmarks change
+    @State private var bookmarkingPages: Set<Int> = []   // pages with an add in flight — guards double-taps
     @State private var autoHide: DispatchWorkItem?
     /// One open = one count. @State is per-presentation, which is exactly the semantics
     /// wanted — see `setup()`.
@@ -108,7 +109,8 @@ struct ReaderView: View {
                            paperVersion: paperVersion,
                            jumpTarget: $jumpTarget,
                            backgroundColor: readerBackgroundUIColor,
-                           onToggleChrome: toggleChrome)
+                           onToggleChrome: toggleChrome,
+                           onReachedEnd: markRead)
                     .ignoresSafeArea()
             } else if store != nil {
                 // Archive couldn't be opened (missing / corrupt after import).
@@ -141,9 +143,6 @@ struct ReaderView: View {
             // viewWillDisappear (which doesn't always fire for a fullScreenCover), so a
             // forced landscape never lingers after leaving the reader.
             OrientationGate.lockPortrait()
-        }
-        .onChange(of: currentPage) { _, page in
-            if page >= pageCount - 1 { markRead() }
         }
         // Save the resume page when the app leaves the foreground (progress only needs to
         // survive backgrounding / closing, not every page turn — see persistProgress).
@@ -407,9 +406,15 @@ struct ReaderView: View {
             bookmarkTick += 1
         } else {
             let page = currentPage
+            // Adding is async (a thumbnail decode) and isBookmarked stays false until it
+            // commits, so a second tap in that window would insert a duplicate bookmark for
+            // the same page. Guard the page until this add resolves.
+            guard !bookmarkingPages.contains(page) else { return }
+            bookmarkingPages.insert(page)
             // Bookmark cards render at the same full-width size as covers, so match
             // the cover resolution rather than a small thumbnail.
             Task { @MainActor in
+                defer { bookmarkingPages.remove(page) }
                 guard let image = await store?.thumbnail(at: page, maxPixel: ImageDownsampler.libraryCardPixel) else { return }
                 let name = "\(UUID().uuidString).jpg"
                 ImageDownsampler.writeJPEG(image, to: Storage.bookmarkThumbURL(name))

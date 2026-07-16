@@ -18,6 +18,7 @@ struct ReaderHost: UIViewControllerRepresentable {
     @Binding var jumpTarget: Int?
     var backgroundColor: UIColor
     var onToggleChrome: () -> Void
+    var onReachedEnd: () -> Void
 
     func makeUIViewController(context: Context) -> ReaderCollectionController {
         let controller = ReaderCollectionController(store: store, settings: settings, startIndex: startIndex, backgroundColor: backgroundColor)
@@ -25,6 +26,7 @@ struct ReaderHost: UIViewControllerRepresentable {
             if currentPage != index { currentPage = index }
         }
         controller.onToggleChrome = onToggleChrome
+        controller.onReachedEnd = onReachedEnd
         context.coordinator.controller = controller
         context.coordinator.lastPaperVersion = paperVersion
         return controller

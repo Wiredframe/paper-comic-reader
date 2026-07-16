@@ -88,6 +88,14 @@ final class PageImageStore: @unchecked Sendable {
         }
         work.async { [weak self] in
             guard let self else { return }
+            // Re-check the cache now that we're on the decode queue: a page turn issues two
+            // requests for the same uncached page (prefetchItemsAt + the cell's own configure)
+            // back to back, and the first has cached it by the time the second runs on this
+            // serial queue — so decode it once, not twice.
+            if let cached = self.cachedImage(at: index) {
+                DispatchQueue.main.async { completion(index, cached) }
+                return
+            }
             let image = self.render(index: index, maxPixel: maxPixel)
             if let image { self.cache.setObject(image, forKey: NSNumber(value: index)) }
             DispatchQueue.main.async { completion(index, image) }
@@ -114,6 +122,12 @@ final class PageImageStore: @unchecked Sendable {
         work.async { [weak self] in
             self?.paperEnabled = enabled
             self?.paperParams = params
+            // Clear again here on the work queue: a decode requested before this call renders
+            // with the OLD paper setting, and its setObject can land *after* the synchronous
+            // clear above — re-inserting a stale page that then persists until NSCache evicts it.
+            // Every such decode is enqueued before this block (serial queue), so this wipes
+            // exactly those stale writes; pages decoded afterwards use the params just set.
+            self?.cache.removeAllObjects()
         }
     }
 

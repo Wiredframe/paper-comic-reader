@@ -16,6 +16,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history + tags, so the changelog step can diff against the previous tag
 
       - name: Select newest installed Xcode
         run: |
@@ -33,18 +35,34 @@ jobs:
       - name: Build unsigned .ipa
         run: ./scripts/build-ipa.sh
 
+      # Build the release notes: the sideloading note, then a changelog auto-derived from
+      # the commit subjects since the previous tag. This repo commits straight to main (no
+      # PRs), so GitHub's own generate_release_notes yields only a bare compare link — the
+      # git log is the real changelog. So every release carries "what changed", no hand-editing.
+      - name: Build release notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          RANGE=${PREV_TAG:+$PREV_TAG..}${GITHUB_REF_NAME}
+          {
+            printf '%s\n' \
+              'Unsigned `.ipa` for sideloading (AltStore / Sideloadly / TrollStore).' \
+              '' \
+              '**Requires iOS 26 or later.** On anything older the install fails with an unhelpful error rather than saying why.' \
+              '' \
+              "iOS can't install this directly — see the README for how to sideload it and re-sign it with your own Apple ID." \
+              '' \
+              '### What changed' \
+              ''
+            git log "$RANGE" --no-merges --pretty='- %s' | grep -vE '^- Version [0-9]' || echo '- (see commits)'
+            if [ -n "$PREV_TAG" ]; then
+              printf '\n**Full Changelog**: %s/compare/%s...%s\n' \
+                "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$PREV_TAG" "$GITHUB_REF_NAME"
+            fi
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
       - name: Publish to Release
         uses: softprops/action-gh-release@v2
         with:
           files: build/PaperComicReader-*.ipa
-          # Append an auto-generated changelog (commits since the previous tag) below the
-          # sideloading note, so every release carries "what changed" without hand-editing.
-          generate_release_notes: true
-          body: |
-            Unsigned `.ipa` for sideloading (AltStore / Sideloadly / TrollStore).
-
-            **Requires iOS 26 or later.** On anything older the install fails with an
-            unhelpful error rather than saying why.
-
-            iOS can't install this directly — see the README for how to sideload it and
-            re-sign it with your own Apple ID.
+          body_path: RELEASE_NOTES.md

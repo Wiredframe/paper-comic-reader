@@ -38,6 +38,7 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             Form {
                 Section {
                     Toggle("Double Page (Landscape)", isOn: $reader.doublePage)
@@ -127,6 +128,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("Import every comic in a folder on a file server or iCloud Drive — anything the Files app can reach. Covers and details come in now; each comic downloads when you open it, and its download can be removed again to save space while the entry stays. Scan again to pick up new comics. A file server has to be reachable (on the right network) when you open or download a comic.")
                 }
+                .id("comicFolder")   // screenshot scroll anchor (SCREENSHOT_SETTINGS=folder)
 
                 Section("Project") {
                     Link(destination: repoURL) {
@@ -163,19 +165,33 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             #if DEBUG
-            // Screenshot deep-link: SCREENSHOT_SETTINGS=paper pushes the Paper Effect detail on
-            // launch, so its live preview + sliders can be captured without a tap.
+            // Screenshot scene control (SCREENSHOT_SETTINGS): deep-link the Paper Effect detail,
+            // or scroll the Comic Folder section into view — captured without a tap or scroll.
             .navigationDestination(isPresented: $showPaperForShot) {
                 PaperSettingsView(settings: paper)
             }
-            .onAppear { if ScreenshotSupport.settingsScreen == "paper" { showPaperForShot = true } }
+            .onAppear { applyScreenshotScene(proxy) }
             #endif
             .task { storageText = storageDescription }
             .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
                 handleFolderChosen(result)
             }
+            }
         }
     }
+
+    #if DEBUG
+    /// Settings-tab screenshot scenes (SCREENSHOT_SETTINGS): push the Paper Effect detail, or
+    /// scroll the Comic Folder section to the top. The scroll waits a runloop tick so the Form
+    /// has laid out its rows first.
+    private func applyScreenshotScene(_ proxy: ScrollViewProxy) {
+        switch ScreenshotSupport.settingsScreen {
+        case "paper":  showPaperForShot = true
+        case "folder": DispatchQueue.main.async { proxy.scrollTo("comicFolder", anchor: .top) }
+        default:       break
+        }
+    }
+    #endif
 
     // MARK: Comic folder
 

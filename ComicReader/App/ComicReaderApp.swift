@@ -55,9 +55,15 @@ struct ComicReaderApp: App {
                 .environmentObject(readerSettings)
                 .environmentObject(fileOpener)
                 .onOpenURL(perform: handleOpenURL)
-                #if DEBUG
-                .task { ScreenshotSupport.seedIfRequested(into: modelContainer.mainContext) }
-                #endif
+                .task {
+                    // First launch into an empty library gets the bundled demo comics.
+                    SampleLibrary.seedIfNeeded(into: modelContainer.mainContext)
+                    #if DEBUG
+                    // Screenshot scene-setup runs after, so it just steers tab/page on the
+                    // already-seeded library (it no-ops on content when the library isn't empty).
+                    ScreenshotSupport.seedIfRequested(into: modelContainer.mainContext)
+                    #endif
+                }
         }
         .modelContainer(modelContainer)
     }

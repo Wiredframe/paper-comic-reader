@@ -82,6 +82,12 @@ targets:
       - path: AppIcon/AppIcon.icon
         type: file
         buildPhase: resources
+      # The four bundled demo comics (see SampleLibrary), copied into the app so a fresh
+      # install seeds a populated library. A normal resources group (files flattened into the
+      # bundle), NOT a folder reference — SampleLibrary looks each up by name via
+      # Bundle.main.url(forResource:withExtension:).
+      - path: DemoComics
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.wiredframe.comicreader

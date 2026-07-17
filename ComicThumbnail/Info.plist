@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The CFBundle boilerplate (version, name, XPC! package type) is merged in by
+	     GENERATE_INFOPLIST_FILE; only the extension wiring lives here. -->
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.quicklook.thumbnail</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).ThumbnailProvider</string>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<!-- Only our CBZ type; the system routes .cbz files here for thumbnails. -->
+			<key>QLSupportedContentTypes</key>
+			<array>
+				<string>de.wiredframe.comicreader.cbz</string>
+			</array>
+			<!-- Draw at every requested size, including the smallest list-row icons. -->
+			<key>QLThumbnailMinimumDimension</key>
+			<integer>0</integer>
+		</dict>
+	</dict>
+</dict>
+</plist>

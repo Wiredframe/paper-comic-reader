@@ -54,5 +54,13 @@ enum ScreenshotSupport {
     /// can't perform — this is the one way to see `ComicMetadataSection` rendered without a
     /// gesture.
     static var shouldOpenDetail: Bool { env["SCREENSHOT_DETAIL"] != nil }
+
+    /// The comic the reader/detail auto-open should target (SCREENSHOT_COMIC = a title or series
+    /// substring), so a shot can request a specific comic — e.g. the anthology with a story
+    /// index — rather than whatever `books.first` happens to be.
+    static var targetComic: String? { env["SCREENSHOT_COMIC"]?.nonEmpty }
+
+    /// A Settings sub-screen to deep-link into on launch (SCREENSHOT_SETTINGS = paper).
+    static var settingsScreen: String? { env["SCREENSHOT_SETTINGS"]?.nonEmpty }
 }
 #endif

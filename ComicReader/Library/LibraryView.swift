@@ -275,13 +275,18 @@ struct LibraryView: View {
     /// Opens the first comic in the reader (SCREENSHOT_OPEN_PAGE) or its detail sheet
     /// (SCREENSHOT_DETAIL). One-shot, so a later library change can't reopen it.
     private func autoPresentIfRequested() {
-        guard !didAutoOpen, let first = books.first else { return }
+        guard !didAutoOpen else { return }
+        // Target a named comic (SCREENSHOT_COMIC) when asked — e.g. the anthology whose detail
+        // shows a story index — else fall back to the first comic.
+        let chosen = ScreenshotSupport.targetComic
+            .flatMap { query in books.first { $0.matches(searchQuery: query) } } ?? books.first
+        guard let chosen else { return }
         if ScreenshotSupport.shouldOpenReader {
             didAutoOpen = true
-            target = ReaderTarget(book: first)
+            target = ReaderTarget(book: chosen)
         } else if ScreenshotSupport.shouldOpenDetail {
             didAutoOpen = true
-            detailBook = first
+            detailBook = chosen
         }
     }
     #endif

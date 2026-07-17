@@ -29,6 +29,9 @@ struct SettingsView: View {
     @State private var folderName = LibrarySource.displayName
     @State private var showFolderPicker = false
     @State private var scan: (done: Int, total: Int)?
+    #if DEBUG
+    @State private var showPaperForShot = false   // screenshot deep-link to the Paper Effect detail
+    #endif
 
     private let repoURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader")!
     private let issuesURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader/issues")!
@@ -159,6 +162,14 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            #if DEBUG
+            // Screenshot deep-link: SCREENSHOT_SETTINGS=paper pushes the Paper Effect detail on
+            // launch, so its live preview + sliders can be captured without a tap.
+            .navigationDestination(isPresented: $showPaperForShot) {
+                PaperSettingsView(settings: paper)
+            }
+            .onAppear { if ScreenshotSupport.settingsScreen == "paper" { showPaperForShot = true } }
+            #endif
             .task { storageText = storageDescription }
             .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
                 handleFolderChosen(result)

@@ -15,6 +15,15 @@
 //  the Library's sort menu and Recents its most-recent-first query. The segments only pick
 //  WHICH comics are in the deck.
 //
+//  SMOOTHNESS — why this is split into three views. The deck lives inside a vertical PAGING
+//  ScrollView (the "swipe down for details" page). The carousel writes the centred comic's id
+//  as you swipe; if the container that owns that id also draws the ScrollView, then every swipe
+//  frame re-describes the ScrollView and nudges the settling card. So the centred id lives in a
+//  tiny `@Observable` (`DeckCenter`), and only the two subviews that actually show the centred
+//  comic — the pinned panel and the detail page — read it. The container never does, so a swipe
+//  never re-describes the scroll. (The Bookmarks deck needs none of this: it's a plain VStack
+//  with no scroll around it, which is exactly why it was already smooth.)
+//
 
 import SwiftUI
 import SwiftData
@@ -71,6 +80,15 @@ enum DiscoveryFilter: String, CaseIterable, Identifiable {
     static func from(_ raw: String) -> DiscoveryFilter { DiscoveryFilter(rawValue: raw) ?? .discover }
 }
 
+/// The carousel's centred comic, as a reference type so it can change without re-rendering the
+/// view that owns it — only the subviews that read it. `id` tracks the deck live as you swipe;
+/// `settledID` trails it by a beat (the debounce) so the heavy detail page and the panel's
+/// bookmark hint update once the swipe stops, not for every card the deck flies past.
+@Observable final class DeckCenter {
+    var id: UUID?
+    var settledID: UUID?
+}
+
 struct PeekCarouselView: View {
     /// Already in the order they should appear — the Library passes its sorted books, Recents
     /// its most-recently-opened-first query.
@@ -96,28 +114,18 @@ struct PeekCarouselView: View {
     @Environment(\.modelContext) private var context
     @AppStorage("library.discoveryMode") private var filterRaw = DiscoveryFilter.discover.rawValue
 
-    @State private var centeredID: UUID?
+    /// The centred comic. A reference type on purpose — see the file header. `body` never reads
+    /// `center.id`, only passes `center` down, so a swipe re-renders the panel and the detail
+    /// page but NOT this container (and therefore not the scroll it draws).
+    @State private var center = DeckCenter()
     /// The comic the delete menu is confirming, if any. Drives the confirmation dialog below.
     @State private var bookToDelete: ComicBook?
     /// A focus request that had to switch the filter to Discover first (the comic wasn't in the
     /// current segment). Held until the filter change lands, then centred — see `focus(on:)`.
     @State private var pendingFocusAfterFilterChange: UUID?
 
-    /// Fixed, so swiping between comics with different title lengths can't resize the panel
-    /// and make the covers jump. Grew by one line's worth when the lead story moved in under
-    /// the title: the row is reserved whether or not a comic has one, for the same reason the
-    /// height is fixed at all.
-    private let panelHeight: CGFloat = 150
-
     private static let deckAnchor = "deck"
     private static let detailAnchor = "detail"
-    /// The bookmarked pages, sized to the width rather than to a fixed count: two up on a phone
-    /// (big, which is the whole reason this section earns its own screen), and as many as fit on
-    /// an iPad — roughly four upright, six in landscape — so the pages are a comfortable size
-    /// there instead of two half-screen slabs. `.adaptive` picks the column count itself, so it
-    /// tracks orientation with no size-class branch.
-    private static let bookmarkColumns = [GridItem(.adaptive(minimum: 170),
-                                                   spacing: LibraryGridMetrics.spacing)]
 
     private var filter: DiscoveryFilter { .from(filterRaw) }
 
@@ -131,20 +139,11 @@ struct PeekCarouselView: View {
         return filtered.sorted { ($0.openCount, $0.dateAdded) > ($1.openCount, $1.dateAdded) }
     }
 
-    /// The comic the pinned panel describes — the same one the deck draws as centred.
-    private var centeredBook: ComicBook? { peekCentered(in: visibleBooks, id: centeredID) }
-
-    /// The relationship is a set, not a sequence — for a per-comic section, reading order is
-    /// the only order that makes sense.
-    private func bookmarks(of book: ComicBook) -> [Bookmark] {
-        book.bookmarks.sorted { $0.pageIndex < $1.pageIndex }
-    }
-
-    /// The centred comic, if it has a second page's worth to say — bookmarks, metadata, or
-    /// both. Nil for a comic with neither, which is what keeps the deck a plain deck.
-    private func detailPageBook() -> ComicBook? {
-        guard let book = centeredBook, !book.bookmarks.isEmpty || book.hasMetadata else { return nil }
-        return book
+    /// A binding to the centred id for `PeekDeck`'s `.scrollPosition`. Creating it doesn't read
+    /// `center.id` (the getter runs later, inside the deck), so this container stays off the
+    /// swipe's re-render path.
+    private var centerBinding: Binding<UUID?> {
+        Binding { center.id } set: { center.id = $0 }
     }
 
     /// The deck fills exactly one screen; the centred comic's bookmarks and metadata sit on the
@@ -156,18 +155,14 @@ struct PeekCarouselView: View {
                 VStack(spacing: 0) {
                     // Exactly one container height — which is also `.paging`'s page size, so
                     // the page boundary lands on the section's first pixel by construction
-                    // rather than by arithmetic. (This is the canonical paging pattern, and
-                    // the reason it survives the tab bar: whatever the container height turns
-                    // out to be, both sides read the same number.) The tab bar's room is no
-                    // longer reserved by hand — the native TabView insets the scroll content.
+                    // rather than by arithmetic. The tab bar's room is no longer reserved by
+                    // hand — the native TabView insets the scroll content.
                     deck(proxy: proxy)
                         .containerRelativeFrame(.vertical)
                         .id(Self.deckAnchor)
 
-                    if let book = detailPageBook() {
-                        detailPage(book)
-                            .id(Self.detailAnchor)
-                    }
+                    CarouselDetailPage(books: visibleBooks, center: center, onOpen: onOpen)
+                        .id(Self.detailAnchor)
                 }
             }
             .scrollBounceBehavior(.basedOnSize)
@@ -191,8 +186,8 @@ struct PeekCarouselView: View {
                 if let id = focusID?.wrappedValue {
                     focus(on: id)
                     focusID?.wrappedValue = nil
-                } else if centeredID == nil {
-                    centeredID = visibleBooks.first?.id
+                } else if center.id == nil {
+                    center.id = visibleBooks.first?.id
                 }
             }
             .onChange(of: focusID?.wrappedValue) { _, id in
@@ -205,9 +200,9 @@ struct PeekCarouselView: View {
                 // switched; otherwise a plain segment change just re-centres on the first card.
                 if let id = pendingFocusAfterFilterChange {
                     pendingFocusAfterFilterChange = nil
-                    withAnimation(.snappy(duration: 0.3)) { centeredID = id }
+                    withAnimation(.snappy(duration: 0.3)) { center.id = id }
                 } else {
-                    centeredID = visibleBooks.first?.id
+                    center.id = visibleBooks.first?.id
                 }
             }
             // The toolbar's shuffle is reachable while the bookmarks are on screen, so bring
@@ -231,26 +226,23 @@ struct PeekCarouselView: View {
                                        description: Text(filter.emptyMessage))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                PeekDeck(items: visibleBooks, centeredID: $centeredID, art: art,
+                PeekDeck(items: visibleBooks, centeredID: centerBinding, art: art,
                          onOpen: { onOpen($0, nil) },
                          transitionNamespace: transitionNamespace)
             }
 
             // Pinned: it doesn't travel with the cards, only its contents change as you swipe.
-            if let book = centeredBook {
-                infoPanel(book, proxy: proxy)
-                    .frame(height: panelHeight)
-                    .padding(.horizontal)
-            }
+            // A subview so a swipe re-renders it alone — not this deck, and not the scroll.
+            CarouselInfoPanel(books: visibleBooks, center: center,
+                              detailAnchor: Self.detailAnchor, proxy: proxy,
+                              onOpen: onOpen, onRemoveFromRecents: onRemoveFromRecents,
+                              bookToDelete: $bookToDelete)
         }
         // The tab bar's safe area puts the panel right up against the glass. Safe to add
         // inside: `containerRelativeFrame` pins the deck's total height, so this squeezes the
         // content rather than growing the deck — the paging boundary doesn't move.
-        .padding(.bottom, panelGap)
+        .padding(.bottom, 10)
     }
-
-    /// Breathing room between the info panel and the tab bar below it.
-    private var panelGap: CGFloat { 10 }
 
     // MARK: Filter segments
 
@@ -273,10 +265,107 @@ struct PeekCarouselView: View {
         PeekArt(url: book.coverURL, aspect: book.coverAspect ?? (2.0 / 3.0), label: book.displayTitle)
     }
 
-    // MARK: Pinned info panel
+    // MARK: Actions on the centred comic
 
-    private func infoPanel(_ book: ComicBook, proxy: ScrollViewProxy) -> some View {
-        let marks = bookmarks(of: book)
+    /// Brings a comic to the centre of the deck. If the current segment hides it (a brand-new
+    /// comic isn't "popular"), switch to Discover — which shows everything — and let the filter's
+    /// onChange finish the move, so the two don't fight over `center.id` in one update.
+    private func focus(on id: UUID) {
+        if visibleBooks.contains(where: { $0.id == id }) {
+            withAnimation(.snappy(duration: 0.3)) { center.id = id }
+        } else {
+            pendingFocusAfterFilterChange = id
+            filterRaw = DiscoveryFilter.discover.rawValue
+        }
+    }
+
+    /// Deletes the comic from the library. If it's the centred card, move to a neighbour
+    /// first so the deck slides there rather than snapping back to the first card (which is
+    /// what `peekCentered`'s fallback would do once the id no longer resolves).
+    private func deleteFromCarousel(_ book: ComicBook) {
+        if center.id == book.id {
+            let ids = visibleBooks.map(\.id)
+            if let i = ids.firstIndex(of: book.id) {
+                center.id = i + 1 < ids.count ? ids[i + 1] : (i > 0 ? ids[i - 1] : nil)
+            }
+        }
+        Importer.delete(book, from: context)
+    }
+
+    /// Glide to a random comic in the current deck — the Library's shuffle button in this mode
+    /// moves the carousel rather than opening something. Excludes the current one so it always
+    /// visibly goes somewhere.
+    private func jumpToRandom() {
+        let others = visibleBooks.filter { $0.id != center.id }
+        guard let pick = others.randomElement() ?? visibleBooks.first else { return }
+        withAnimation(.snappy(duration: 0.45)) { center.id = pick.id }
+    }
+
+    // MARK: Backfill
+
+    /// Comics imported before `coverAspect` existed have none, and the cards need it to size
+    /// without cropping. Probe the JPEG headers off-main (no bitmap decode), then apply in one
+    /// batch with a SINGLE save — a per-book save would republish the @Query N times.
+    private func backfillCoverAspects() async {
+        let pending: [(UUID, URL)] = books
+            .filter { $0.coverAspect == nil }
+            .compactMap { book in book.coverURL.map { (book.id, $0) } }
+        guard !pending.isEmpty else { return }
+
+        let probed: [UUID: Double] = await Task.detached(priority: .utility) {
+            var found: [UUID: Double] = [:]
+            for (id, url) in pending {
+                if let aspect = ImageDownsampler.pixelAspect(ofImageAt: url) { found[id] = aspect }
+            }
+            return found
+        }.value
+        guard !probed.isEmpty else { return }
+
+        for book in books where book.coverAspect == nil {
+            if let aspect = probed[book.id] { book.coverAspect = aspect }
+        }
+        try? context.save()
+    }
+}
+
+// MARK: - Pinned info panel
+
+/// The panel below the deck, pinned so it doesn't travel with the cards. Its own view so a swipe
+/// (which changes `center.id`) re-renders just this — not the deck around it, and not the scroll.
+/// Title and status track the LIVE centre (cheap stored values, no lag); the "more below" hint
+/// reads the SETTLED comic, so swiping past a comic never faults + sorts its bookmarks and the
+/// button always matches the page it scrolls to.
+private struct CarouselInfoPanel: View {
+    let books: [ComicBook]
+    let center: DeckCenter
+    let detailAnchor: String
+    let proxy: ScrollViewProxy
+    let onOpen: (ComicBook, Int?) -> Void
+    var onRemoveFromRecents: ((ComicBook) -> Void)?
+    @Binding var bookToDelete: ComicBook?
+
+    @Environment(\.modelContext) private var context
+
+    /// Fixed, so swiping between comics with different title lengths can't resize the panel and
+    /// make the covers jump. The lead-story line is reserved whether or not a comic has one, for
+    /// the same reason the height is fixed at all.
+    private let panelHeight: CGFloat = 150
+    private let buttonLabelHeight: CGFloat = 24
+
+    var body: some View {
+        if let book = peekCentered(in: books, id: center.id) {
+            panel(book)
+                .frame(height: panelHeight)
+                .padding(.horizontal)
+        }
+    }
+
+    private func panel(_ book: ComicBook) -> some View {
+        // The "more below" hint reads the SETTLED comic, so it faults at most once per landing —
+        // not for every card flown past — and stays in sync with the debounced detail page.
+        let settled = peekCentered(in: books, id: center.settledID)
+        let markCount = settled?.bookmarks.count ?? 0
+        let hasDetailBelow = markCount > 0 || (settled?.hasMetadata ?? false)
 
         return VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
@@ -284,8 +373,7 @@ struct PeekCarouselView: View {
                     .font(.headline)
                     .lineLimit(1)
                 // Rendered even when there's nothing to say, so the rows below don't shift up
-                // as you swipe from a tagged comic to an untagged one. `panelHeight` fixes the
-                // panel's outside for the same reason; this fixes its inside.
+                // as you swipe from a tagged comic to an untagged one.
                 Text(book.displaySubtitle ?? " ")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -308,8 +396,7 @@ struct PeekCarouselView: View {
             .lineLimit(1)
 
             // Read keeps its label; everything that isn't reading or the bookmarks hint goes
-            // in the overflow. With four buttons abreast "Read" was truncated down to nothing
-            // — and Mark as Read / Remove from Recents are rare enough to earn a tap.
+            // in the overflow. With four buttons abreast "Read" was truncated down to nothing.
             HStack(spacing: 10) {
                 Button { onOpen(book, nil) } label: {
                     Label("Read", systemImage: "book")
@@ -320,28 +407,25 @@ struct PeekCarouselView: View {
                 .buttonStyle(.borderedProminent)
 
                 // Doubles as the "there's more below" hint: the bookmarks and the metadata live
-                // a page down, where nothing is visible until you scroll, so their existence has
-                // to be announced up here. Absent when there's neither — which is exactly what
-                // keeps the deck a plain deck for an untagged comic you've never bookmarked.
-                //
-                // One button, not two: the page below is a single scroll, and a fourth control
-                // abreast squeezed "Read" down to nothing.
-                if !marks.isEmpty || book.hasMetadata {
+                // a page down, so their existence is announced up here. Absent when there's
+                // neither — which is exactly what keeps the deck a plain deck for an untagged
+                // comic you've never bookmarked.
+                if hasDetailBelow {
                     Button {
                         withAnimation(.snappy(duration: 0.35)) {
-                            proxy.scrollTo(Self.detailAnchor, anchor: .top)
+                            proxy.scrollTo(detailAnchor, anchor: .top)
                         }
                     } label: {
-                        if marks.isEmpty {
+                        if markCount == 0 {
                             Image(systemName: "info.circle")
                                 .frame(width: 28, height: buttonLabelHeight)
                         } else {
-                            Label("\(marks.count)", systemImage: "bookmark.fill")
+                            Label("\(markCount)", systemImage: "bookmark.fill")
                                 .frame(minHeight: buttonLabelHeight)
                         }
                     }
                     .buttonStyle(.bordered)
-                    .accessibilityLabel(moreBelowLabel(bookmarks: marks.count))
+                    .accessibilityLabel(moreBelowLabel(bookmarks: markCount))
                 }
 
                 Menu {
@@ -384,8 +468,6 @@ struct PeekCarouselView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private var buttonLabelHeight: CGFloat { 24 }
-
     /// What the "more below" button announces. It scrolls to one page holding both, so it says
     /// whichever is actually there.
     private func moreBelowLabel(bookmarks: Int) -> String {
@@ -397,40 +479,57 @@ struct PeekCarouselView: View {
         book.isRead.toggle()
         try? context.save()
     }
+}
 
-    /// Brings a comic to the centre of the deck. If the current segment hides it (a brand-new
-    /// comic isn't "popular"), switch to Discover — which shows everything — and let the filter's
-    /// onChange finish the move, so the two don't fight over `centeredID` in one update.
-    private func focus(on id: UUID) {
-        if visibleBooks.contains(where: { $0.id == id }) {
-            withAnimation(.snappy(duration: 0.3)) { centeredID = id }
-        } else {
-            pendingFocusAfterFilterChange = id
-            filterRaw = DiscoveryFilter.discover.rawValue
-        }
+// MARK: - Detail page (one page below the deck)
+
+/// The bookmarks + metadata page a scroll below the deck. Its own view, and it OWNS the debounce:
+/// it watches the live centre and, once a swipe has held still for a beat, publishes `settledID`
+/// and rebuilds. So flinging through the deck rebuilds neither the bookmark thumbnails nor the
+/// metadata section for every card in passing — and the container above never sees the settle.
+private struct CarouselDetailPage: View {
+    let books: [ComicBook]
+    let center: DeckCenter
+    let onOpen: (ComicBook, Int?) -> Void
+
+    @Environment(\.modelContext) private var context
+
+    /// The bookmarked pages, sized to the width: two up on a phone, and as many as fit on an iPad
+    /// (roughly four upright, six in landscape). `.adaptive` picks the count itself, so it tracks
+    /// orientation with no size-class branch.
+    private static let bookmarkColumns = [GridItem(.adaptive(minimum: 170),
+                                                   spacing: LibraryGridMetrics.spacing)]
+
+    /// The settled comic, if it has a second page's worth to say. Nil for a comic with neither,
+    /// which is what keeps the deck a plain deck.
+    private func detailBook() -> ComicBook? {
+        guard let book = peekCentered(in: books, id: center.settledID),
+              !book.bookmarks.isEmpty || book.hasMetadata else { return nil }
+        return book
     }
 
-    /// Deletes the comic from the library. If it's the centred card, move to a neighbour
-    /// first so the deck slides there rather than snapping back to the first card (which is
-    /// what `peekCentered`'s fallback would do once the id no longer resolves).
-    private func deleteFromCarousel(_ book: ComicBook) {
-        if centeredID == book.id {
-            let ids = visibleBooks.map(\.id)
-            if let i = ids.firstIndex(of: book.id) {
-                centeredID = i + 1 < ids.count ? ids[i + 1] : (i > 0 ? ids[i - 1] : nil)
+    var body: some View {
+        Group {
+            if let book = detailBook() {
+                content(book)
             }
         }
-        Importer.delete(book, from: context)
+        // Show the detail immediately on open rather than after the first debounce.
+        .onAppear { if center.settledID == nil { center.settledID = center.id } }
+        // Debounce: while the deck is gliding, `center.id` changes fast and each change cancels
+        // this before the sleep finishes, so `settledID` — and the heavy grid + metadata keyed
+        // off it — only updates once the swipe has held still.
+        .task(id: center.id) {
+            try? await Task.sleep(for: .milliseconds(200))
+            center.settledID = center.id
+        }
     }
-
-    // MARK: Detail page (one page below the deck)
 
     /// Bookmarks first, then what the comic's ComicInfo.xml says. That order because the
     /// bookmarks are yours — pages you chose — while the metadata is reference: you scroll
     /// past your own marks to reach the facts, not the other way round.
-    private func detailPage(_ book: ComicBook) -> some View {
+    private func content(_ book: ComicBook) -> some View {
         let marks = bookmarks(of: book)
-
         return VStack(alignment: .leading, spacing: 32) {
             if !marks.isEmpty { bookmarkBlock(book, marks: marks) }
             if book.hasMetadata { ComicMetadataSection(book: book) }
@@ -466,46 +565,15 @@ struct PeekCarouselView: View {
         }
     }
 
+    /// The relationship is a set, not a sequence — for a per-comic section, reading order is
+    /// the only order that makes sense.
+    private func bookmarks(of book: ComicBook) -> [Bookmark] {
+        book.bookmarks.sorted { $0.pageIndex < $1.pageIndex }
+    }
+
     private func delete(_ bookmark: Bookmark) {
         try? Storage.fm.removeItem(at: bookmark.thumbURL)
         context.delete(bookmark)
-        try? context.save()
-    }
-
-    // MARK: Random
-
-    /// Glide to a random comic in the current deck — the Library's shuffle button in this mode
-    /// moves the carousel rather than opening something. Excludes the current one so it always
-    /// visibly goes somewhere.
-    private func jumpToRandom() {
-        let others = visibleBooks.filter { $0.id != centeredID }
-        guard let pick = others.randomElement() ?? visibleBooks.first else { return }
-        withAnimation(.snappy(duration: 0.45)) { centeredID = pick.id }
-    }
-
-    // MARK: Backfill
-
-    /// Comics imported before `coverAspect` existed have none, and the cards need it to size
-    /// without cropping. Probe the JPEG headers off-main (no bitmap decode), then apply in one
-    /// batch with a SINGLE save — a per-book save would republish the @Query N times.
-    private func backfillCoverAspects() async {
-        let pending: [(UUID, URL)] = books
-            .filter { $0.coverAspect == nil }
-            .compactMap { book in book.coverURL.map { (book.id, $0) } }
-        guard !pending.isEmpty else { return }
-
-        let probed: [UUID: Double] = await Task.detached(priority: .utility) {
-            var found: [UUID: Double] = [:]
-            for (id, url) in pending {
-                if let aspect = ImageDownsampler.pixelAspect(ofImageAt: url) { found[id] = aspect }
-            }
-            return found
-        }.value
-        guard !probed.isEmpty else { return }
-
-        for book in books where book.coverAspect == nil {
-            if let aspect = probed[book.id] { book.coverAspect = aspect }
-        }
         try? context.save()
     }
 }

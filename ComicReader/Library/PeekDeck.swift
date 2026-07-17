@@ -107,15 +107,19 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
                 ForEach(items) { item in
                     card(item, slotW: slotW, boxH: size.height)
                         .frame(width: slotW)
-                        // Visual only — the layout keeps a clean, even stride, so viewAligned
-                        // still snaps each card dead centre while they visually overlap.
+                        // Visual only: the centred card sits full-size, its neighbours a touch
+                        // smaller and dimmer. Deliberately NO horizontal offset. Pulling the cards
+                        // inward looked nice at rest, but the offset released to zero right as a
+                        // card reached the centre — an extra sideways nudge layered on the scroll,
+                        // peaking exactly at the snap, which read as a jerk at the end of a slow
+                        // swipe. Scale and opacity only change size and alpha, never position, so
+                        // they stay smooth through the snap. With no inward pull the cards no longer
+                        // overlap, so the centred-card zIndex it needed is gone too.
                         .scrollTransition(.interactive, axis: .horizontal) { content, phase in
                             content
                                 .scaleEffect(animate ? 1 - 0.14 * abs(phase.value) : 1)
-                                .offset(x: animate ? -phase.value * 26 : 0)   // pull neighbours inward
                                 .opacity(animate ? 1 - 0.3 * abs(phase.value) : 1)
                         }
-                        .zIndex(centered?.id == item.id ? 1 : 0)
                 }
             }
             .scrollTargetLayout()

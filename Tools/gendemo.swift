@@ -31,7 +31,7 @@ struct Demo {
 
 // Yellow (the brand) + three fitting comic colours: red, blue, teal.
 let demos: [Demo] = [
-    Demo(file: "Solar Flare", series: "Solar Flare", title: "SOLAR FLARE", issueTitle: "Ignition",
+    Demo(file: "SolarFlare", series: "Solar Flare", title: "SOLAR FLARE", issueTitle: "Ignition",
          bg: rgb(0.99, 0.83, 0.16), onBg: rgb(0.15, 0.12, 0.02), pages: 13,
          writer: "A. Vance", penciller: "M. Okafor", year: 2026,
          // Story-index format — lights up the detail view's story list.
@@ -43,15 +43,15 @@ let demos: [Demo] = [
          3. [Pin-up] «First Light» {WF 001-C}
             Art: M. Okafor
          """),
-    Demo(file: "Crimson Alley", series: "Crimson Alley", title: "CRIMSON ALLEY", issueTitle: "The Long Rain",
+    Demo(file: "CrimsonAlley", series: "Crimson Alley", title: "CRIMSON ALLEY", issueTitle: "The Long Rain",
          bg: rgb(0.85, 0.24, 0.24), onBg: .white, pages: 11,
          writer: "R. Delgado", penciller: "S. Kerr", year: 2025,
          summary: "Rain never stops in the Alley, and neither does Detective Vale. A missing-persons case turns into something the whole precinct would rather forget."),
-    Demo(file: "Deep Blue", series: "Deep Blue", title: "DEEP BLUE", issueTitle: "The Halcyon Dive",
+    Demo(file: "DeepBlue", series: "Deep Blue", title: "DEEP BLUE", issueTitle: "The Halcyon Dive",
          bg: rgb(0.20, 0.47, 0.85), onBg: .white, pages: 15,
          writer: "N. Fisher", penciller: "T. Amari", year: 2026,
          summary: "A kilometre down, the research sub Halcyon finds a light that shouldn't exist. The crew has one dive of air to decide whether to follow it."),
-    Demo(file: "Jade Circuit", series: "Jade Circuit", title: "JADE CIRCUIT", issueTitle: "Borrowed Memory",
+    Demo(file: "JadeCircuit", series: "Jade Circuit", title: "JADE CIRCUIT", issueTitle: "Borrowed Memory",
          bg: rgb(0.11, 0.62, 0.55), onBg: .white, pages: 12,
          writer: "K. Sole", penciller: "D. Rhodes", year: 2025,
          summary: "In a city that runs on borrowed memory, a courier wakes with one she can't account for — and every fixer in the Circuit wants it back."),

@@ -35,10 +35,10 @@ enum SampleLibrary {
     }
 
     private static let samples: [Sample] = [
-        Sample(resource: "Solar Flare",   lastReadPage: 6,  openedHoursAgo: 2,   openCount: 5, bookmarks: [4, 9]),
-        Sample(resource: "Deep Blue",     lastReadPage: 11, openedHoursAgo: 26,  openCount: 3, bookmarks: [7]),
-        Sample(resource: "Crimson Alley", lastReadPage: 3,  openedHoursAgo: 74,  openCount: 2, bookmarks: [3]),
-        Sample(resource: "Jade Circuit",  lastReadPage: 0,  openedHoursAgo: nil, openCount: 0, bookmarks: []),
+        Sample(resource: "SolarFlare",   lastReadPage: 6,  openedHoursAgo: 2,   openCount: 5, bookmarks: [4, 9]),
+        Sample(resource: "DeepBlue",     lastReadPage: 11, openedHoursAgo: 26,  openCount: 3, bookmarks: [7]),
+        Sample(resource: "CrimsonAlley", lastReadPage: 3,  openedHoursAgo: 74,  openCount: 2, bookmarks: [3]),
+        Sample(resource: "JadeCircuit",  lastReadPage: 0,  openedHoursAgo: nil, openCount: 0, bookmarks: []),
     ]
 
     @MainActor

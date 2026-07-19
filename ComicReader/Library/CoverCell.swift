@@ -17,16 +17,19 @@ struct CoverCell: View {
     /// 1200px). Keeps grid scrolling smooth and the image cache from thrashing.
     var maxPixel: CGFloat? = nil
     var onShowDetail: () -> Void = {}
+    /// Asks the caller to confirm deleting this comic. Hoisted out of the cell so the grid shows
+    /// one confirmation dialog instead of one per cover — the same way `onShowDetail` hands the
+    /// detail sheet up. Off by default, so callers that don't delete are unaffected.
+    var onDelete: (ComicBook) -> Void = { _ in }
     let onOpen: () -> Void
 
     @Environment(\.modelContext) private var context
-    @State private var confirmingDelete = false
 
     var body: some View {
         Button(action: onOpen) {
             VStack(spacing: 7) {
                 DiskImage(url: book.coverURL, contentMode: .fill, maxPixel: maxPixel)
-                    .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                    .aspectRatio(LibraryGridMetrics.coverAspect, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
@@ -35,7 +38,16 @@ struct CoverCell: View {
                                     lineWidth: isSelected ? 3 : 1)
                     )
                     .overlay(alignment: .topTrailing) { selectionBadge }
-                    .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
+                    // Cast the shadow from the cover's rounded-rect PATH, not the decoded image's
+                    // alpha channel: an alpha-derived `.shadow` forces an offscreen pass per cell
+                    // on every scroll frame (the reader page avoids the same trap with an explicit
+                    // shadowPath — see ReaderPageCell). The opaque cover hides the fill; only its
+                    // shadow shows, so the look is unchanged but the grid scrolls without the pass.
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(.secondarySystemBackground))
+                            .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
+                    )
 
                 Text(book.displayTitle)
                     .font(.subheadline)
@@ -70,14 +82,6 @@ struct CoverCell: View {
         .accessibilityAddTraits(selectionMode && isSelected ? .isSelected : [])
         // No per-item context menu while selecting — the toolbar carries the batch actions.
         .contextMenu { if !selectionMode { menu } }
-        .confirmationDialog("Delete “\(book.displayTitle)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { Importer.delete(book, from: context) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(book.isFolderBacked
-                 ? "This removes the entry and its bookmarks from your library. The file in your comic folder is left untouched."
-                 : "This removes the comic and its bookmarks from your library.")
-        }
     }
 
     /// The corner check shown in selection mode — filled accent when picked, a hollow ring
@@ -116,7 +120,7 @@ struct CoverCell: View {
             }
         }
         Divider()
-        Button(role: .destructive) { confirmingDelete = true } label: {
+        Button(role: .destructive) { onDelete(book) } label: {
             Label(book.isFolderBacked ? "Delete Entry" : "Delete", systemImage: "trash")
         }
     }

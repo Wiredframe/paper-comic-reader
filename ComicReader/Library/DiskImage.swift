@@ -47,9 +47,12 @@ struct DiskImage: View {
         }
         let maxPixel = maxPixel
         let loaded = await Task.detached(priority: .utility) { () -> UIImage? in
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            if let maxPixel { return ImageDownsampler.downsample(data, maxPixel: maxPixel) }
-            return UIImage(data: data)
+            // Decode from the file URL: for the common (downsampled) case ImageIO streams only the
+            // thumbnail's worth of bytes, so a big cover never fully materialises in memory — the
+            // difference that keeps a large, fast-scrolled grid off the memory ceiling. The
+            // full-size branch (no maxPixel) likewise decodes from disk without an explicit buffer.
+            if let maxPixel { return ImageDownsampler.downsample(url: url, maxPixel: maxPixel) }
+            return UIImage(contentsOfFile: url.path)
         }.value
         guard !Task.isCancelled else { return }
         if let loaded { ImageCache.set(loaded, forKey: key) }

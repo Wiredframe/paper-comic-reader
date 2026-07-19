@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct PaperSettingsView: View {
-	@ObservedObject var settings: PaperSettings
+	@Bindable var settings: PaperSettings
 
 	var body: some View {
 		Form {

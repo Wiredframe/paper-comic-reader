@@ -11,7 +11,12 @@ import SwiftUI
 struct ReaderHost: UIViewControllerRepresentable {
 
     let store: PageImageStore
-    @ObservedObject var settings: ReaderSettings
+    let settings: ReaderSettings
+    /// The live double-page setting, passed as a plain value rather than read off `settings`.
+    /// `ReaderView.body` reads it so that, under `@Observable` fine-grained tracking, a flip of
+    /// the reader's own Double-Page toggle re-renders the host and reaches `syncLayoutMode()`
+    /// below — `settings` is no longer an `@ObservedObject`, so nothing else would trigger it.
+    var doublePage: Bool
     let startIndex: Int
     @Binding var currentPage: Int
     var paperVersion: Int

@@ -53,7 +53,7 @@ struct ComicDetailView: View {
         HStack(alignment: .top, spacing: 14) {
             DiskImage(url: book.coverURL, contentMode: .fit,
                       maxPixel: LibraryGridMetrics.coverMaxPixel(columns: 3))
-                .aspectRatio(book.coverAspect ?? (2.0 / 3.0), contentMode: .fit)
+                .aspectRatio(book.coverAspect ?? LibraryGridMetrics.coverAspect, contentMode: .fit)
                 .frame(width: 104)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .overlay(

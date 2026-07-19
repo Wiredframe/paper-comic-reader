@@ -47,9 +47,13 @@ enum LibraryViewMode: String, CaseIterable, Identifiable {
 
 struct LibraryView: View {
     @Environment(\.modelContext) private var context
-    @EnvironmentObject private var fileOpener: FileOpenCoordinator
+    @Environment(FileOpenCoordinator.self) private var fileOpener
 
     @Query private var books: [ComicBook]
+
+    /// Cache backing the sorted/filtered list and the library-shape flags (see `derived`). A
+    /// reference type so mutating it mid-render doesn't count as a `@State` change.
+    @State private var derivedCache = LibraryDerived()
 
     @AppStorage("library.columns") private var columns = 2
     @AppStorage(LibraryViewMode.storageKey) private var viewModeRaw = LibraryViewMode.defaultMode.rawValue
@@ -77,6 +81,9 @@ struct LibraryView: View {
     /// The comic whose details are showing, if any. Owned here rather than by the cell, so the
     /// grid presents one sheet instead of one per cover.
     @State private var detailBook: ComicBook?
+    /// The comic a single-cover delete is confirming, if any. Owned here for the same reason as
+    /// `detailBook` — one confirmation dialog per screen instead of one per cover cell.
+    @State private var bookPendingDelete: ComicBook?
     /// Set by the detail sheet's "Read" and consumed once the sheet has fully dismissed —
     /// raising the reader before then would collide with the sheet still on screen.
     @State private var pendingReadFromDetail: ComicBook?
@@ -113,16 +120,28 @@ struct LibraryView: View {
     }
 
     /// Whether any comic carries a series — gates the Series sort, which would otherwise be a
-    /// menu entry that does nothing until the library is tagged.
-    private var hasSeries: Bool { books.contains { $0.series?.nonEmpty != nil } }
+    /// menu entry that does nothing until the library is tagged. Read from the memoized
+    /// derivation so it isn't a fresh O(n) scan on every render.
+    private var hasSeries: Bool { derived.hasSeries }
 
     /// Whether any comic comes from a library folder — gates the "Only Downloaded" filter, which
     /// otherwise would be a control that hides nothing (owned copies are always downloaded).
-    private var hasFolderComics: Bool { books.contains { $0.isFolderBacked } }
+    private var hasFolderComics: Bool { derived.hasFolderComics }
 
-    /// Books ordered by the current sort choice. Sorted in memory so the field/order can
-    /// change live without a new @Query.
-    private var sortedBooks: [ComicBook] {
+    private var trimmedQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// The single ordered + filtered list every layout renders (grid, list and carousel alike),
+    /// so all three follow the same sort menu, "Only Downloaded" filter and search. Read from the
+    /// memoized derivation — the expensive locale sort only reruns when `sortSignature` changes,
+    /// not on the frequent @Query republishes a reading session triggers.
+    private var displayedBooks: [ComicBook] { derived.displayed }
+
+    /// Books ordered by the current sort choice, then narrowed by the filter and the search
+    /// query. Sorted in memory so the field/order can change live without a new @Query.
+    /// "Downloaded" includes owned copies (their archive is always local); only not-yet-fetched
+    /// folder comics drop out. Search matches title / story title / issue number (see
+    /// `ComicBook.matches`). Called only from `derived`, behind the signature cache.
+    private func computeDisplayedBooks() -> [ComicBook] {
         let ascending: [ComicBook]
         switch LibrarySort(rawValue: sortField) ?? .dateAdded {
         case .dateAdded:
@@ -149,19 +168,65 @@ struct LibraryView: View {
                 return $0.dateAdded < $1.dateAdded
             }
         }
-        return sortAscending ? ascending : ascending.reversed()
-    }
-
-    private var trimmedQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    /// `sortedBooks` narrowed by the active filter and the search query — the single list every
-    /// layout renders, so both reach the grid, the list and the carousel alike. "Downloaded"
-    /// includes owned copies (their archive is always local); only not-yet-fetched folder comics
-    /// drop out. Search matches title / story title / issue number (see `ComicBook.matches`).
-    private var displayedBooks: [ComicBook] {
-        var result = onlyDownloaded ? sortedBooks.filter { $0.hasLocalArchive } : sortedBooks
+        var result = sortAscending ? ascending : ascending.reversed()
+        if onlyDownloaded { result = result.filter { $0.hasLocalArchive } }
         if !trimmedQuery.isEmpty { result = result.filter { $0.matches(searchQuery: trimmedQuery) } }
         return result
+    }
+
+    // MARK: Derived-list memoization
+    //
+    // `body` re-evaluates on every @Query republish — and every page-progress checkpoint,
+    // mark-read and metadata save republishes it, including while a comic is open and the
+    // Library sits behind the reader. Recomputing the locale sort (O(n log n) with per-compare
+    // `localizedStandardCompare` + `displayTitle` building) over the whole library each time is
+    // wasted work that scales with its size. So the sorted/filtered list and the two shape flags
+    // are cached and only rebuilt when a cheap signature of their real inputs changes.
+
+    /// A hash of everything that can change the ordered/filtered output. Deliberately EXCLUDES the
+    /// fields a reading session churns — `lastReadPage`, `isRead`, `dateOpened` — so a page-turn
+    /// save doesn't invalidate the cache; and includes `openCount` (drives the .opened sort) and
+    /// the collation inputs (`series` / `issueNumber` / `title`). O(n) scalar hashing, far cheaper
+    /// than the sort it gates.
+    private var sortSignature: Int {
+        var hasher = Hasher()
+        hasher.combine(sortField)
+        hasher.combine(sortAscending)
+        hasher.combine(onlyDownloaded)
+        hasher.combine(trimmedQuery)
+        hasher.combine(books.count)
+        let searching = !trimmedQuery.isEmpty
+        for book in books {
+            hasher.combine(book.id)             // add / delete / reorder of the set
+            hasher.combine(book.openCount)      // .opened sort
+            hasher.combine(book.dateAdded)      // .dateAdded sort + every tie-break
+            hasher.combine(book.series)         // .title / .series collation
+            hasher.combine(book.issueNumber)    // .title / .series collation
+            hasher.combine(book.title)          // collation fallback + search
+            hasher.combine(book.hasLocalArchive) // "Only Downloaded" filter
+            if searching {                      // matches() also reads these
+                hasher.combine(book.issueTitle)
+                hasher.combine(book.stories.count)
+            }
+        }
+        return hasher.finalize()
+    }
+
+    /// Resolves — and caches — the sorted list and the shape flags for the current inputs.
+    /// Recomputes only when `sortSignature` changes. Mutating the cache (a plain, non-observable
+    /// reference held in `@State`) during a render doesn't reassign the `@State` value, so it
+    /// neither trips "state modified during update" nor loops; and it's synchronous, so there's
+    /// no empty-grid frame that a `.task`/`.onChange` refresh would introduce.
+    private var derived: LibraryDerived {
+        let signature = sortSignature
+        let cache = derivedCache
+        if cache.signature != signature {
+            cache.signature = signature
+            cache.displayed = computeDisplayedBooks()
+            cache.hasSeries = books.contains { $0.series?.nonEmpty != nil }
+            cache.hasFolderComics = books.contains { $0.isFolderBacked }
+        }
+        return cache
     }
 
     var body: some View {
@@ -193,8 +258,9 @@ struct LibraryView: View {
                         LibraryGrid(books: displayedBooks, columns: columns, listMode: viewMode == .list,
                                     selectionMode: selectionMode, selectedIDs: selection,
                                     onToggleSelect: toggleSelection,
-                                    onShowDetail: { detailBook = $0 }) { target = ReaderTarget(book: $0) }
-                            .padding(.horizontal)
+                                    onShowDetail: { detailBook = $0 },
+                                    onDelete: { bookPendingDelete = $0 }) { target = ReaderTarget(book: $0) }
+                            .padding(.horizontal, LibraryGridMetrics.spacing)
                             .padding(.top, 8)
                     }
                 }
@@ -212,6 +278,19 @@ struct LibraryView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This removes the selected comics and their bookmarks from your library.")
+            }
+            // Single-cover delete, hoisted out of the cell (see CoverCell.onDelete) so there's
+            // one dialog per screen. Same wording the cover cell used to carry itself.
+            .confirmationDialog("Delete “\(bookPendingDelete?.displayTitle ?? "")”?",
+                                isPresented: Binding(get: { bookPendingDelete != nil },
+                                                     set: { if !$0 { bookPendingDelete = nil } }),
+                                titleVisibility: .visible, presenting: bookPendingDelete) { book in
+                Button("Delete", role: .destructive) { Importer.delete(book, from: context) }
+                Button("Cancel", role: .cancel) {}
+            } message: { book in
+                Text(book.isFolderBacked
+                     ? "This removes the entry and its bookmarks from your library. The file in your comic folder is left untouched."
+                     : "This removes the comic and its bookmarks from your library.")
             }
         }
         .fileImporter(isPresented: $showImporter,
@@ -552,4 +631,14 @@ private struct ImportProgressOverlay: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
     }
+}
+
+/// Memoized products of the library `@Query` — the sorted/filtered list and the two shape flags.
+/// A plain (non-`@Observable`) class so `LibraryView` can hold it in `@State` and refresh it
+/// during a render without that counting as a state change. See `LibraryView.derived`.
+private final class LibraryDerived {
+    var signature: Int?
+    var displayed: [ComicBook] = []
+    var hasSeries = false
+    var hasFolderComics = false
 }

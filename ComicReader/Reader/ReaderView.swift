@@ -34,8 +34,8 @@ struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
-    @EnvironmentObject private var paper: PaperSettings
-    @EnvironmentObject private var settings: ReaderSettings
+    @Environment(PaperSettings.self) private var paper
+    @Environment(ReaderSettings.self) private var settings
     // The reader is a fullScreenCover; `.preferredColorScheme` set on the tab view does
     // not reach it, so it reads the appearance itself to keep the reader background and
     // any presented sheets in the chosen theme.
@@ -125,6 +125,11 @@ struct ReaderView: View {
             if let store, store.pageCount > 0 {
                 ReaderHost(store: store,
                            settings: settings,
+                           // Threaded in as a plain value (not just the `$settings.doublePage`
+                           // binding in the menu) so `body` actually READS it: under fine-grained
+                           // @Observable tracking that read is what re-renders here and drives
+                           // updateUIViewController → syncLayoutMode when the toggle flips.
+                           doublePage: settings.doublePage,
                            startIndex: clampedStart(store.pageCount),
                            currentPage: $currentPage,
                            paperVersion: paperVersion,
@@ -257,7 +262,9 @@ struct ReaderView: View {
     /// Top-right overlay: the GLOBAL reader toggles (paper effect + double page),
     /// changed right here with the page as a live preview.
     private var settingsMenu: some View {
-        Menu {
+        @Bindable var paper = paper
+        @Bindable var settings = settings
+        return Menu {
             Toggle(isOn: $paper.isEnabled) {
                 Label("Paper Effect", systemImage: "doc.plaintext")
             }

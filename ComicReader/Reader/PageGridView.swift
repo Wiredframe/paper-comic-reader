@@ -21,19 +21,20 @@ struct PageGridView: View {
     /// near full-screen), the compact grid on a phone. `.adaptive` fills the width with as many
     /// as fit at that minimum.
     private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: hSize == .regular ? 140 : 96), spacing: 16)]
+        [GridItem(.adaptive(minimum: hSize == .regular ? 140 : 96),
+                  spacing: LibraryGridMetrics.spacing)]
     }
 
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 20) {
+                    LazyVGrid(columns: columns, spacing: LibraryGridMetrics.spacing) {
                         ForEach(0..<pageCount, id: \.self) { index in
                             Button { onSelect(index) } label: {
                                 VStack(spacing: 5) {
                                     PageThumb(store: store, index: index)
-                                        .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                                        .aspectRatio(LibraryGridMetrics.coverAspect, contentMode: .fit)
                                         .frame(maxWidth: .infinity)
                                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                         .overlay(
@@ -49,7 +50,7 @@ struct PageGridView: View {
                             .id(index)
                         }
                     }
-                    .padding()
+                    .padding(LibraryGridMetrics.spacing)
                 }
                 // Defer one runloop so the lazy grid has laid out before we jump to
                 // the active page — otherwise the scroll target row may not exist yet.

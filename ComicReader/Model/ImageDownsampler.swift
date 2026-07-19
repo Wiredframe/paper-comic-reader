@@ -24,6 +24,20 @@ enum ImageDownsampler {
     static func downsample(_ data: Data, maxPixel: CGFloat) -> UIImage? {
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
+        return thumbnail(from: source, maxPixel: maxPixel)
+    }
+
+    /// Same as `downsample(_:maxPixel:)`, but reads straight from a file `url` so ImageIO
+    /// streams only the bytes the thumbnail needs — the full-size image never materialises in
+    /// memory the way `Data(contentsOf:)` + decode would. Preferred for on-disk covers and page
+    /// thumbnails (see `DiskImage`), which is exactly where a large library scrolls a lot of them.
+    static func downsample(url: URL, maxPixel: CGFloat) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else { return nil }
+        return thumbnail(from: source, maxPixel: maxPixel)
+    }
+
+    private static func thumbnail(from source: CGImageSource, maxPixel: CGFloat) -> UIImage? {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,

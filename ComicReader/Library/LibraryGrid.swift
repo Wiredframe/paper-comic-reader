@@ -8,6 +8,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct LibraryGrid: View {
     let books: [ComicBook]
@@ -22,6 +23,9 @@ struct LibraryGrid: View {
     /// menu; the caller owns the sheet, so there's one of it per screen rather than one per
     /// cell — the same way `onOpen` hands the reader up.
     var onShowDetail: (ComicBook) -> Void = { _ in }
+    /// Asks the caller to confirm deleting a comic — owned by the caller so there's one
+    /// confirmation dialog per screen, not one per cover. Only the gallery cells offer it.
+    var onDelete: (ComicBook) -> Void = { _ in }
     let onOpen: (ComicBook) -> Void
 
     var body: some View {
@@ -39,7 +43,8 @@ struct LibraryGrid: View {
                 ForEach(books) { book in
                     CoverCell(book: book, selectionMode: selectionMode,
                               isSelected: selectedIDs.contains(book.id), maxPixel: coverMaxPixel,
-                              onShowDetail: { onShowDetail(book) }) { tap(book) }
+                              onShowDetail: { onShowDetail(book) },
+                              onDelete: onDelete) { tap(book) }
                 }
             }
         }
@@ -72,10 +77,23 @@ extension View {
     }
 }
 
-/// Shared cover-grid spacing so Recents / Library / Bookmarks stay identical and
-/// the gap between columns is clearly visible (equal horizontally and vertically).
+/// Shared cover-grid metrics so Recents / Library / Bookmarks (and the reader's page grid)
+/// lay their covers out identically — same proportion, same even spacing.
 enum LibraryGridMetrics {
-    static let spacing: CGFloat = 30
+    /// The proportion (width ÷ height) every cover / page slot is shaped to, so the grid stays
+    /// an even lattice whatever a comic's real trim is. Sized for the common album / digest —
+    /// a European comic is ~14 × 18.5 cm ≈ 0.72–0.76, and a Topolino is ~0.72 — rather than the
+    /// old US 2:3 (0.667), which is narrower and cropped a wider cover down its sides (the demo
+    /// comics are authored at exactly 2:3, so they hid it — a real library shows it at once).
+    /// Covers still fill the slot, so the look stays edge-to-edge and the rows stay even; an
+    /// off-ratio cover loses only a sliver rather than a strip.
+    static let coverAspect: CGFloat = 0.72
+
+    /// One value for the column gap, the row gap AND the grid's outer margin, so the covers sit
+    /// in a uniform rhythm with matching space between them and to the screen edge. The margin
+    /// used to be narrower than the gap (16 vs 30), which read as lopsided and cramped at the
+    /// edges — now they match.
+    static let spacing: CGFloat = 20
 
     /// Cover decode target for the current zoom level — covers and bookmark shots are
     /// stored at 1200px, but a grid cell only needs roughly its on-screen size. Shared by
@@ -88,6 +106,17 @@ enum LibraryGridMetrics {
         case 3:  return 460
         default: return 360
         }
+    }
+
+    /// The default column count for a fresh install, by device — a tablet has the width for more
+    /// than the phone's two, and defaulting every device to two turned an iPad into two oversized
+    /// covers with hairline margins. One-shot: a count the user has already chosen (or an earlier
+    /// launch wrote) is left alone, so this only ever seeds the very first launch.
+    static func migrateColumnsDefaultIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: "library.columns") == nil else { return }
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        defaults.set(isPad ? 4 : 2, forKey: "library.columns")
     }
 }
 

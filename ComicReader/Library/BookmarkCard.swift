@@ -21,12 +21,19 @@ struct BookmarkCard: View {
         Button(action: onOpen) {
             VStack(spacing: 7) {
                 DiskImage(url: bookmark.thumbURL, contentMode: .fill, maxPixel: maxPixel)
-                    .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                    .aspectRatio(LibraryGridMetrics.coverAspect, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(Color.primary.opacity(0.1)))
-                    .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
+                    // Path-based shadow behind the opaque thumbnail — same reasoning as CoverCell:
+                    // avoids the per-cell offscreen alpha pass that made the bookmarks grid scroll
+                    // heavier than it needed to. Visually identical.
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(.secondarySystemBackground))
+                            .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
+                    )
 
                 VStack(spacing: 2) {
                     if showsTitle {

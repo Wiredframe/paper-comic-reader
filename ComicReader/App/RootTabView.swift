@@ -18,7 +18,7 @@ struct RootTabView: View {
     enum Screen: Hashable { case recents, library, bookmarks, settings }
 
     @State private var screen: Screen = Self.initialScreen
-    @EnvironmentObject private var fileOpener: FileOpenCoordinator
+    @Environment(FileOpenCoordinator.self) private var fileOpener
     @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.system.rawValue
 
     private static var initialScreen: Screen {

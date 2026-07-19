@@ -11,8 +11,8 @@ import SwiftData
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @EnvironmentObject private var paper: PaperSettings
-    @EnvironmentObject private var reader: ReaderSettings
+    @Environment(PaperSettings.self) private var paper
+    @Environment(ReaderSettings.self) private var reader
     @Environment(\.modelContext) private var context
     @Query private var books: [ComicBook]
 
@@ -37,7 +37,9 @@ struct SettingsView: View {
     private let issuesURL = URL(string: "https://github.com/Wiredframe/paper-comic-reader/issues")!
 
     var body: some View {
-        NavigationStack {
+        @Bindable var paper = paper
+        @Bindable var reader = reader
+        return NavigationStack {
             ScrollViewReader { proxy in
             Form {
                 Section {
@@ -53,16 +55,10 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Fit-Width Zoom")
-                            Spacer()
-                            Text("\(Int((reader.doubleTapZoom * 100).rounded()))%")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Slider(value: $reader.doubleTapZoom, in: 0.7...1.0, step: 0.05)
-                    }
+                    // Its own view so dragging the slider re-renders just this row, not the whole
+                    // Settings Form (which holds the library @Query). Under @Observable only the
+                    // view that READS `doubleTapZoom` — the live "%" label here — is invalidated.
+                    ZoomSettingRow(reader: reader)
                 } header: {
                     Text("Zoom")
                 } footer: {
@@ -240,6 +236,27 @@ struct SettingsView: View {
         return items.reduce(0) { sum, item in
             let size = (try? item.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             return sum + Int64(size)
+        }
+    }
+}
+
+/// The Fit-Width Zoom row (label + live "%" + slider), split out of `SettingsView` so a drag
+/// re-renders only this row. Because it — and not the parent Form — reads `doubleTapZoom`, the
+/// fine-grained @Observable tracking keeps the surrounding Settings sections (and the library
+/// @Query behind them) out of the slider's per-tick update.
+private struct ZoomSettingRow: View {
+    @Bindable var reader: ReaderSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Fit-Width Zoom")
+                Spacer()
+                Text("\(Int((reader.doubleTapZoom * 100).rounded()))%")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Slider(value: $reader.doubleTapZoom, in: 0.7...1.0, step: 0.05)
         }
     }
 }

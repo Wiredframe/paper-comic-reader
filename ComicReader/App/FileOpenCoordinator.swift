@@ -13,19 +13,21 @@
 //
 
 import Foundation
+import Observation
 
 @MainActor
-final class FileOpenCoordinator: ObservableObject {
+@Observable
+final class FileOpenCoordinator {
 
     /// Comics handed to us from outside, waiting to be imported. Consumed by the Library.
     /// A queue, not a single slot: selecting several files in Files or the share sheet arrives
     /// as separate onOpenURL calls in one runloop turn, so a single slot kept only the last and
     /// silently dropped the rest.
-    @Published private(set) var pendingURLs: [URL] = []
+    private(set) var pendingURLs: [URL] = []
 
     /// Bumped on every request so views can react via `.onChange` — a second open of the
     /// same URL is still a new request.
-    @Published private(set) var token: Int = 0
+    private(set) var token: Int = 0
 
     func request(url: URL) {
         pendingURLs.append(url)

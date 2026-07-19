@@ -31,6 +31,10 @@ struct BookmarksView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Bookmark.dateAdded, order: .reverse) private var bookmarks: [Bookmark]
 
+    /// Cache backing the sorted/filtered list (see `derived`). A reference type so refreshing it
+    /// mid-render doesn't count as a `@State` change.
+    @State private var derivedCache = BookmarksDerived()
+
     @AppStorage("library.columns") private var columns = 2
     @AppStorage(BookmarksViewMode.storageKey) private var viewModeRaw = BookmarksViewMode.defaultMode.rawValue
     @AppStorage("bookmarks.sortField") private var sortField = BookmarkSort.dateAdded.rawValue
@@ -54,9 +58,17 @@ struct BookmarksView: View {
     /// Skip any orphaned bookmarks whose comic was deleted.
     private var validBookmarks: [Bookmark] { bookmarks.filter { $0.book != nil } }
 
-    /// Bookmarks in the current sort order. Sorted in memory so the field/order can change live
-    /// without a new @Query.
-    private var sortedBookmarks: [Bookmark] {
+    private var trimmedQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// The single ordered + filtered list all three layouts render (carousel, list, grid), so
+    /// search reaches every one. Read from the memoized derivation — the locale sort only reruns
+    /// when `bookmarkSortSignature` changes, not on every @Query republish.
+    private var displayedBookmarks: [Bookmark] { derived.displayed }
+
+    /// Bookmarks in the current sort order, then narrowed by the search query (a bookmark matches
+    /// when its comic does). Sorted in memory so the field/order can change live without a new
+    /// @Query. Called only from `derived`, behind the signature cache.
+    private func computeDisplayedBookmarks() -> [Bookmark] {
         let ascending: [Bookmark]
         switch BookmarkSort(rawValue: sortField) ?? .dateAdded {
         case .dateAdded:
@@ -74,16 +86,44 @@ struct BookmarksView: View {
             // sorted(by:) isn't guaranteed stable, so ties would churn between recomputations.
             ascending = validBookmarks.sorted { ($0.pageIndex, $0.dateAdded) < ($1.pageIndex, $1.dateAdded) }
         }
-        return sortAscending ? ascending : ascending.reversed()
+        var result = sortAscending ? ascending : ascending.reversed()
+        if !trimmedQuery.isEmpty { result = result.filter { $0.book?.matches(searchQuery: trimmedQuery) ?? false } }
+        return result
     }
 
-    private var trimmedQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+    // MARK: Derived-list memoization (mirrors LibraryView)
 
-    /// `sortedBookmarks` narrowed by the search query — a bookmark matches when its comic does.
-    /// The single list all three layouts render, so search reaches the carousel, list and grid.
-    private var displayedBookmarks: [Bookmark] {
-        guard !trimmedQuery.isEmpty else { return sortedBookmarks }
-        return sortedBookmarks.filter { $0.book?.matches(searchQuery: trimmedQuery) ?? false }
+    /// A hash of everything that can change the ordered/filtered output: the sort field/order, the
+    /// search query, and per bookmark its identity, page and date — plus its comic's title only
+    /// when that's actually consulted (the .comic sort or an active search). O(n) scalar hashing,
+    /// far cheaper than the locale sort it gates, and the title is one the layouts already read.
+    private var bookmarkSortSignature: Int {
+        var hasher = Hasher()
+        hasher.combine(sortField)
+        hasher.combine(sortAscending)
+        hasher.combine(trimmedQuery)
+        hasher.combine(bookmarks.count)
+        let readsComic = (BookmarkSort(rawValue: sortField) ?? .dateAdded) == .comic || !trimmedQuery.isEmpty
+        for mark in bookmarks {
+            hasher.combine(mark.id)
+            hasher.combine(mark.pageIndex)
+            hasher.combine(mark.dateAdded)
+            if readsComic { hasher.combine(mark.book?.displayTitle) }
+        }
+        return hasher.finalize()
+    }
+
+    /// Resolves — and caches — the sorted/filtered list for the current inputs, recomputing only
+    /// when `bookmarkSortSignature` changes. Same non-observable-`@State`-during-render technique
+    /// as `LibraryView.derived`: no state-change, no loop, and synchronous (no empty frame).
+    private var derived: BookmarksDerived {
+        let signature = bookmarkSortSignature
+        let cache = derivedCache
+        if cache.signature != signature {
+            cache.signature = signature
+            cache.displayed = computeDisplayedBookmarks()
+        }
+        return cache
     }
 
     var body: some View {
@@ -131,7 +171,7 @@ struct BookmarksView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal)
+                        .padding(.horizontal, LibraryGridMetrics.spacing)
                         .padding(.top, 8)
                     }
                 }
@@ -256,4 +296,12 @@ private struct BookmarkRow: View {
             }
         }
     }
+}
+
+/// Memoized product of the bookmark `@Query` — the sorted/filtered list. A plain (non-`@Observable`)
+/// class so `BookmarksView` can hold it in `@State` and refresh it during a render without that
+/// counting as a state change. See `BookmarksView.derived`.
+private final class BookmarksDerived {
+    var signature: Int?
+    var displayed: [Bookmark] = []
 }

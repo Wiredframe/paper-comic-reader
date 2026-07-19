@@ -7,16 +7,17 @@
 //
 
 import Foundation
-import Combine
+import Observation
 
 @MainActor
-final class PaperSettings: ObservableObject {
+@Observable
+final class PaperSettings {
 
-	@Published var isEnabled: Bool = true {
+	var isEnabled: Bool = true {
 		didSet { defaults.set(isEnabled, forKey: K.enabled) }
 	}
 
-	@Published var params: PaperParams = .cream {
+	var params: PaperParams = .cream {
 		didSet { persist(params) }
 	}
 

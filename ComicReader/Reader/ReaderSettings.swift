@@ -9,34 +9,35 @@
 //
 
 import Foundation
-import Combine
+import Observation
 
 @MainActor
-final class ReaderSettings: ObservableObject {
+@Observable
+final class ReaderSettings {
 
     /// Tap the left/right edge to move through the page (a half at a time) and turn
     /// pages. On by default — when disabled a tap only toggles the chrome.
-    @Published var tapToNavigate: Bool { didSet { defaults.set(tapToNavigate, forKey: K.tapNav) } }
+    var tapToNavigate: Bool { didSet { defaults.set(tapToNavigate, forKey: K.tapNav) } }
 
     /// Enable native Live Text selection (press-and-hold) on comic pages.
-    @Published var liveText: Bool { didSet { defaults.set(liveText, forKey: K.liveText) } }
+    var liveText: Bool { didSet { defaults.set(liveText, forKey: K.liveText) } }
 
     /// Snappier UI animations (chrome show/hide, page turns, fit toggles).
-    @Published var fastAnimations: Bool { didSet { defaults.set(fastAnimations, forKey: K.fastAnim) } }
+    var fastAnimations: Bool { didSet { defaults.set(fastAnimations, forKey: K.fastAnim) } }
 
     /// Show two pages side by side in landscape (cover alone, then fixed pairs).
-    @Published var doublePage: Bool { didSet { defaults.set(doublePage, forKey: K.double) } }
+    var doublePage: Bool { didSet { defaults.set(doublePage, forKey: K.double) } }
 
     /// Cast a soft shadow around the page so it reads as a sheet lying on the letterbox mat.
     /// Seen wherever the page doesn't run to the screen edge; a spread casts a single shadow
     /// around the pair, never down the gutter. Read at layout time, so a change lands on the
     /// next open rather than mid-read — there's no way to reach Settings from the reader anyway.
-    @Published var pageShadow: Bool { didSet { defaults.set(pageShadow, forKey: K.pageShadow) } }
+    var pageShadow: Bool { didSet { defaults.set(pageShadow, forKey: K.pageShadow) } }
 
     /// How wide a single page fills the screen at fit-width (the default single-page look
     /// and the double-tap zoom). 1.0 = full width; lower values (down to 0.7) show more of
     /// the page height and read less zoomed-in.
-    @Published var doubleTapZoom: Double { didSet { defaults.set(doubleTapZoom, forKey: K.zoom) } }
+    var doubleTapZoom: Double { didSet { defaults.set(doubleTapZoom, forKey: K.zoom) } }
 
     // Animation timing. With Fast Animations OFF every reader transition uses the iOS
     // defaults — the standard ~0.25s UIView.animate baseline paired with the system

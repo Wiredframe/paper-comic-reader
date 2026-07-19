@@ -35,25 +35,28 @@ struct ComicReaderApp: App {
     }()
 
     /// Global settings shared by Settings and the reader.
-    @StateObject private var paper = PaperSettings()
-    @StateObject private var readerSettings = ReaderSettings()
+    @State private var paper = PaperSettings()
+    @State private var readerSettings = ReaderSettings()
 
     /// Hand-off for comics opened from outside the app (Files, "Open With", share sheet).
-    @StateObject private var fileOpener = FileOpenCoordinator()
+    @State private var fileOpener = FileOpenCoordinator()
 
     init() {
         // Fold the old `library.listMode` Bool into the three-way view mode. Property
         // initializers run before this, but nothing reads @AppStorage until the WindowGroup
         // body below, so it lands in time. Self-deleting — a no-op on every later launch.
         LibraryViewMode.migrateIfNeeded()
+        // Seed a device-appropriate default column count on first launch (an iPad has room for
+        // more than the phone's two). One-shot; leaves a count the user has chosen untouched.
+        LibraryGridMetrics.migrateColumnsDefaultIfNeeded()
     }
 
     var body: some Scene {
         WindowGroup {
             RootTabView()
-                .environmentObject(paper)
-                .environmentObject(readerSettings)
-                .environmentObject(fileOpener)
+                .environment(paper)
+                .environment(readerSettings)
+                .environment(fileOpener)
                 .onOpenURL(perform: handleOpenURL)
                 .task {
                     // First launch into an empty library gets the bundled demo comics.

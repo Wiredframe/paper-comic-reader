@@ -4,9 +4,9 @@
 
 # Paper Comic Reader
 
-A lean, native comic reader for iPhone and iPad that makes pages read like ink on paper instead of a backlit screen. **[Visit Paper Comic Reader Landingpage](https://wiredframe.github.io/paper-comic-reader-landingpage/)**.
+A lean, native comic reader for iPhone and iPad that makes pages read like ink on paper instead of a backlit screen. **[Download on the App Store](https://apps.apple.com/app/paper-comic-reader/id6788421253)** · **[Landing page](https://wiredframe.github.io/paper-comic-reader-landingpage/)**.
 
-[![Download](https://img.shields.io/badge/Download-.ipa-2563eb?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![Platform](https://img.shields.io/badge/iOS-26%2B-1d4ed8?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![License](https://img.shields.io/badge/License-MIT-64748b?style=for-the-badge)](LICENSE)
+[![App Store](https://img.shields.io/badge/App_Store-Download-0D96F6?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/paper-comic-reader/id6788421253) [![Sideload](https://img.shields.io/badge/Sideload-.ipa-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![Platform](https://img.shields.io/badge/iOS-26%2B-1d4ed8?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![License](https://img.shields.io/badge/License-MIT-64748b?style=for-the-badge)](LICENSE)
 
 <p align="center">
   <img src="docs/screenshot.jpg" alt="Paper Comic Reader on iPhone" width="260">
@@ -22,12 +22,14 @@ Built with SwiftUI and a UIKit reader core, Core Image and Metal for the paper e
 
 ## Install
 
-Paper Comic Reader is **not on the App Store** — it ships as an **unsigned `.ipa`** on the [Releases page](https://github.com/Wiredframe/paper-comic-reader/releases). iOS won't install an `.ipa` directly, so you sideload it with a tool that re-signs it with your own Apple ID:
+**On the App Store** (easiest): [**Paper Comic Reader on the App Store**](https://apps.apple.com/app/paper-comic-reader/id6788421253) — signed, free, auto-updating, no sideload tooling. This is the recommended way to install.
+
+**Sideload the unsigned `.ipa`** if you'd rather not use the App Store: every release is also published as an **unsigned `.ipa`** on the [Releases page](https://github.com/Wiredframe/paper-comic-reader/releases). iOS won't install an `.ipa` directly, so you re-sign it with your own Apple ID:
 
 - **[AltStore](https://altstore.io)** — run AltServer on a Mac or PC, then open the `.ipa` in AltStore on the device. A free Apple ID works, but the app stops launching after **7 days** until AltStore refreshes it (a paid Apple Developer account lasts a year).
 - **[Sideloadly](https://sideloadly.io)** — connect the device to a Mac or PC and load the `.ipa`. Same 7-day limit on a free Apple ID.
 
-Requires **iOS 26 or later**.
+Either way, Paper Comic Reader requires **iOS 26 or later**.
 
 
 ## Project setup
@@ -56,7 +58,7 @@ Deployment target: iOS 26 · Bundle id: `de.wiredframe.comicreader`
 git tag v1.0.0 && git push origin v1.0.0  # or let CI build + publish it
 ```
 
-The `.ipa` is deliberately unsigned; sideload tools re-sign it per user (see **Install**). It must **not** be uploaded to the App Store.
+The `.ipa` is deliberately unsigned; sideload tools re-sign it per user (see **Install**), so it is **not** the App Store build and must not be uploaded there. The App Store release is a separate, signed archive built with `scripts/build-appstore.sh`.
 
 
 ## Structure

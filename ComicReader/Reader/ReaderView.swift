@@ -154,9 +154,15 @@ struct ReaderView: View {
             // Keep the chrome in the hierarchy always (fade via opacity) so the
             // SwiftUI layout is identical whether it's shown or hidden — otherwise
             // removing it changes how the hosted reader is laid out mid-rotation
-            // and the resize drops out of the animation (janky rotation).
+            // and the resize drops out of the animation (janky rotation). The fade is
+            // applied per Liquid-Glass island inside `chrome` (each `.glassEffect`
+            // carries its own `.opacity(chromeVisible …)`), NOT here as one group
+            // opacity over the whole VStack: a group `.opacity` whose subtree holds
+            // backdrop-filter (glass) views forces the render server to re-blur the
+            // full-screen backdrop into an offscreen buffer on every frame of the
+            // fade, which dropped frames on the auto-hide. Per-island alpha animates
+            // each small glass layer against a cached backdrop instead.
             chrome
-                .opacity(chromeVisible ? 1 : 0)
                 .allowsHitTesting(chromeVisible)
         }
         .statusBarHidden(!chromeVisible)
@@ -250,6 +256,7 @@ struct ReaderView: View {
                     .monospacedDigit()
                     .padding(.horizontal, 14).padding(.vertical, 7)
                     .glassEffect(in: Capsule())
+                    .opacity(chromeVisible ? 1 : 0)   // per-island fade — see `chrome`
                     .accessibilityLabel("Page \(currentPage + 1) of \(pageCount)")
             }
             Spacer()
@@ -276,6 +283,7 @@ struct ReaderView: View {
                 .font(.headline)
                 .frame(width: 44, height: 44)   // ≥ 44pt touch target
                 .glassEffect(in: Circle())
+                .opacity(chromeVisible ? 1 : 0)   // per-island fade — see `chrome`
         }
         .accessibilityLabel("Reader settings")
     }
@@ -296,6 +304,7 @@ struct ReaderView: View {
         }
         .padding(.horizontal, 24).padding(.vertical, 13)
         .glassEffect(in: Capsule())
+        .opacity(chromeVisible ? 1 : 0)   // per-island fade — see `chrome`
         .padding(.bottom, 10)
     }
 
@@ -305,6 +314,7 @@ struct ReaderView: View {
                 .font(.headline)
                 .frame(width: 44, height: 44)   // ≥ 44pt touch target
                 .glassEffect(in: Circle())
+                .opacity(chromeVisible ? 1 : 0)   // per-island fade — see `chrome`
         }
         .accessibilityLabel(label)
     }

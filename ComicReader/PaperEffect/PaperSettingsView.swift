@@ -99,14 +99,24 @@ private struct PaperPreview: View {
 
 	private func render() async {
 		guard enabled else { rendered = nil; return }
+		// Debounce the render. A slider drag flips PreviewKey up to 120×/s on ProMotion, and
+		// each flip restarts this task via .task(id:). Task.sleep is a cancellation point, so a
+		// fast drag never survives it — only a value that settles for the interval reaches the
+		// render below. Without this, every tick spawned a full-resolution Core Image render
+		// that ran to completion even once superseded (the detached job is unstructured), so a
+		// single drag stacked dozens of GPU renders + readbacks and saturated the render server —
+		// the slider "lag" (and a battery drain). `catch { return }` — NOT `try?` — is essential:
+		// swallowing the cancellation would let a superseded tick fall through and still spawn the
+		// render, merely delaying each one instead of coalescing them.
+		do { try await Task.sleep(for: .milliseconds(80)) } catch { return }
+		guard !Task.isCancelled else { return }
 		let base = SamplePage.preview
 		let p = params
 		let output = await Task.detached(priority: .userInitiated) {
 			PaperFilter.shared.apply(to: base, params: p)
 		}.value
-		// .task(id:) cancels render() when params change, but the detached job above is
-		// unstructured and finishes regardless — drop its result once we've been superseded,
-		// so an out-of-order finish can't leave the preview showing stale settings.
+		// The detached job is unstructured and finishes regardless — drop its result once we've
+		// been superseded, so an out-of-order finish can't leave the preview showing stale settings.
 		guard !Task.isCancelled else { return }
 		rendered = output
 	}

@@ -40,13 +40,13 @@ struct RootTabView: View {
     var body: some View {
         TabView(selection: $screen) {
             Tab("Recents", systemImage: "clock", value: Screen.recents) {
-                RecentsView()
+                listingTab(.recents) { RecentsView() }
             }
             Tab("Library", systemImage: "books.vertical", value: Screen.library) {
-                LibraryView()
+                listingTab(.library) { LibraryView() }
             }
             Tab("Bookmarks", systemImage: "bookmark", value: Screen.bookmarks) {
-                BookmarksView()
+                listingTab(.bookmarks) { BookmarksView() }
             }
             Tab("Settings", systemImage: "gearshape", value: Screen.settings) {
                 SettingsView()
@@ -59,5 +59,21 @@ struct RootTabView: View {
         // only bumps for those opens, so there's nothing to test: reading `pendingURL` here
         // would race the Library's own onChange, which may already have consumed it.
         .onChange(of: fileOpener.token) { _, _ in screen = .library }
+    }
+
+    /// Instantiate a listing view only while its tab is SELECTED. The native TabView otherwise keeps
+    /// every visited tab — and its `@Query` — alive at once; holding several large comic queries
+    /// resident degraded the whole app (felt even on the unrelated Settings sliders), scaling with
+    /// library size. Rendering only the selected listing keeps a single query live at a time. The
+    /// cost is that a listing rebuilds (transient state such as scroll position resets) on each
+    /// return — cheap next to the persistent lag it removes, and the `@AppStorage` choices (view
+    /// mode, sort, columns) survive it.
+    @ViewBuilder
+    private func listingTab<V: View>(_ tab: Screen, @ViewBuilder _ content: () -> V) -> some View {
+        if screen == tab {
+            content()
+        } else {
+            Color.clear
+        }
     }
 }

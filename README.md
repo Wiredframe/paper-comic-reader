@@ -58,7 +58,7 @@ Deployment target: iOS 26 · Bundle id: `de.wiredframe.comicreader`
 git tag v1.0.0 && git push origin v1.0.0  # or let CI build + publish it
 ```
 
-The `.ipa` is deliberately unsigned; sideload tools re-sign it per user (see **Install**), so it is **not** the App Store build and must not be uploaded there. The App Store release is a separate, signed archive built with `scripts/build-appstore.sh`.
+The `.ipa` is deliberately unsigned; sideload tools re-sign it per user (see **Install**), so it is **not** the App Store build and must not be uploaded there. The App Store release is a separate, signed archive built and uploaded through Xcode (**Organizer ▸ Distribute App**).
 
 
 ## Structure

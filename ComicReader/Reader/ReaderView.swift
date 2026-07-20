@@ -83,7 +83,6 @@ struct ReaderView: View {
     @State private var showGrid = false
     @State private var bookmarkTick = 0   // nudges the view when bookmarks change
     @State private var bookmarkingPages: Set<Int> = []   // pages with an add in flight — guards double-taps
-    @State private var autoHide: DispatchWorkItem?
     /// One open = one count. @State is per-presentation, which is exactly the semantics
     /// wanted — see `setup()`.
     @State private var didCountOpen = false
@@ -160,7 +159,7 @@ struct ReaderView: View {
             // opacity over the whole VStack: a group `.opacity` whose subtree holds
             // backdrop-filter (glass) views forces the render server to re-blur the
             // full-screen backdrop into an offscreen buffer on every frame of the
-            // fade, which dropped frames on the auto-hide. Per-island alpha animates
+            // fade, which dropped frames as the chrome faded. Per-island alpha animates
             // each small glass layer against a cached backdrop instead.
             chrome
                 .allowsHitTesting(chromeVisible)
@@ -172,10 +171,17 @@ struct ReaderView: View {
         // way the Close button does it (`close()`) — an interactive dismiss is already under
         // way by the time anyone could ask. Close and the manual portrait toggle still work.
         .interactiveDismissDisabled(isLandscape)
-        .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isLandscape = $0 }
+        .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { nowLandscape in
+            guard nowLandscape != isLandscape else { return }   // a real portrait/landscape flip
+            isLandscape = nowLandscape
+            // Orientation change: clear the controls at once (no fade) so the glass never has to
+            // blur the page grain through the rotation, and the reflow is seen unobstructed.
+            var noAnim = Transaction()
+            noAnim.disablesAnimations = true
+            withTransaction(noAnim) { chromeVisible = false }
+        }
         .task { await setup() }
         .onDisappear {
-            autoHide?.cancel()
             persistProgress()   // durable checkpoint on leaving the reader
             // Guaranteed portrait reset on close — a fallback for the controller's
             // viewWillDisappear (which doesn't always fire for a fullScreenCover), so a
@@ -331,17 +337,14 @@ struct ReaderView: View {
 
     // MARK: Chrome visibility
 
-    /// Reveal the chrome and (re)arm the auto-hide. Rotation no longer depends on this
-    /// — the reader re-fits the page inside the turn itself (see viewWillTransition).
+    /// Reveal the chrome. It stays up until the next tap (there is no auto-hide timer); an
+    /// orientation change clears it (see the geometry-change handler in `body`).
     private func showChrome() {
         withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible = true }
-        scheduleAutoHide()
     }
 
-    /// Hide the chrome now and cancel any pending auto-hide.
+    /// Hide the chrome now.
     private func hideChrome() {
-        autoHide?.cancel()
-        autoHide = nil
         withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible = false }
     }
 
@@ -355,7 +358,6 @@ struct ReaderView: View {
     /// while the reader still covers the screen means there's nothing sideways to see.
     private func close() {
         persistProgress()
-        autoHide?.cancel()
         guard OrientationGate.isLandscape else {
             OrientationGate.lockPortrait()
             dismiss()
@@ -365,17 +367,6 @@ struct ReaderView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + OrientationGate.settleDuration) {
             dismiss()
         }
-    }
-
-    /// Fade the chrome out after a short idle so the controls never linger. Re-armed
-    /// every time it's shown (tap, first open, rotation).
-    private func scheduleAutoHide() {
-        autoHide?.cancel()
-        let work = DispatchWorkItem {
-            withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible = false }
-        }
-        autoHide = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
 
     // MARK: Actions
@@ -463,10 +454,6 @@ struct ReaderView: View {
         }
         book.dateOpened = .now
         try? context.save()
-        // The chrome starts visible, then fades. Armed only once there's a page to look at, so
-        // a slow open doesn't spend the delay on the spinner — and never when the archive
-        // wouldn't open, since Close is then the only way out and it must not fade away.
-        if opened.pageCount > 0 { scheduleAutoHide() }
     }
 
     // MARK: Resolve a missing source
@@ -551,7 +538,6 @@ struct ReaderView: View {
     /// to portrait — both work even under the device rotation lock. Reset to portrait when
     /// the reader closes (see the controller's viewWillDisappear).
     private func toggleLandscape() {
-        scheduleAutoHide()
         forcedLandscape.toggle()
         OrientationGate.rotate(to: forcedLandscape ? .landscapeRight : .portrait)
     }
@@ -562,7 +548,6 @@ struct ReaderView: View {
     }
 
     private func toggleBookmark() {
-        scheduleAutoHide()   // keep the chrome up while the user is acting on it
         if let existing = book.bookmarks.first(where: { $0.pageIndex == currentPage }) {
             try? Storage.fm.removeItem(at: existing.thumbURL)
             context.delete(existing)

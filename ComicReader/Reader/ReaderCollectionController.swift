@@ -164,6 +164,7 @@ final class ReaderCollectionController: UIViewController,
         collectionView.register(ReaderPageCell.self, forCellWithReuseIdentifier: ReaderPageCell.reuseID)
         view.addSubview(collectionView)
 
+        store.setActivePage(currentPage)   // before the first prefetch, so a resume deep in the comic isn't skipped
         prefetchNeighbours(of: currentPage)
     }
 
@@ -397,6 +398,7 @@ final class ReaderCollectionController: UIViewController,
     /// double mode is the right half of the closing spread and never equals it; downstream
     /// read-status would otherwise never fire. See `onReachedEnd`.
     private func notifyPageChange() {
+        store.setActivePage(currentPage)   // lets superseded prefetch decodes bail (see PageImageStore)
         onPageChanged?(currentPage)
         if pageCount > 0,
            paging.pages(inSlot: paging.slot(forPage: currentPage)).contains(pageCount - 1) {
@@ -445,7 +447,7 @@ final class ReaderCollectionController: UIViewController,
     func collectionView(_ cv: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
         for indexPath in indexPaths {
             for page in paging.pages(inSlot: indexPath.item) {
-                store.requestImage(at: page, maxPixel: ReaderPageCell.displayMaxPixel) { _, _ in }
+                store.prefetchImage(at: page, maxPixel: ReaderPageCell.displayMaxPixel)
             }
         }
     }
@@ -487,5 +489,16 @@ final class ReaderCollectionController: UIViewController,
         } else {
             onToggleChrome?()
         }
+    }
+
+    /// The visible spread is now focused on a specific half (double-tap zoom, or a tap-scroll
+    /// that crossed the gutter). Make that page current so rotation lands on it and the bookmark
+    /// button acts on it — without moving the collection view, which stays on the same slot.
+    func pageCell(_ cell: ReaderPageCell, didFocusPageAt globalIndex: Int) {
+        let target = clampPage(globalIndex)
+        guard target != currentPage else { return }
+        currentPage = target
+        notifyPageChange()
+        prefetchNeighbours(of: target)
     }
 }

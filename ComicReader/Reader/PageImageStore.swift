@@ -38,6 +38,13 @@ final class PageImageStore: @unchecked Sendable {
     private var paperEnabled: Bool
     private var paperParams: PaperParams
 
+    /// The page the reader is on, set from the controller. Read on the decode queue so a
+    /// prefetch that the reader has already scrolled far past can skip its (paper-heavy)
+    /// render instead of holding up the page actually being turned to. Guarded by a lock
+    /// because it is written on the main actor and read on `work`.
+    private let activePageLock = NSLock()
+    private var activePage = 0
+
     /// Opens `url` off the main thread and hands back the ready store.
     ///
     /// ALWAYS open through this, never by calling `init` directly on the main actor. Opening an
@@ -102,11 +109,40 @@ final class PageImageStore: @unchecked Sendable {
         }
     }
 
+    /// The controller reports the page the reader is on, so a superseded prefetch can bail
+    /// before its render (see `activePage`). Call whenever `currentPage` changes.
+    func setActivePage(_ index: Int) {
+        activePageLock.lock(); activePage = index; activePageLock.unlock()
+    }
+
+    /// Prefetch reaches ±2; a prefetch is only dropped once the reader is MORE than this far
+    /// past it, so nothing in the normal window is ever skipped.
+    private static let prefetchSkipRadius = 3
+
+    private func isNearActive(_ index: Int) -> Bool {
+        activePageLock.lock(); let a = activePage; activePageLock.unlock()
+        return abs(index - a) <= Self.prefetchSkipRadius
+    }
+
     func prefetch(around index: Int, maxPixel: CGFloat) {
         // Keep the neighbours ±2 decoded so page turns don't visibly fade in.
         for i in [index + 1, index - 1, index + 2, index - 2]
         where (0..<pageCount).contains(i) && cachedImage(at: i) == nil {
-            requestImage(at: i, maxPixel: maxPixel) { _, _ in }
+            prefetchImage(at: i, maxPixel: maxPixel)
+        }
+    }
+
+    /// A neighbour warm-up. Unlike `requestImage` (which always renders, since it feeds the page
+    /// on screen), a prefetch that has been overtaken skips its render: on the serial decode
+    /// queue a stale prefetch would otherwise delay the page you're turning to, which is what
+    /// makes fast scrolling with the paper effect lag.
+    func prefetchImage(at index: Int, maxPixel: CGFloat) {
+        guard (0..<pageCount).contains(index), cachedImage(at: index) == nil else { return }
+        work.async { [weak self] in
+            guard let self, self.isNearActive(index), self.cachedImage(at: index) == nil else { return }
+            if let image = self.render(index: index, maxPixel: maxPixel) {
+                self.cache.setObject(image, forKey: NSNumber(value: index))
+            }
         }
     }
 

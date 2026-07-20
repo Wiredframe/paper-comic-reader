@@ -30,6 +30,11 @@ protocol ReaderPageCellDelegate: AnyObject {
     /// A single tap that wasn't consumed by tap-scroll — the controller decides
     /// prev / next / toggle-chrome from the tap's horizontal position.
     func pageCell(_ cell: ReaderPageCell, didSingleTapAtX x: CGFloat, width: CGFloat)
+
+    /// The spread's focus moved to a specific half (a double-tap zoom, or a tap-scroll that
+    /// crossed to the other page). The controller makes that global page the current one, so
+    /// rotation and bookmarking act on the page actually being read, not always the left half.
+    func pageCell(_ cell: ReaderPageCell, didFocusPageAt globalIndex: Int)
 }
 
 final class ReaderPageCell: UICollectionViewCell {
@@ -407,13 +412,22 @@ final class ReaderPageCell: UICollectionViewCell {
             switch fit {
             case .focus: fit = .spread
             default:
-                fit = .focus(tappedPage(atX: gesture.location(in: self).x))
+                let column = tappedPage(atX: gesture.location(in: self).x)
+                fit = .focus(column)
                 focusZoomEnabled = true      // deliberate zoom → honour the fit-width zoom setting
+                reportFocus(column: column)  // zooming a half makes it the current page
             }
         } else {
             fit = isFitWidth ? .fitHeight : .fitWidth
         }
         applyLayout(animated: true)
+    }
+
+    /// Tell the controller which global page this slot is now focused on, so `currentPage`
+    /// follows the half actually being read. Bounds-guarded to the pages this slot holds.
+    private func reportFocus(column: Int) {
+        guard column >= 0, column < pageIndices.count else { return }
+        delegate?.pageCell(self, didFocusPageAt: pageIndices[column])
     }
 
     private var isFitWidth: Bool {
@@ -511,11 +525,13 @@ final class ReaderPageCell: UICollectionViewCell {
             fit = .focus(1)
             tapTargetY = 0
             animateTapScroll(to: CGPoint(x: focusColumnOffsetX(1), y: 0))
+            reportFocus(column: 1)                         // crossed to the right half
         } else {
             guard column == 1 else { return false }        // left page top → previous spread
             fit = .focus(0)
             tapTargetY = maxY
             animateTapScroll(to: CGPoint(x: focusColumnOffsetX(0), y: maxY))
+            reportFocus(column: 0)                         // crossed back to the left half
         }
         updateLiveTextEnabled(landscape: bounds.width > bounds.height)
         return true

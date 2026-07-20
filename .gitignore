@@ -24,5 +24,9 @@ IMG_*.png
 # Local machine ids for refresh-install.sh
 scripts/refresh.env
 
+# App Store Connect API key ids (the .p8 lives outside the repo, never committed)
+scripts/appstore.env
+*.p8
+
 # Release notes the release workflow generates at build time (see .github/workflows/release.yml)
 RELEASE_NOTES.md

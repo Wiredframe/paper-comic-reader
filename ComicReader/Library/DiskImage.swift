@@ -32,6 +32,14 @@ struct DiskImage: View {
             }
         }
         .task(id: cacheKey) { await load() }
+        // Release the decoded bitmap when this cover leaves the screen — scrolled out of a grid, or
+        // its whole tab left (the native TabView keeps visited tabs alive, so without this every
+        // browsed cover stayed resident across Recents/Library/Bookmarks at once). `.task(id:)`
+        // reloads on return: instant from the in-memory cache when it's still there (a cache hit is
+        // assigned without the fade below), otherwise a quick re-decode from disk. This — with the
+        // capped ImageCache — is what stops browsing the cover views from pinning memory that
+        // pressured the rest of the app (e.g. the Paper Effect sliders going laggy afterwards).
+        .onDisappear { image = nil }
     }
 
     /// Cache / reload key: the same file at a different target size is a different

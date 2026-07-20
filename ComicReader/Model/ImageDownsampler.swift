@@ -14,9 +14,11 @@ enum ImageDownsampler {
 
     /// Longest side (device pixels) for library-card images — cover thumbnails and
     /// bookmark page shots. Both render at the same full-width size in their grids
-    /// (down to a single column), so they share this target; it's large enough to
-    /// stay crisp at one column on the biggest displays. Stored images are decoded
-    /// down further per cell at display time (see `DiskImage.maxPixel`).
+    /// (down to a single column), so they share this target; it's large enough to stay
+    /// crisp at one column on the biggest displays. Stored images are decoded down further
+    /// per cell at display time (see `DiskImage.maxPixel`, and `PeekDeck`, which decodes to
+    /// the on-screen size rather than to this ceiling — covers stay sharp without the
+    /// full-size decode pinning memory).
     static let libraryCardPixel: CGFloat = 1200
 
     /// Decodes `data` and returns an image whose longest side is at most

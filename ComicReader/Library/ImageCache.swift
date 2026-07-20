@@ -13,10 +13,16 @@ enum ImageCache {
 
     private static let cache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
-        // Bound by decoded bytes, not count: full-size covers are ~1200px, so a
-        // count limit alone could pin a lot of memory on a big library. NSCache also
-        // evicts under system memory pressure.
-        cache.totalCostLimit = 96 * 1024 * 1024   // ~96 MB of decoded images
+        // Bound by decoded bytes, not count: a count limit alone could pin a lot of memory on a big
+        // library. Kept deliberately MODEST — the old 96 MB let a cover-heavy browse
+        // (Recents/Library/Bookmarks) pin enough decoded memory that a smaller device's
+        // allocator/GPU came under pressure, which surfaced as UNRELATED jank: the Paper Effect
+        // sliders in Settings turned laggy *after* visiting those views, worse the more comics they
+        // showed. Lower on every device (a big grid still scrolls smoothly at 32 MB — a viewport is
+        // ~12–20 covers); a little RAM-aware so an 8 GB phone still caches a bit more. NSCache also
+        // evicts under system memory pressure, and covers re-decode from disk cheaply via ImageIO.
+        let gb = ProcessInfo.processInfo.physicalMemory / 1_073_741_824
+        cache.totalCostLimit = (gb >= 6 ? 64 : 32) * 1024 * 1024
         return cache
     }()
 

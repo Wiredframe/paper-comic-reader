@@ -55,6 +55,8 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
     var transitionNamespace: Namespace.ID? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Points → pixels, so a slot decodes its art at exactly its on-screen size (see `image`).
+    @Environment(\.displayScale) private var displayScale
 
     /// How much of each neighbour stays visible either side — this is what makes it a peek
     /// carousel, and it (not a height percentage) is what bounds the image's size.
@@ -189,8 +191,13 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
     }
 
     private func image(_ art: PeekArt, width: CGFloat, height: CGFloat) -> some View {
+        // Decode to the art's ACTUAL on-screen size (points × scale), capped at the stored ceiling —
+        // not a flat libraryCardPixel. A peek neighbour, and every slot on an iPad in landscape's
+        // multi-cover mode, is far smaller than one hero, so decoding them all at the ceiling pinned
+        // memory for pixels never shown. Sizing to the frame shrinks the decoded bitmap on every
+        // device while the centred hero (which fills the deck) still decodes at full resolution.
         DiskImage(url: art.url, contentMode: .fit,
-                  maxPixel: ImageDownsampler.libraryCardPixel)
+                  maxPixel: min(ImageDownsampler.libraryCardPixel, max(width, height) * displayScale))
             .frame(width: width, height: height)
             .clipShape(RoundedRectangle(cornerRadius: ArtStyle.corner, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: ArtStyle.corner, style: .continuous)

@@ -68,10 +68,13 @@ struct PaperSettingsView: View {
 					.monospacedDigit()
 					.foregroundStyle(.secondary)
 			}
+			// Step in 5-percentage-point notches. The readout normalises to the range's
+			// upper bound, so one 5% notch is upperBound / 20 in raw value (21 stops, 0…100%).
 			Slider(
 				value: Binding(get: { Double(value.wrappedValue) },
 							   set: { value.wrappedValue = CGFloat($0) }),
-				in: range
+				in: range,
+				step: range.upperBound / 20
 			)
 		}
 	}

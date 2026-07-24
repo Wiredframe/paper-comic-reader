@@ -78,6 +78,9 @@ struct ReaderView: View {
     @State private var store: PageImageStore?
     @State private var currentPage = 0
     @State private var chromeVisible = true
+    /// Pending auto-hide of the chrome (armed on show, cancelled on manual hide / rotation /
+    /// leaving the reader / an open sheet). Nil when nothing is scheduled.
+    @State private var autoHideTask: Task<Void, Never>?
     @State private var paperVersion = 0
     @State private var jumpTarget: Int?
     @State private var showGrid = false
@@ -179,9 +182,11 @@ struct ReaderView: View {
             var noAnim = Transaction()
             noAnim.disablesAnimations = true
             withTransaction(noAnim) { chromeVisible = false }
+            cancelAutoHide()
         }
         .task { await setup() }
         .onDisappear {
+            cancelAutoHide()
             persistProgress()   // durable checkpoint on leaving the reader
             // Guaranteed portrait reset on close — a fallback for the controller's
             // viewWillDisappear (which doesn't always fire for a fullScreenCover), so a
@@ -191,10 +196,22 @@ struct ReaderView: View {
         // Save the resume page when the app leaves the foreground (progress only needs to
         // survive backgrounding / closing, not every page turn — see persistProgress).
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { persistProgress() }
+            if phase != .active {
+                persistProgress()
+            } else if forcedLandscape {
+                // Back to the foreground: requestGeometryUpdate is a one-shot nudge, so a
+                // background round-trip drops the forced landscape while the button still reads
+                // landscape. Re-assert it so the toggle and the actual orientation stay in step.
+                OrientationGate.free()
+                OrientationGate.rotate(to: .landscapeRight)
+            }
         }
         .onChange(of: paper.isEnabled) { reloadPaper() }
         .onChange(of: paper.params) { reloadPaper() }
+        .onChange(of: showGrid) { _, isOpen in
+            // Pause the auto-hide while the page grid is up; resume it when the grid closes.
+            if isOpen { cancelAutoHide() } else if chromeVisible { armAutoHide() }
+        }
         .sheet(isPresented: $showGrid) {
             if let store {
                 PageGridView(store: store, pageCount: store.pageCount, current: currentPage) { page in
@@ -337,18 +354,39 @@ struct ReaderView: View {
 
     // MARK: Chrome visibility
 
-    /// Reveal the chrome. It stays up until the next tap (there is no auto-hide timer); an
-    /// orientation change clears it (see the geometry-change handler in `body`).
+    /// Reveal the chrome, then auto-hide it after a short idle (matching the system reading
+    /// apps). The auto-hide is cancelled by a manual hide, an orientation change, an open sheet,
+    /// or leaving the reader; see `armAutoHide`.
     private func showChrome() {
         withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible = true }
+        armAutoHide()
     }
 
-    /// Hide the chrome now.
+    /// Hide the chrome now, cancelling any pending auto-hide.
     private func hideChrome() {
+        cancelAutoHide()
         withAnimation(.easeInOut(duration: settings.uiAnimationDuration)) { chromeVisible = false }
     }
 
     private func toggleChrome() { chromeVisible ? hideChrome() : showChrome() }
+
+    /// Schedule the chrome to fade away after a 2-second idle. Re-arming (another tap) restarts
+    /// the clock; an open sheet holds it off until the sheet closes. Uses a cancellable Task so
+    /// the fade rides Core Animation on the render server, never a main-thread timer loop.
+    private func armAutoHide() {
+        cancelAutoHide()
+        guard !showGrid else { return }
+        autoHideTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            hideChrome()
+        }
+    }
+
+    private func cancelAutoHide() {
+        autoHideTask?.cancel()
+        autoHideTask = nil
+    }
 
     /// Closes the reader, rotating back to portrait FIRST when sideways.
     ///
@@ -438,6 +476,9 @@ struct ReaderView: View {
                                                paperEnabled: paper.isEnabled, paperParams: paper.params)
         store = opened
         currentPage = clampedStart(opened.pageCount)
+        // First reveal auto-hides after the idle too, same as a tap-triggered reveal, but only
+        // once there are pages to read (a failed open keeps the Close button up).
+        if opened.pageCount > 0 { armAutoHide() }
 
         // Auto-mark read when opening already on the last page — `.onChange(of: currentPage)`
         // only fires on a change, so a 1-page comic (or resuming on the final page) would

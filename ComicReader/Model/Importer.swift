@@ -367,6 +367,72 @@ enum Importer {
         try? context.save()
     }
 
+    /// Re-reads ComicInfo.xml for every comic and re-applies it, refreshing titles and details in
+    /// place. Folder-backed comics are read from the library folder itself (so an edited
+    /// ComicInfo.xml there is picked up, even for comics already downloaded), falling back to the
+    /// local archive when the folder is offline; owned copies are read from their local archive.
+    /// Nothing is deleted: reading progress and bookmarks are untouched (see `ComicBook.apply`),
+    /// and a comic whose source can't be reached is skipped rather than cleared. Reports "done of
+    /// total"; applies the whole batch with a single save so the grid doesn't stutter per comic.
+    @MainActor @discardableResult
+    static func refreshMetadata(for books: [ComicBook], into context: ModelContext,
+                                onProgress: @MainActor (_ done: Int, _ total: Int) -> Void) async -> Int {
+        // What each read needs, snapshotted here; SwiftData models can't cross the actor hop.
+        struct Target: Sendable { let id: UUID; let localURL: URL?; let relativePath: String? }
+        let targets: [Target] = books.map { book in
+            let local = Storage.fm.fileExists(atPath: book.archiveURL.path) ? book.archiveURL : nil
+            return Target(id: book.id, localURL: local, relativePath: book.sourceRelativePath)
+        }
+        onProgress(0, targets.count)
+        guard !targets.isEmpty else { return 0 }
+
+        // (info, didRead): didRead separates "read, but untagged" (apply nil = clear the fields)
+        // from "couldn't reach the source" (skip, keep what's already there).
+        var results: [UUID: (info: ComicInfoData?, didRead: Bool)] = [:]
+        for (index, target) in targets.enumerated() {
+            let scanned: (ComicInfoData?, Bool) = await Task.detached(priority: .userInitiated) {
+                if let rel = target.relativePath {
+                    do {
+                        let info = try readFolderMetadata(relativePath: rel)
+                        return (info, true)
+                    } catch {
+                        // Folder offline or file gone: fall back to any local copy below.
+                    }
+                }
+                if let local = target.localURL {
+                    let info = (try? ComicArchive(url: local))?.metadataXML().flatMap(ComicInfoParser.parse)
+                    return (info, true)
+                }
+                return (nil, false)
+            }.value
+            results[target.id] = (scanned.0, scanned.1)
+            onProgress(index + 1, targets.count)
+        }
+
+        var updated = 0
+        for book in books {
+            guard let result = results[book.id], result.didRead else { continue }
+            book.apply(result.info)
+            updated += 1
+        }
+        try? context.save()
+        return updated
+    }
+
+    /// The library-folder copy's ComicInfo, read in place (no full download, only the archive's
+    /// central directory and the ComicInfo entry). Throws when the folder can't be reached or the
+    /// file isn't there, so the caller can fall back to a local copy; a successful read of an
+    /// untagged archive returns nil, which clears the fields.
+    private static func readFolderMetadata(relativePath: String) throws -> ComicInfoData? {
+        try LibrarySource.withFolderAccess { folder in
+            let url = folder.appendingPathComponent(relativePath)
+            guard Storage.fm.fileExists(atPath: url.path) else {
+                throw LibrarySource.SourceError.fileMissing
+            }
+            return (try? ComicArchive(url: url))?.metadataXML().flatMap(ComicInfoParser.parse)
+        }
+    }
+
     /// One archive already in the library, as plain data. The duplicate scan reads files and
     /// so runs off the main actor, where the SwiftData models it came from can't go — this
     /// carries the two things the scan needs across.

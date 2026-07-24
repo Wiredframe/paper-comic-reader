@@ -29,6 +29,8 @@ struct SettingsView: View {
     @State private var folderName = LibrarySource.displayName
     @State private var showFolderPicker = false
     @State private var scan: (done: Int, total: Int)?
+    @State private var refresh: (done: Int, total: Int)?
+    @State private var showRemoveFolderConfirm = false
     #if DEBUG
     @State private var showPaperForShot = false   // screenshot deep-link to the Paper Effect detail
     #endif
@@ -103,14 +105,24 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                                     .monospacedDigit()
                             }
+                        } else if let refresh {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                Text("Reading metadata \(refresh.done) of \(refresh.total)…")
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
                         } else {
                             Button { startScan() } label: {
                                 Label("Scan for New Comics", systemImage: "arrow.clockwise")
                             }
+                            Button { startMetadataRefresh() } label: {
+                                Label("Re-read Metadata", systemImage: "arrow.triangle.2.circlepath")
+                            }
                             Button { showFolderPicker = true } label: {
                                 Label("Change Folder…", systemImage: "folder")
                             }
-                            Button(role: .destructive) { removeFolder() } label: {
+                            Button(role: .destructive) { showRemoveFolderConfirm = true } label: {
                                 Label("Remove Folder", systemImage: "folder.badge.minus")
                             }
                         }
@@ -122,7 +134,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Comic Folder")
                 } footer: {
-                    Text("Import every comic in a folder on a file server or iCloud Drive — anything the Files app can reach. Covers and details come in now; each comic downloads when you open it, and its download can be removed again to save space while the entry stays. Scan again to pick up new comics. A file server has to be reachable (on the right network) when you open or download a comic.")
+                    Text("Import every comic in a folder on a file server or iCloud Drive, anything the Files app can reach. Covers and details come in now; each comic downloads when you open it, and its download can be removed again to save space while the entry stays. Scan again to pick up new comics, or re-read metadata to refresh titles and details from each comic's ComicInfo without touching your bookmarks or reading progress. A file server has to be reachable (on the right network) when you open, download, or re-read a comic.")
                 }
                 .id("comicFolder")   // screenshot scroll anchor (SCREENSHOT_SETTINGS=folder)
 
@@ -172,6 +184,14 @@ struct SettingsView: View {
             .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
                 handleFolderChosen(result)
             }
+            .confirmationDialog("Remove this comic folder?",
+                                isPresented: $showRemoveFolderConfirm,
+                                titleVisibility: .visible) {
+                Button("Remove Folder", role: .destructive) { removeFolder() }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This unlinks the folder from this device. Your imported comics, covers, reading progress, and bookmarks stay. Comics that live only in the folder and aren't downloaded can't be opened until you choose the folder again.")
+            }
             }
         }
     }
@@ -207,7 +227,7 @@ struct SettingsView: View {
     /// so a rescan only brings in what's new. Progress drives the inline row; the storage figure is
     /// refreshed at the end because the scan writes a cover per new comic.
     private func startScan() {
-        guard scan == nil else { return }
+        guard scan == nil, refresh == nil else { return }
         let existing = Set(books.compactMap { $0.sourceRelativePath })
         scan = (0, 0)
         Task {
@@ -216,6 +236,21 @@ struct SettingsView: View {
             }
             scan = nil
             storageText = storageDescription
+        }
+    }
+
+    /// Re-reads ComicInfo metadata for every comic, refreshing titles and details in place.
+    /// Folder-backed comics are read from the library folder (so an edited ComicInfo.xml is
+    /// picked up); nothing is deleted and bookmarks and reading progress stay. See
+    /// `Importer.refreshMetadata`.
+    private func startMetadataRefresh() {
+        guard scan == nil, refresh == nil else { return }
+        refresh = (0, 0)
+        Task {
+            _ = await Importer.refreshMetadata(for: books, into: context) { done, total in
+                refresh = (done, total)
+            }
+            refresh = nil
         }
     }
 

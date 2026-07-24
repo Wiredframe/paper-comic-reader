@@ -41,6 +41,11 @@ final class ReaderPageCell: UICollectionViewCell {
 
     static let reuseID = "ReaderPageCell"
     static let displayMaxPixel: CGFloat = 2200
+    /// Width fraction of each outer navigation zone (page turn / tap-scroll), where a
+    /// single tap fires instantly and the double-tap zoom is suppressed. The centre keeps
+    /// the double-tap zoom. Single source for the cell (`isNavEdge`) and the controller's
+    /// `didSingleTapAtX` split, so change the feel value here only.
+    static let navEdgeFraction: CGFloat = 0.15
 
     /// How the slot's page(s) fill the screen.
     private enum Fit {
@@ -66,6 +71,12 @@ final class ReaderPageCell: UICollectionViewCell {
     private let liveText = [ImageAnalysisInteraction(), ImageAnalysisInteraction()]
     private let analyzer = ImageAnalyzer()
     private var tapScrollAnimator: UIViewPropertyAnimator?       // render-server tap-scroll step
+
+    private var singleTap: UITapGestureRecognizer?
+    private var doubleTap: UITapGestureRecognizer?
+    /// Touch-down x captured in `shouldReceive`, read back in `shouldRequireFailureOf`
+    /// (whose own `location(in:)` isn't reliable there). Cell (`self`) coordinate space.
+    private var pendingTapDownX: CGFloat?
 
     private(set) var slotIndex = -1
     private var pageIndices: [Int] = []          // 1 or 2 global page indices
@@ -125,11 +136,19 @@ final class ReaderPageCell: UICollectionViewCell {
 
         let double = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
         double.numberOfTapsRequired = 2
+        double.delegate = self
         scrollView.addGestureRecognizer(double)
+        doubleTap = double
+
+        // No static `single.require(toFail: double)`: the failure requirement is set per
+        // tap by location in the UIGestureRecognizerDelegate below, so edge taps (page
+        // turn / tap-scroll) fire instantly while the centre keeps the clean double-tap
+        // zoom. A static requirement couldn't be lifted per tap by the delegate.
         let single = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
         single.numberOfTapsRequired = 1
-        single.require(toFail: double)
+        single.delegate = self
         scrollView.addGestureRecognizer(single)
+        singleTap = single
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -142,6 +161,7 @@ final class ReaderPageCell: UICollectionViewCell {
         pageIndices = []
         lastLaidOutBounds = .zero
         tapTargetY = nil
+        pendingTapDownX = nil           // the next touch re-captures it in shouldReceive
         pageShadow.isHidden = true      // no stale shadow before the new slot lays out
         for (i, view) in pageViews.enumerated() {
             view.image = nil
@@ -440,15 +460,23 @@ final class ReaderPageCell: UICollectionViewCell {
         return x < bounds.width / 2 ? 0 : 1
     }
 
+    /// The outer navigation zones (page turn / tap-scroll), where the single tap must
+    /// fire instantly and the double-tap zoom is suppressed. Cell (`self`) coordinate
+    /// space, the same basis as `tappedPage(atX:)`. Each zone is `navEdgeFraction` wide.
+    private func isNavEdge(_ x: CGFloat) -> Bool {
+        x < bounds.width * Self.navEdgeFraction || x > bounds.width * (1 - Self.navEdgeFraction)
+    }
+
     @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
         let x = gesture.location(in: self).x
         // Tap-to-navigate (opt-in): step down / up the page a half at a time. In a
         // zoomed spread it also steps left→right across the two pages before turning.
         // At the very edge it falls through to the controller (prev / next / chrome).
         // When disabled, every tap falls through (→ the controller toggles the chrome).
-        if settings?.tapToNavigate == true {
-            if x < bounds.width * 0.25, tapScroll(forward: false) { return }
-            if x > bounds.width * 0.75, tapScroll(forward: true) { return }
+        if settings?.tapToNavigate == true, isNavEdge(x) {
+            // Left edge scrolls up, right edge down; at the page edge tapScroll returns
+            // false and we fall through to the controller (prev / next).
+            if tapScroll(forward: x > bounds.width / 2) { return }
         }
         delegate?.pageCell(self, didSingleTapAtX: x, width: bounds.width)
     }
@@ -582,5 +610,33 @@ extension ReaderPageCell: UIScrollViewDelegate {
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         stopTapScroll()
         tapTargetY = nil
+    }
+}
+
+extension ReaderPageCell: UIGestureRecognizerDelegate {
+
+    /// Capture the reliable touch-down x for `shouldRequireFailureOf` (whose own
+    /// `location(in:)` isn't dependable when the failure graph is built). Also keep the
+    /// double-tap recognizer out of the nav edges while tap-to-navigate is on, so an edge
+    /// double-tap can't zoom — there it simply becomes two single taps (two nav steps).
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldReceive touch: UITouch) -> Bool {
+        let x = touch.location(in: self).x
+        pendingTapDownX = x
+        if gestureRecognizer === doubleTap, settings?.tapToNavigate == true, isNavEdge(x) {
+            return false
+        }
+        return true
+    }
+
+    /// Make the single tap wait for the double only where the double should win: the
+    /// centre (everything but the nav edges), or whenever tap-to-navigate is off. In the nav edges (tap-to-navigate
+    /// on) there is no requirement, so the single tap fires on touch-up — instantly.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRequireFailureOf other: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === singleTap, other === doubleTap else { return false }
+        guard settings?.tapToNavigate == true else { return true }   // off → today's behaviour
+        guard let x = pendingTapDownX else { return true }           // uncertain → safe fallback
+        return !isNavEdge(x)
     }
 }

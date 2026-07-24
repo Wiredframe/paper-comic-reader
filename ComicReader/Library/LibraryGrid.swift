@@ -18,6 +18,9 @@ struct LibraryGrid: View {
     // opening the comic. Off by default, so Recents / other callers are unaffected.
     var selectionMode: Bool = false
     var selectedIDs: Set<UUID> = []
+    /// The comic to visually highlight after a shuffle "focus" (scrolled to by the caller);
+    /// nil when nothing is highlighted.
+    var focusedID: UUID? = nil
     var onToggleSelect: (ComicBook) -> Void = { _ in }
     /// Asks the caller to show the comic's details. Both layouts offer it from the context
     /// menu; the caller owns the sheet, so there's one of it per screen rather than one per
@@ -34,7 +37,9 @@ struct LibraryGrid: View {
                 ForEach(books) { book in
                     LibraryRow(book: book, selectionMode: selectionMode,
                                isSelected: selectedIDs.contains(book.id),
+                               isHighlighted: book.id == focusedID,
                                onShowDetail: { onShowDetail(book) }) { tap(book) }
+                        .id(book.id)
                     Divider().padding(.leading, 76)
                 }
             }
@@ -42,9 +47,11 @@ struct LibraryGrid: View {
             LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
                 ForEach(books) { book in
                     CoverCell(book: book, selectionMode: selectionMode,
-                              isSelected: selectedIDs.contains(book.id), maxPixel: coverMaxPixel,
+                              isSelected: selectedIDs.contains(book.id),
+                              isHighlighted: book.id == focusedID, maxPixel: coverMaxPixel,
                               onShowDetail: { onShowDetail(book) },
                               onDelete: onDelete) { tap(book) }
+                        .id(book.id)
                 }
             }
         }
@@ -124,6 +131,7 @@ private struct LibraryRow: View {
     let book: ComicBook
     var selectionMode: Bool = false
     var isSelected: Bool = false
+    var isHighlighted: Bool = false
     var onShowDetail: () -> Void = {}
     let onOpen: () -> Void
 
@@ -168,6 +176,7 @@ private struct LibraryRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(Color.accentColor.opacity(isHighlighted ? 0.15 : 0))
         .accessibilityAddTraits(selectionMode && isSelected ? .isSelected : [])
         // No context menu while selecting — the toolbar carries the batch actions, same as
         // the cover cell.

@@ -97,6 +97,11 @@ struct LibraryView: View {
     /// Bumped by the shuffle button in Discover mode — the carousel glides to a random comic
     /// rather than opening one.
     @State private var randomTick = 0
+    /// Shuffle "focus" for the grid / list: the comic to highlight, a tick to (re)trigger the
+    /// scroll even when the same comic is drawn again, and the pending un-highlight.
+    @State private var focusedComicID: UUID?
+    @State private var focusScrollTick = 0
+    @State private var focusClearTask: Task<Void, Never>?
     /// Ties the carousel's cover to the reader it opens, so the cover grows into the reader
     /// instead of the reader sliding up over it — and the reader gets the system's drag-down
     /// dismiss along with it.
@@ -254,14 +259,23 @@ struct LibraryView: View {
                         target = ReaderTarget(book: book, page: page)
                     }
                 } else {
-                    ScrollView {
-                        LibraryGrid(books: displayedBooks, columns: columns, listMode: viewMode == .list,
-                                    selectionMode: selectionMode, selectedIDs: selection,
-                                    onToggleSelect: toggleSelection,
-                                    onShowDetail: { detailBook = $0 },
-                                    onDelete: { bookPendingDelete = $0 }) { target = ReaderTarget(book: $0) }
-                            .padding(.horizontal, LibraryGridMetrics.spacing)
-                            .padding(.top, 8)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LibraryGrid(books: displayedBooks, columns: columns, listMode: viewMode == .list,
+                                        selectionMode: selectionMode, selectedIDs: selection,
+                                        focusedID: focusedComicID,
+                                        onToggleSelect: toggleSelection,
+                                        onShowDetail: { detailBook = $0 },
+                                        onDelete: { bookPendingDelete = $0 }) { target = ReaderTarget(book: $0) }
+                                .padding(.horizontal, LibraryGridMetrics.spacing)
+                                .padding(.top, 8)
+                        }
+                        // Scroll the shuffled comic into view. Driven by a tick, not the id, so
+                        // re-picking the same comic still re-centres it.
+                        .onChange(of: focusScrollTick) { _, _ in
+                            guard let id = focusedComicID else { return }
+                            withAnimation(.easeInOut(duration: 0.45)) { proxy.scrollTo(id, anchor: .center) }
+                        }
                     }
                 }
             }
@@ -396,15 +410,16 @@ struct LibraryView: View {
         } else {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    // In the carousel, shuffling means "show me something else" — glide the
-                    // deck to a random comic instead of yanking the reader open.
+                    // Shuffling means "show me something else", never "open something": the
+                    // carousel glides to a random comic, and the grid / list scrolls one into view
+                    // and highlights it (see focusRandom) instead of yanking the reader open.
                     if viewMode == .discover { randomTick += 1 }
-                    else { target = books.randomElement().map { ReaderTarget(book: $0) } }
+                    else if let book = displayedBooks.randomElement() { focusRandom(book) }
                 } label: {
                     Image(systemName: "shuffle")
                 }
-                .accessibilityLabel(viewMode == .discover ? "Show a random comic" : "Open a random comic")
-                .disabled(books.isEmpty)
+                .accessibilityLabel("Show a random comic")
+                .disabled(displayedBooks.isEmpty)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -501,6 +516,19 @@ struct LibraryView: View {
     private func toggleSelection(_ book: ComicBook) {
         if selection.contains(book.id) { selection.remove(book.id) }
         else { selection.insert(book.id) }
+    }
+
+    /// Shuffle in the grid / list: highlight a comic and ask the scroll view to centre it, then
+    /// clear the highlight after a moment. Never opens the reader (see the shuffle button).
+    private func focusRandom(_ book: ComicBook) {
+        focusClearTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.3)) { focusedComicID = book.id }
+        focusScrollTick += 1
+        focusClearTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.4)) { focusedComicID = nil }
+        }
     }
 
     private func markSelected(read: Bool) {

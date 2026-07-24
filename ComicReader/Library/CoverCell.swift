@@ -13,6 +13,7 @@ struct CoverCell: View {
     let book: ComicBook
     var selectionMode: Bool = false
     var isSelected: Bool = false
+    var isHighlighted: Bool = false
     /// Decode the cover down to roughly the on-screen cell size (covers are stored at
     /// 1200px). Keeps grid scrolling smooth and the image cache from thrashing.
     var maxPixel: CGFloat? = nil
@@ -37,6 +38,13 @@ struct CoverCell: View {
                             .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.1),
                                     lineWidth: isSelected ? 3 : 1)
                     )
+                    // Shuffle "focus": a brief accent ring so the eye lands on the comic the
+                    // random button scrolled to, without opening it.
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.accentColor, lineWidth: 3)
+                            .opacity(isHighlighted ? 1 : 0)
+                    )
                     .overlay(alignment: .topTrailing) { selectionBadge }
                     // Cast the shadow from the cover's rounded-rect PATH, not the decoded image's
                     // alpha channel: an alpha-derived `.shadow` forces an offscreen pass per cell
@@ -48,6 +56,7 @@ struct CoverCell: View {
                             .fill(Color(.secondarySystemBackground))
                             .shadow(color: .black.opacity(0.4), radius: 5, y: 3)
                     )
+                    .scaleEffect(isHighlighted ? 1.05 : 1)
 
                 Text(book.displayTitle)
                     .font(.subheadline)

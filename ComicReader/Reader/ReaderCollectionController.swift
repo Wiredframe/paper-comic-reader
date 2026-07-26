@@ -87,6 +87,9 @@ final class ReaderCollectionController: UIViewController,
     /// currentPage — a `currentPage == last` read check would never fire (see ReaderView.markRead).
     var onReachedEnd: (() -> Void)?
     var onToggleChrome: (() -> Void)?
+    /// Fires when a page enters / leaves pinch-zoom, so the shell can block the interactive
+    /// dismiss while zoomed (see ReaderView). Paging is frozen here in the delegate callback.
+    var onZoomActiveChanged: ((Bool) -> Void)?
 
     private let layout = PagingFlowLayout()
     private var collectionView: UICollectionView!
@@ -118,8 +121,8 @@ final class ReaderCollectionController: UIViewController,
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Free rotation while reading; the manual landscape/portrait toggle in the reader
-        // nudges from here. (The rest of the app stays portrait — see OrientationGate.)
+        // Free rotation while reading — the reader follows the device. The rest of the app stays
+        // portrait (rolled back in viewWillDisappear below and on close). See OrientationGate.
         OrientationGate.free()
     }
 
@@ -190,6 +193,7 @@ final class ReaderCollectionController: UIViewController,
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
+        clearVisibleZoom()              // never carry a pinch transform into the rotation morph
         endActiveTurn()                 // settle any in-flight page turn before rotating
         isRotating = true
         let newDouble = wantsDouble(for: size)
@@ -303,6 +307,7 @@ final class ReaderCollectionController: UIViewController,
 
     /// Jumps to a page (page grid / bookmarks) instantly.
     func jump(to page: Int) {
+        clearVisibleZoom()
         endActiveTurn()
         let target = clampPage(page)
         currentPage = target
@@ -503,5 +508,18 @@ final class ReaderCollectionController: UIViewController,
         currentPage = target
         notifyPageChange()
         prefetchNeighbours(of: target)
+    }
+
+    func pageCell(_ cell: ReaderPageCell, didChangeZoomActive active: Bool) {
+        // Freeze paging while a page is zoomed, so a pan across the enlarged content can't also
+        // swipe to the next spread; restore it when the zoom springs back.
+        collectionView.isScrollEnabled = !active
+        onZoomActiveChanged?(active)
+    }
+
+    /// Clear any pinch zoom on the on-screen cells before a rotation or a programmatic jump, so
+    /// the transform never fights the frame-based morph / re-layout.
+    private func clearVisibleZoom() {
+        for case let cell as ReaderPageCell in collectionView.visibleCells { cell.clearZoom() }
     }
 }

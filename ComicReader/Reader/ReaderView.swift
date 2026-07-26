@@ -92,13 +92,13 @@ struct ReaderView: View {
     /// Guards the one-shot archive open, which `store` can no longer do itself now that it
     /// arrives asynchronously — see `setup()`.
     @State private var didStartOpen = false
-    /// Manual landscape override — session-only, not persisted. Toggling it also returns
-    /// to portrait, so it's a plain landscape⇄portrait switch for rotation-locked devices.
-    @State private var forcedLandscape = false
     /// Whether the reader is currently sideways, measured rather than inferred from the size
     /// class (which is regular in both orientations on iPad). Gates the drag-down dismiss —
     /// see `body`.
     @State private var isLandscape = false
+    /// True while a page is pinch-zoomed. Disables the interactive drag-down dismiss so a
+    /// downward pan across the zoomed page pans the page instead of dismissing the reader.
+    @State private var isZoomed = false
 
     // MARK: Folder-backed fetch (only used when this comic's bytes aren't local)
     //
@@ -138,7 +138,8 @@ struct ReaderView: View {
                            jumpTarget: $jumpTarget,
                            backgroundColor: readerBackgroundUIColor,
                            onToggleChrome: toggleChrome,
-                           onReachedEnd: markRead)
+                           onReachedEnd: markRead,
+                           onZoomActiveChanged: { isZoomed = $0 })
                     .ignoresSafeArea()
             } else if store != nil {
                 // Archive couldn't be opened (missing / corrupt after import).
@@ -173,7 +174,7 @@ struct ReaderView: View {
         // that only exists in portrait, and the rotation can't be got out of the way first the
         // way the Close button does it (`close()`) — an interactive dismiss is already under
         // way by the time anyone could ask. Close and the manual portrait toggle still work.
-        .interactiveDismissDisabled(isLandscape)
+        .interactiveDismissDisabled(isLandscape || isZoomed)
         .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { nowLandscape in
             guard nowLandscape != isLandscape else { return }   // a real portrait/landscape flip
             isLandscape = nowLandscape
@@ -198,12 +199,6 @@ struct ReaderView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
                 persistProgress()
-            } else if forcedLandscape {
-                // Back to the foreground: requestGeometryUpdate is a one-shot nudge, so a
-                // background round-trip drops the forced landscape while the button still reads
-                // landscape. Re-assert it so the toggle and the actual orientation stay in step.
-                OrientationGate.free()
-                OrientationGate.rotate(to: .landscapeRight)
             }
         }
         .onChange(of: paper.isEnabled) { reloadPaper() }
@@ -319,11 +314,6 @@ struct ReaderView: View {
                 toggleBookmark()
             }
             barButton("square.grid.2x2", label: "Page grid") { showGrid = true }
-            barButton(forcedLandscape ? "rotate.left" : "rotate.right",
-                      label: forcedLandscape ? "Return to portrait" : "Rotate to landscape",
-                      tint: forcedLandscape ? .accentColor : .primary) {
-                toggleLandscape()
-            }
         }
         .padding(.horizontal, 24).padding(.vertical, 13)
         .glassEffect(in: Capsule())
@@ -573,14 +563,6 @@ struct ReaderView: View {
         guard !book.isRead else { return }
         book.isRead = true
         try? context.save()
-    }
-
-    /// Toggle the manual landscape override (session-only): rotate to landscape, or back
-    /// to portrait — both work even under the device rotation lock. Reset to portrait when
-    /// the reader closes (see the controller's viewWillDisappear).
-    private func toggleLandscape() {
-        forcedLandscape.toggle()
-        OrientationGate.rotate(to: forcedLandscape ? .landscapeRight : .portrait)
     }
 
     private func reloadPaper() {

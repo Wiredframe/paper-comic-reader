@@ -4,8 +4,9 @@
 //
 //  Persisted reader preferences (UserDefaults, same pattern as PaperSettings):
 //  the tap-scroll reading mode, native Live Text, snappy animations, and the
-//  global double-page-in-landscape layout. There is no pinch zoom: the double-tap
-//  fit-width/fit-height toggle replaces it, so there's nothing to "remember".
+//  double-page-in-landscape layout. Pinch zoom is deliberately transient (every other
+//  gesture resets it), so there's nothing to persist there. Orientation is not a setting:
+//  the reader simply follows the device (free rotation), the rest of the app stays portrait.
 //
 
 import Foundation
@@ -73,8 +74,8 @@ final class ReaderSettings {
         doublePage = defaults.object(forKey: K.double) as? Bool ?? true
         pageShadow = defaults.object(forKey: K.pageShadow) as? Bool ?? true
         doubleTapZoom = defaults.object(forKey: K.zoom) as? Double ?? 1.0
-        // Force-landscape used to be persisted; it's now session-only. Drop any leftover
-        // value so it can't linger from an older build.
+        // Legacy force-landscape preference from old builds. The reader now just follows the
+        // device orientation, so drop any leftover value rather than let it linger.
         defaults.removeObject(forKey: "reader.forceLandscape")
     }
 }

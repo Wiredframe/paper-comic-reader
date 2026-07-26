@@ -35,6 +35,11 @@ protocol ReaderPageCellDelegate: AnyObject {
     /// crossed to the other page). The controller makes that global page the current one, so
     /// rotation and bookmarking act on the page actually being read, not always the left half.
     func pageCell(_ cell: ReaderPageCell, didFocusPageAt globalIndex: Int)
+
+    /// The cell entered or left pinch-zoom. The controller freezes paging while zoomed (so a pan
+    /// across the enlarged page can't also swipe to the next spread) and the shell disables the
+    /// interactive dismiss (so a downward pan doesn't race the sheet's drag-to-dismiss).
+    func pageCell(_ cell: ReaderPageCell, didChangeZoomActive active: Bool)
 }
 
 final class ReaderPageCell: UICollectionViewCell {
@@ -45,7 +50,12 @@ final class ReaderPageCell: UICollectionViewCell {
     /// single tap fires instantly and the double-tap zoom is suppressed. The centre keeps
     /// the double-tap zoom. Single source for the cell (`isNavEdge`) and the controller's
     /// `didSingleTapAtX` split, so change the feel value here only.
-    static let navEdgeFraction: CGFloat = 0.15
+    static let navEdgeFraction: CGFloat = 0.10
+
+    /// How far a pinch can magnify the page(s). The zoom is a transient overlay — any other
+    /// gesture (tap, double-tap, page turn, rotation) springs it straight back to 1 — so nothing
+    /// about it is persisted; see the `// MARK: Pinch Zoom` section.
+    static let maxZoomScale: CGFloat = 3
 
     /// How the slot's page(s) fill the screen.
     private enum Fit {
@@ -77,6 +87,18 @@ final class ReaderPageCell: UICollectionViewCell {
     /// Touch-down x captured in `shouldReceive`, read back in `shouldRequireFailureOf`
     /// (whose own `location(in:)` isn't reliable there). Cell (`self`) coordinate space.
     private var pendingTapDownX: CGFloat?
+
+    /// Pinch-to-zoom. A transient magnification laid over the page(s) by transforming the scroll
+    /// view (a render-server layer property), so it composes over any fit without touching the
+    /// frame-based layout or the zero `contentInset` the rotation relies on. Modelled as a scale
+    /// (`zoomScale`, 1 = un-zoomed) and a content origin (`zoomOrigin`, where the page's top-left
+    /// lands on screen), rebuilt into the transform by `applyZoomTransform`. Every other gesture
+    /// resets it — see `resetZoom` and the `// MARK: Pinch Zoom` section.
+    private var zoomPinch: UIPinchGestureRecognizer?
+    private var zoomPan: UIPanGestureRecognizer?
+    private var zoomScale: CGFloat = 1
+    private var zoomOrigin: CGPoint = .zero
+    private var isZoomActive = false
 
     private(set) var slotIndex = -1
     private var pageIndices: [Int] = []          // 1 or 2 global page indices
@@ -149,6 +171,21 @@ final class ReaderPageCell: UICollectionViewCell {
         single.delegate = self
         scrollView.addGestureRecognizer(single)
         singleTap = single
+
+        // Pinch-to-zoom, plus a one-finger pan to move around while zoomed. On contentView (above
+        // the scroll view) so they aren't themselves scaled by the transform they drive. The pinch
+        // is two-finger, so it never competes with the single/double taps; the pan only engages
+        // once the page is actually zoomed (see the gesture delegate). Section: Pinch Zoom.
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        pinch.delegate = self
+        contentView.addGestureRecognizer(pinch)
+        zoomPinch = pinch
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.delegate = self
+        contentView.addGestureRecognizer(pan)
+        zoomPan = pan
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -171,6 +208,7 @@ final class ReaderPageCell: UICollectionViewCell {
         }
         scrollView.contentInset = .zero
         scrollView.contentOffset = .zero
+        resetZoom(animated: false)
     }
 
     // MARK: Configure
@@ -211,6 +249,7 @@ final class ReaderPageCell: UICollectionViewCell {
     /// stuck fit-height never greets you on the way back.
     func resetToDefault() {
         guard !images.isEmpty else { return }
+        resetZoom(animated: false)
         fit = isDouble ? .spread : .fitWidth
         lastLaidOutBounds = .zero
         setNeedsLayout()
@@ -226,6 +265,7 @@ final class ReaderPageCell: UICollectionViewCell {
     /// `focusPos` is the page's side in the pair (0 = left, 1 = right); a lone page (cover
     /// or an unpaired last page) has no partner, so both endpoints simply fit the width.
     func setRotationSpread(_ spread: Bool, focusPos: Int) {
+        resetZoom(animated: false)   // never morph from a pinch-scaled scroll view
         fit = spread ? .spread : .focus(focusPos)
         focusZoomEnabled = false     // the morph's focus is a full-width endpoint, never zoomed
         lastLaidOutBounds = .zero
@@ -426,6 +466,9 @@ final class ReaderPageCell: UICollectionViewCell {
 
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
         guard !images.isEmpty else { return }
+        // A pinch-zoom is transient: a double tap first springs it back to the full page and does
+        // nothing else. The fit toggle then applies from the un-zoomed page on the next double tap.
+        if isZoomActive { resetZoom(animated: true); return }
         if isDouble {
             // Spread ⇄ zoom the tapped page (fit-width * zoom, centred), animated in place
             // (both pages stay laid out → smooth zoom, no black flash, pan to the other).
@@ -468,6 +511,10 @@ final class ReaderPageCell: UICollectionViewCell {
     }
 
     @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
+        // A tap while zoomed springs the page back to full size and does nothing else (no page
+        // turn, no chrome toggle); reading resumes from the same offset. This also guarantees a
+        // page turn never snapshots a zoomed cell (see the controller's animatePageTurn).
+        if isZoomActive { resetZoom(animated: true); return }
         let x = gesture.location(in: self).x
         // Tap-to-navigate (opt-in): step down / up the page a half at a time. In a
         // zoomed spread it also steps left→right across the two pages before turning.
@@ -565,6 +612,100 @@ final class ReaderPageCell: UICollectionViewCell {
         return true
     }
 
+    // MARK: Pinch Zoom
+
+    private var isZoomed: Bool { zoomScale > 1.001 }
+
+    /// Rebuild the scroll-view transform from `zoomScale` / `zoomOrigin`. A view's transform is
+    /// applied about its centre, so the plain `screen = scale · point + origin` mapping (origin =
+    /// where the page's top-left lands) is converted to the centre-relative translation UIKit wants.
+    private func applyZoomTransform() {
+        let b = contentView.bounds
+        let tx = zoomOrigin.x - b.midX * (1 - zoomScale)
+        let ty = zoomOrigin.y - b.midY * (1 - zoomScale)
+        scrollView.transform = CGAffineTransform(a: zoomScale, b: 0, c: 0, d: zoomScale, tx: tx, ty: ty)
+    }
+
+    /// Keep the scaled page covering the screen, so a pan can never pull the letterbox in past an
+    /// edge. At scale 1 the only valid origin is zero — no pan when un-zoomed.
+    private func clampZoomOrigin() {
+        let b = contentView.bounds
+        zoomOrigin.x = min(0, max(b.width * (1 - zoomScale), zoomOrigin.x))
+        zoomOrigin.y = min(0, max(b.height * (1 - zoomScale), zoomOrigin.y))
+    }
+
+    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+        guard !images.isEmpty else { return }
+        switch gesture.state {
+        case .began:
+            stopTapScroll()
+            setZoomActive(true)
+        case .changed:
+            let next = min(max(zoomScale * gesture.scale, 1), Self.maxZoomScale)
+            let factor = next / zoomScale
+            let f = gesture.location(in: contentView)
+            // Scale about the focal point so the content under the fingers stays under the fingers.
+            zoomOrigin.x = f.x * (1 - factor) + factor * zoomOrigin.x
+            zoomOrigin.y = f.y * (1 - factor) + factor * zoomOrigin.y
+            zoomScale = next
+            gesture.scale = 1                 // fold each delta in, then measure the next afresh
+            clampZoomOrigin()
+            applyZoomTransform()
+        case .ended, .cancelled, .failed:
+            if zoomScale <= 1.001 { resetZoom(animated: true) }   // pinched back to nothing → settle home
+        default:
+            break
+        }
+    }
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard isZoomed, gesture.state == .changed else { return }
+        let d = gesture.translation(in: contentView)
+        gesture.setTranslation(.zero, in: contentView)
+        zoomOrigin.x += d.x
+        zoomOrigin.y += d.y
+        clampZoomOrigin()
+        applyZoomTransform()
+    }
+
+    /// Spring the page back to un-zoomed — the single reset primitive, called from every gesture
+    /// and lifecycle path that must clear a pinch (tap, double-tap, rotation, page change, reuse).
+    /// Idempotent and cheap when there's nothing to undo.
+    private func resetZoom(animated: Bool) {
+        guard isZoomActive || scrollView.transform != .identity else { return }
+        zoomScale = 1
+        zoomOrigin = .zero
+        if animated {
+            UIView.animate(withDuration: settings?.fitToggleDuration ?? 0.25, delay: 0,
+                           options: [.beginFromCurrentState, .allowUserInteraction]) {
+                self.scrollView.transform = .identity
+            }
+        } else {
+            scrollView.transform = .identity
+        }
+        setZoomActive(false)
+    }
+
+    /// Public reset for the controller, which must clear a pinch on the visible cells before it
+    /// changes frames on a rotation or a programmatic page jump — see ReaderCollectionController.
+    func clearZoom() { resetZoom(animated: false) }
+
+    /// Enter / leave zoom mode: freeze the scroll view's own scrolling (so its pan / directional
+    /// lock / tap-scroll can't fight the transform) and suppress Live Text (a one-finger
+    /// press-and-hold would collide with the zoom pan), then tell the controller so it can freeze
+    /// paging and the shell can block the interactive dismiss.
+    private func setZoomActive(_ active: Bool) {
+        guard active != isZoomActive else { return }
+        isZoomActive = active
+        scrollView.isScrollEnabled = !active
+        if active {
+            for interaction in liveText { interaction.preferredInteractionTypes = [] }
+        } else {
+            updateLiveTextEnabled(landscape: scrollView.bounds.width > scrollView.bounds.height)
+        }
+        delegate?.pageCell(self, didChangeZoomActive: active)
+    }
+
     // MARK: Live Text
 
     private func setupLiveText(_ pos: Int, _ image: UIImage) {
@@ -638,5 +779,20 @@ extension ReaderPageCell: UIGestureRecognizerDelegate {
         guard settings?.tapToNavigate == true else { return true }   // off → today's behaviour
         guard let x = pendingTapDownX else { return true }           // uncertain → safe fallback
         return !isNavEdge(x)
+    }
+
+    /// The one-finger zoom pan only engages once the page is actually zoomed; otherwise the scroll
+    /// view's own pan (vertical reading, spread panning) keeps working exactly as before. `override`
+    /// because UIView already declares this @objc hook; ours also serves the recognizers' delegate.
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === zoomPan { return isZoomed }
+        return true
+    }
+
+    /// The pinch and its move-pan compose in one motion (zoom while sliding); nothing else pairs.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        (gestureRecognizer === zoomPinch && other === zoomPan)
+            || (gestureRecognizer === zoomPan && other === zoomPinch)
     }
 }

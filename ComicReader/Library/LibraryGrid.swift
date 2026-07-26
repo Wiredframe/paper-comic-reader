@@ -77,7 +77,7 @@ extension View {
     @ViewBuilder
     func comicSearchable(active: Bool, text: Binding<String>) -> some View {
         if active {
-            searchable(text: text, prompt: "Comics, stories, issue #")
+            searchable(text: text, prompt: "Comics, characters, issue #")
         } else {
             self
         }

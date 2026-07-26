@@ -219,8 +219,9 @@ final class ComicBook {
     /// Whether this comic matches a library search `query`, compared case- AND
     /// diacritic-insensitively (so "asterix" finds "Astérix", "topolino" finds "Topolino").
     /// Searches what a reader would name a comic by: its display title and file name, its series,
-    /// issue number and issue title, and every story title in the index. A blank query matches
-    /// everything, so callers can bind it straight to a search field without a guard.
+    /// issue number and issue title, the characters listed in it, and every story title in the
+    /// index. A blank query matches everything, so callers can bind it straight to a search field
+    /// without a guard.
     func matches(searchQuery query: String) -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
@@ -228,7 +229,8 @@ final class ComicBook {
             guard let field else { return false }
             return field.range(of: trimmed, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
-        if has(displayTitle) || has(title) || has(series) || has(issueNumber) || has(issueTitle) {
+        if has(displayTitle) || has(title) || has(series) || has(issueNumber)
+            || has(issueTitle) || has(characters) {
             return true
         }
         return stories.contains { has($0.title) }

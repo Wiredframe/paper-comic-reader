@@ -103,12 +103,14 @@ struct BookmarksView: View {
         hasher.combine(sortAscending)
         hasher.combine(trimmedQuery)
         hasher.combine(bookmarks.count)
-        let readsComic = (BookmarkSort(rawValue: sortField) ?? .dateAdded) == .comic || !trimmedQuery.isEmpty
+        let searching = !trimmedQuery.isEmpty
+        let readsComic = (BookmarkSort(rawValue: sortField) ?? .dateAdded) == .comic || searching
         for mark in bookmarks {
             hasher.combine(mark.id)
             hasher.combine(mark.pageIndex)
             hasher.combine(mark.dateAdded)
             if readsComic { hasher.combine(mark.book?.displayTitle) }
+            if searching { hasher.combine(mark.book?.characters) }   // matches() also reads these
         }
         return hasher.finalize()
     }

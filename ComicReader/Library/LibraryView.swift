@@ -211,6 +211,7 @@ struct LibraryView: View {
             hasher.combine(book.hasLocalArchive) // "Only Downloaded" filter
             if searching {                      // matches() also reads these
                 hasher.combine(book.issueTitle)
+                hasher.combine(book.characters)
                 hasher.combine(book.stories.count)
             }
         }

@@ -160,7 +160,10 @@ struct ComicMetadataSection: View {
 
 /// One entry from the issue's index. The title leads, because that's what you're scanning
 /// for; the credits sit under it in the tone of a caption.
-private struct StoryRow: View {
+///
+/// Not private: `StoryPickerView` draws the very same rows, so assigning a bookmark to a story
+/// shows the index you already know from Details, with a tick added. One copy, so the two can't drift.
+struct StoryRow: View {
     let story: ComicStory
 
     var body: some View {

@@ -41,6 +41,10 @@ struct BookmarksView: View {
     @AppStorage("bookmarks.sortAscending") private var sortAscending = false
 
     @State private var target: ReaderTarget?
+    /// The bookmark whose story assignment is being picked, if any. Owned here rather than by the
+    /// card, so all three layouts share ONE sheet instead of presenting one per cell — the same way
+    /// LibraryView owns `detailBook` for its grid.
+    @State private var storyTarget: Bookmark?
     /// Live search query — narrows to bookmarks whose comic matches on title / story title /
     /// issue number (see `ComicBook.matches`).
     @State private var searchText = ""
@@ -64,6 +68,10 @@ struct BookmarksView: View {
     /// search reaches every one. Read from the memoized derivation — the locale sort only reruns
     /// when `bookmarkSortSignature` changes, not on every @Query republish.
     private var displayedBookmarks: [Bookmark] { derived.displayed }
+
+    /// Whether ANY visible bookmark names a story. The gallery reserves a caption line on all of
+    /// its cards when one does, so the rows stay even (see `BookmarkCard.reservesStoryLine`).
+    private var anyHasStory: Bool { derived.anyHasStory }
 
     /// Bookmarks in the current sort order, then narrowed by the search query (a bookmark matches
     /// when its comic does). Sorted in memory so the field/order can change live without a new
@@ -109,6 +117,7 @@ struct BookmarksView: View {
             hasher.combine(mark.id)
             hasher.combine(mark.pageIndex)
             hasher.combine(mark.dateAdded)
+            hasher.combine(mark.storyTitle)   // feeds `anyHasStory`, which the gallery reads
             if readsComic { hasher.combine(mark.book?.displayTitle) }
             if searching { hasher.combine(mark.book?.characters) }   // matches() also reads these
         }
@@ -124,6 +133,7 @@ struct BookmarksView: View {
         if cache.signature != signature {
             cache.signature = signature
             cache.displayed = computeDisplayedBookmarks()
+            cache.anyHasStory = cache.displayed.contains { $0.hasStory }
         }
         return cache
     }
@@ -150,12 +160,20 @@ struct BookmarksView: View {
                         // "Comic" opens the book itself, from the start — the counterpart to
                         // "Read", which lands on the bookmarked page. Page 0, not the resume page.
                         target = ReaderTarget(book: book, page: 0)
+                    } onAssignStory: { mark in
+                        storyTarget = mark
+                    } onDelete: { mark in
+                        delete(mark)
                     }
                 } else if viewMode == .list {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(displayedBookmarks) { mark in
-                                BookmarkRow(bookmark: mark) { open(mark) } onDelete: { delete(mark) }
+                                BookmarkRow(bookmark: mark, onAssignStory: { storyTarget = mark }) {
+                                    open(mark)
+                                } onDelete: {
+                                    delete(mark)
+                                }
                                 Divider().padding(.leading, 76)
                             }
                         }
@@ -166,10 +184,13 @@ struct BookmarksView: View {
                         LazyVGrid(columns: gridColumns, spacing: LibraryGridMetrics.spacing) {
                             ForEach(displayedBookmarks) { mark in
                                 BookmarkCard(bookmark: mark,
-                                             maxPixel: LibraryGridMetrics.coverMaxPixel(columns: columns)) {
+                                             maxPixel: LibraryGridMetrics.coverMaxPixel(columns: columns),
+                                             reservesStoryLine: anyHasStory) {
                                     open(mark)
                                 } onDelete: {
                                     delete(mark)
+                                } onAssignStory: {
+                                    storyTarget = mark
                                 }
                             }
                         }
@@ -190,6 +211,9 @@ struct BookmarksView: View {
             }
             .toolbar { toolbar }
         }
+        // One picker for all three layouts — the screen owns the sheet, the cards and the deck only
+        // hand a bookmark up. Mirrors LibraryView owning `detailBook` for its grid.
+        .sheet(item: $storyTarget) { StoryPickerView(bookmark: $0) }
         .fullScreenCover(item: $target) { target in
             ReaderView(book: target.book, initialPage: target.page)
                 // Resolves against the centred bookmark's page card in the carousel deck, which
@@ -271,8 +295,12 @@ struct BookmarksView: View {
 /// The list-mode row, mirroring the Library's comic row: small page shot, comic title, page.
 private struct BookmarkRow: View {
     let bookmark: Bookmark
+    /// Asks the screen to present the story picker — it owns the sheet. See `BookmarkCard`.
+    var onAssignStory: (() -> Void)? = nil
     let onOpen: () -> Void
     let onDelete: () -> Void
+
+    @Environment(\.modelContext) private var context
 
     var body: some View {
         Button(action: onOpen) {
@@ -281,8 +309,17 @@ private struct BookmarkRow: View {
                     .frame(width: 44, height: 62)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(bookmark.book?.displayTitle ?? "—")
-                        .font(.body).foregroundStyle(.primary).lineLimit(2)
+                    // The story leads once one is assigned and the comic drops underneath it, the
+                    // same ordering the cards and the deck use, so a bookmark is called the same
+                    // thing in every layout. One line for the story: it's the longest of the three
+                    // strings and the row shouldn't grow for it.
+                    Text(bookmark.storyLabel ?? bookmark.book?.displayTitle ?? "—")
+                        .font(.body).foregroundStyle(.primary)
+                        .lineLimit(bookmark.hasStory ? 1 : 2)
+                    if bookmark.hasStory {
+                        Text(bookmark.book?.displayTitle ?? "—")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     Text(bookmark.pageLabel)
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -293,6 +330,22 @@ private struct BookmarkRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            // Same shape as BookmarkCard's menu: hidden when the comic has no story index.
+            if let onAssignStory, !(bookmark.book?.stories.isEmpty ?? true) {
+                Button(action: onAssignStory) {
+                    Label(bookmark.hasStory ? "Change Story…" : "Assign to Story…",
+                          systemImage: "text.book.closed")
+                }
+            }
+            if bookmark.hasStory {
+                Button {
+                    bookmark.clearStory()
+                    try? context.save()
+                } label: {
+                    Label("Remove from Story", systemImage: "minus.circle")
+                }
+            }
+            Divider()
             Button(role: .destructive, action: onDelete) {
                 Label("Delete", systemImage: "trash")
             }
@@ -306,4 +359,5 @@ private struct BookmarkRow: View {
 private final class BookmarksDerived {
     var signature: Int?
     var displayed: [Bookmark] = []
+    var anyHasStory = false
 }

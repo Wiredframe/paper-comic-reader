@@ -24,14 +24,23 @@ struct BookmarkCarouselView: View {
     let onOpenBookmark: (Bookmark) -> Void
     /// Open the comic itself, from the first page.
     let onOpenComic: (ComicBook) -> Void
+    /// Asks the screen to present the story picker — it owns the sheet, this deck only centres the
+    /// card. Optional, like the Library deck's `onRemoveFromRecents`: no handler, no menu item.
+    var onAssignStory: ((Bookmark) -> Void)? = nil
+    /// Removes the bookmark from the library. Routed up rather than done here so the delete and its
+    /// thumbnail cleanup stay in one place (BookmarksView.delete), the way the list and the grid
+    /// already do it.
+    let onDelete: (Bookmark) -> Void
 
     @Environment(\.modelContext) private var context
 
     @State private var centeredID: UUID?
 
     /// Fixed, so swiping between bookmarks with different comic-title lengths can't resize the
-    /// panel and make the pages jump.
-    private let panelHeight: CGFloat = 132
+    /// panel and make the pages jump. The story line is reserved whether or not a bookmark has one,
+    /// for the same reason the height is fixed at all. Matches the Library deck's panel, so the two
+    /// decks sit at the same height.
+    private let panelHeight: CGFloat = 150
 
     /// The bookmark the pinned panel describes — the same one the deck draws as centred.
     private var centered: Bookmark? { peekCentered(in: bookmarks, id: centeredID) }
@@ -60,18 +69,34 @@ struct BookmarkCarouselView: View {
     /// that doesn't crop it. Only bookmarks made before `pageAspect` existed lack one, and only
     /// until the backfill lands.
     private func art(_ mark: Bookmark) -> PeekArt {
-        PeekArt(url: mark.thumbURL,
-                aspect: mark.pageAspect ?? (2.0 / 3.0),
-                label: "\(mark.book?.displayTitle ?? "Bookmark"), \(mark.pageLabel)")
+        // The story leads when there is one, matching the panel below: it's the most specific thing
+        // anyone can say about a bookmarked page, and the deck has no caption for VoiceOver to fall
+        // back on.
+        let comic = mark.book?.displayTitle ?? "Bookmark"
+        let named = mark.storyLabel.map { "\($0), \(comic)" } ?? comic
+        return PeekArt(url: mark.thumbURL, aspect: mark.pageAspect ?? (2.0 / 3.0),
+                       label: "\(named), \(mark.pageLabel)")
     }
 
     // MARK: Pinned info panel
 
     private func infoPanel(_ mark: Bookmark) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(mark.book?.displayTitle ?? "—")
-                .font(.headline)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                // The story leads once one is assigned, and the comic drops underneath it — same
+                // ordering as the bookmark cards, so a bookmark is called the same thing wherever
+                // you meet it. One line each: a story title can be long, and the panel's height is
+                // fixed so the deck's pages don't jump.
+                Text(mark.storyLabel ?? mark.book?.displayTitle ?? "—")
+                    .font(.headline)
+                    .lineLimit(1)
+                // Rendered even when there's no story, so swiping from an assigned bookmark to an
+                // unassigned one doesn't shift the rows below it.
+                Text(mark.hasStory ? (mark.book?.displayTitle ?? "—") : " ")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             HStack(spacing: 5) {
                 Text(mark.pageLabel)
                 if let book = mark.book {
@@ -96,13 +121,45 @@ struct BookmarkCarouselView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
+                // Only Read stretches. The Library's panel hit exactly this and recorded the fix:
+                // "With four buttons abreast 'Read' was truncated down to nothing" — so everything
+                // beside it keeps a fixed width instead of sharing the row equally.
                 if let book = mark.book {
                     Button { onOpenComic(book) } label: {
                         Label("Comic", systemImage: "book")
-                            .frame(maxWidth: .infinity, minHeight: buttonLabelHeight)
+                            .labelStyle(.iconOnly)
+                            .frame(width: 28, height: buttonLabelHeight)
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("Open this comic")
                 }
+
+                Menu {
+                    if let onAssignStory, let book = mark.book, !book.stories.isEmpty {
+                        Button { onAssignStory(mark) } label: {
+                            Label(mark.hasStory ? "Change Story…" : "Assign to Story…",
+                                  systemImage: "text.book.closed")
+                        }
+                    }
+                    if mark.hasStory {
+                        Button { clearStory(mark) } label: {
+                            Label("Remove from Story", systemImage: "minus.circle")
+                        }
+                    }
+                    Divider()
+                    // The deck had no delete at all — the grid and the list have carried one from
+                    // the start, so a bookmark you could only reach by swiping was the one you
+                    // couldn't remove. Unconfirmed, like those two: it drops one page shot, not a
+                    // comic and every bookmark in it (which is why the Library deck's delete does ask).
+                    Button(role: .destructive) { removeBookmark(mark) } label: {
+                        Label("Remove Bookmark", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 28, height: buttonLabelHeight)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("More actions for this bookmark")
             }
             .controlSize(.large)
         }
@@ -112,6 +169,26 @@ struct BookmarkCarouselView: View {
     }
 
     private var buttonLabelHeight: CGFloat { 24 }
+
+    // MARK: Panel actions
+
+    /// Removes the bookmark. If it's the centred card, move to a neighbour FIRST so the deck slides
+    /// there rather than snapping back to the first card once the id stops resolving — the same
+    /// reason `PeekCarouselView.deleteFromCarousel` does it.
+    private func removeBookmark(_ mark: Bookmark) {
+        if centeredID == mark.id {
+            let ids = bookmarks.map(\.id)
+            if let i = ids.firstIndex(of: mark.id) {
+                centeredID = i + 1 < ids.count ? ids[i + 1] : (i > 0 ? ids[i - 1] : nil)
+            }
+        }
+        onDelete(mark)
+    }
+
+    private func clearStory(_ mark: Bookmark) {
+        mark.clearStory()
+        try? context.save()
+    }
 
     // MARK: Random
 

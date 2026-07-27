@@ -120,6 +120,9 @@ struct PeekCarouselView: View {
     @State private var center = DeckCenter()
     /// The comic the delete menu is confirming, if any. Drives the confirmation dialog below.
     @State private var bookToDelete: ComicBook?
+    /// The bookmark whose story assignment is being picked, if any. Owned here for the same reason
+    /// as `bookToDelete`: one sheet per screen instead of one per card.
+    @State private var bookmarkForStory: Bookmark?
     /// A focus request that had to switch the filter to Discover first (the comic wasn't in the
     /// current segment). Held until the filter change lands, then centred — see `focus(on:)`.
     @State private var pendingFocusAfterFilterChange: UUID?
@@ -161,7 +164,8 @@ struct PeekCarouselView: View {
                         .containerRelativeFrame(.vertical)
                         .id(Self.deckAnchor)
 
-                    CarouselDetailPage(books: visibleBooks, center: center, onOpen: onOpen)
+                    CarouselDetailPage(books: visibleBooks, center: center, onOpen: onOpen,
+                                       bookmarkForStory: $bookmarkForStory)
                         .id(Self.detailAnchor)
                 }
             }
@@ -179,6 +183,9 @@ struct PeekCarouselView: View {
                      ? "This removes the entry and its bookmarks from your library. The file in your comic folder is left untouched."
                      : "This removes the comic and its bookmarks from your library.")
             }
+            // Reading this here doesn't put the container on a swipe's re-render path: it only
+            // changes when the sheet opens or closes, exactly like `bookToDelete` above.
+            .sheet(item: $bookmarkForStory) { StoryPickerView(bookmark: $0) }
             .task { await backfillCoverAspects() }
             .onAppear {
                 // A focus set before this view existed (a cold-launch open) is handled here,
@@ -503,6 +510,8 @@ private struct CarouselDetailPage: View {
     let books: [ComicBook]
     let center: DeckCenter
     let onOpen: (ComicBook, Int?) -> Void
+    /// Routed up to the container, which owns the picker sheet — see `PeekCarouselView`.
+    @Binding var bookmarkForStory: Bookmark?
 
     @Environment(\.modelContext) private var context
 
@@ -566,11 +575,16 @@ private struct CarouselDetailPage: View {
 
             LazyVGrid(columns: Self.bookmarkColumns, spacing: LibraryGridMetrics.spacing) {
                 ForEach(marks) { mark in
+                    // Computing the reserve flag inline is fine here: `content(_:)` only rebuilds
+                    // when the debounced `settledID` lands, not on every swipe frame.
                     BookmarkCard(bookmark: mark, showsTitle: false,
-                                 maxPixel: LibraryGridMetrics.coverMaxPixel(columns: 2)) {
+                                 maxPixel: LibraryGridMetrics.coverMaxPixel(columns: 2),
+                                 reservesStoryLine: marks.contains { $0.hasStory }) {
                         onOpen(book, mark.pageIndex)
                     } onDelete: {
                         delete(mark)
+                    } onAssignStory: {
+                        bookmarkForStory = mark
                     }
                 }
             }

@@ -1,0 +1,7 @@
+{
+  "repo": "Wiredframe/paper-comic-reader",
+  "base_branch": "main",
+  "max_diff_lines": 200,
+  "focus": ["bugfix", "dx", "tests", "small-feature", "docs"],
+  "auto_merge": false
+}

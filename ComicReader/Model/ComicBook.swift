@@ -189,7 +189,14 @@ final class ComicBook {
         guard let year, (1...9999).contains(year) else { return nil }
         guard let month, (1...12).contains(month) else { return String(year) }
         var components = DateComponents(year: year, month: month)
-        if let day, (1...31).contains(day) { components.day = day }
+        // `Calendar.date(from:)` doesn't reject an invalid day (e.g. "30 February") — it silently
+        // rolls it into the next month, so the day has to be range-checked against the actual
+        // month/year (leap years included) before it's trusted.
+        guard let monthDate = Calendar.current.date(from: components) else { return String(year) }
+        if let day, let validDays = Calendar.current.range(of: .day, in: .month, for: monthDate),
+           validDays.contains(day) {
+            components.day = day
+        }
         guard let date = Calendar.current.date(from: components) else { return String(year) }
         return components.day == nil
             ? date.formatted(.dateTime.month(.wide).year())

@@ -24,6 +24,12 @@ final class ComicBook {
                                  // manually from the cover menu, or automatically once
                                  // the reader reaches the last page. Default via the
                                  // property initializer keeps SwiftData migration additive.
+    var isFavorite: Bool = false // user-set "favorite" flag, the counterpart to `isRead`: that one
+                                 // records what you've finished, this one what you want back. Set
+                                 // only by hand, from a cover's long-press menu or the carousel's
+                                 // overflow — nothing about reading ever sets it, which is why it
+                                 // survives everything a reading session does. Defaulted, so
+                                 // migration stays additive.
     var openCount: Int = 0       // how often the comic was opened — read as "popularity"
                                  // by the library sort and the Discover modes. Monotonic:
                                  // deliberately NOT cleared by Recents' "Clear", which only

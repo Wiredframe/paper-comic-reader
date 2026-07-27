@@ -380,6 +380,7 @@ private struct CarouselInfoPanel: View {
                     .lineLimit(1)
             }
             HStack(spacing: 5) {
+                if book.isFavorite { FavoriteHeart(size: 12) }
                 if book.isRemote { AvailabilityBadge(size: 12) }
                 if let date = book.year.map(String.init) {
                     Text(date)
@@ -429,6 +430,12 @@ private struct CarouselInfoPanel: View {
                 }
 
                 Menu {
+                    // Discover has no cover to long-press — the deck's card opens the comic on a
+                    // tap — so this menu is where favouriting lives in this mode.
+                    Button { toggleFavorite(book) } label: {
+                        Label(book.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                              systemImage: book.isFavorite ? "heart.slash" : "heart")
+                    }
                     Button { toggleRead(book) } label: {
                         Label(book.isRead ? "Mark as Unread" : "Mark as Read",
                               systemImage: book.isRead ? "circle" : "checkmark.circle")
@@ -477,6 +484,11 @@ private struct CarouselInfoPanel: View {
 
     private func toggleRead(_ book: ComicBook) {
         book.isRead.toggle()
+        try? context.save()
+    }
+
+    private func toggleFavorite(_ book: ComicBook) {
+        book.isFavorite.toggle()
         try? context.save()
     }
 }

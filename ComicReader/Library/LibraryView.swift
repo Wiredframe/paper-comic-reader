@@ -61,6 +61,9 @@ struct LibraryView: View {
     @AppStorage("library.sortAscending") private var sortAscending = false
     /// "Only Downloaded" — hides folder-backed comics whose bytes aren't local. Off by default.
     @AppStorage("library.onlyDownloaded") private var onlyDownloaded = false
+    /// "Only Favorites" — narrows to the comics marked with a heart. Off by default. Composes with
+    /// the filter above rather than replacing it, so "downloaded favourites" is expressible.
+    @AppStorage("library.onlyFavorites") private var onlyFavorites = false
 
     /// Live search query, bound to the `.searchable` field. Narrows every layout through
     /// `displayedBooks`, matching on title / story title / issue number (see `ComicBook.matches`).
@@ -175,6 +178,7 @@ struct LibraryView: View {
         }
         var result = sortAscending ? ascending : ascending.reversed()
         if onlyDownloaded { result = result.filter { $0.hasLocalArchive } }
+        if onlyFavorites { result = result.filter { $0.isFavorite } }
         if !trimmedQuery.isEmpty { result = result.filter { $0.matches(searchQuery: trimmedQuery) } }
         return result
     }
@@ -198,6 +202,7 @@ struct LibraryView: View {
         hasher.combine(sortField)
         hasher.combine(sortAscending)
         hasher.combine(onlyDownloaded)
+        hasher.combine(onlyFavorites)
         hasher.combine(trimmedQuery)
         hasher.combine(books.count)
         let searching = !trimmedQuery.isEmpty
@@ -209,6 +214,10 @@ struct LibraryView: View {
             hasher.combine(book.issueNumber)    // .title / .series collation
             hasher.combine(book.title)          // collation fallback + search
             hasher.combine(book.hasLocalArchive) // "Only Downloaded" filter
+            hasher.combine(book.isFavorite)      // "Only Favorites" filter. Here — unlike `isRead`,
+                                                // which is deliberately left out above — because
+                                                // this one FILTERS: the cached list itself changes
+                                                // when it flips, not just a badge inside a cell.
             if searching {                      // matches() also reads these
                 hasher.combine(book.issueTitle)
                 hasher.combine(book.characters)
@@ -453,6 +462,15 @@ struct LibraryView: View {
                             Label("Only Downloaded", systemImage: "arrow.down.circle")
                         }
                     }
+                    // Deliberately NOT gated the way "Only Downloaded" is. That one is hidden
+                    // without a library folder because it could then hide nothing at all; this one
+                    // is meaningful in every library, and it's also where the feature is
+                    // discovered. Gating it on "any favourite exists" would also mean
+                    // un-favouriting your last comic removes the toggle while it's still
+                    // filtering — the empty state below is the better way out.
+                    Toggle(isOn: $onlyFavorites) {
+                        Label("Only Favorites", systemImage: "heart")
+                    }
                     Divider()
                     Picker("View", selection: $viewModeRaw) {
                         Label("Gallery", systemImage: "square.grid.2x2").tag(LibraryViewMode.gallery.rawValue)
@@ -487,18 +505,44 @@ struct LibraryView: View {
         }
     }
 
-    /// Shown when "Only Downloaded" is on but nothing is local — with the one-tap way back out,
-    /// so the filter can never strand the user on a blank screen.
+    /// Shown when a filter is on but nothing survives it — with the one-tap way back out, so no
+    /// filter can strand the user on a blank screen. Both filters can be on at once, so this names
+    /// whichever is actually hiding things and clears every one that's set: clearing only one could
+    /// still leave nothing on screen, which is the same dead end again.
     private var filteredEmptyState: some View {
         ContentUnavailableView {
-            Label("No downloaded comics", systemImage: "arrow.down.circle")
+            Label(filteredEmptyTitle, systemImage: onlyFavorites ? "heart" : "arrow.down.circle")
         } description: {
-            Text("Only comics downloaded to this device are shown. Turn the filter off to see everything in your library.")
+            Text(filteredEmptyMessage)
         } actions: {
-            Button { onlyDownloaded = false } label: {
+            Button {
+                onlyDownloaded = false
+                onlyFavorites = false
+            } label: {
                 Label("Show All", systemImage: "line.3.horizontal.decrease.circle")
             }
             .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var filteredEmptyTitle: String {
+        switch (onlyFavorites, onlyDownloaded) {
+        case (true, true):  return "No downloaded favorites"
+        case (true, false): return "No favorites yet"
+        default:            return "No downloaded comics"
+        }
+    }
+
+    /// The favourites wording says "from a comic's menu" rather than "long press a cover": this
+    /// empty state also renders in Discover, where there is no cover to long-press.
+    private var filteredEmptyMessage: String {
+        switch (onlyFavorites, onlyDownloaded) {
+        case (true, true):
+            return "Only favorites downloaded to this device are shown. Turn the filters off to see everything in your library."
+        case (true, false):
+            return "No comic is marked as a favorite yet. Add one from a comic's menu, or turn the filter off to see everything in your library."
+        default:
+            return "Only comics downloaded to this device are shown. Turn the filter off to see everything in your library."
         }
     }
 

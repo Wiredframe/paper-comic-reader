@@ -159,6 +159,7 @@ private struct LibraryRow: View {
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     HStack(spacing: 5) {
+                        if book.isFavorite { FavoriteHeart(size: 13) }
                         if book.isRemote { AvailabilityBadge(size: 13) }
                         Text(book.pageCountLabel)
                         if let stories = book.storyCountLabel {
@@ -184,6 +185,13 @@ private struct LibraryRow: View {
             if !selectionMode {
                 Button(action: onOpen) { Label("Read", systemImage: "book") }
                 Button(action: onShowDetail) { Label("Details", systemImage: "info.circle") }
+                Button {
+                    book.isFavorite.toggle()
+                    try? context.save()
+                } label: {
+                    Label(book.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                          systemImage: book.isFavorite ? "heart.slash" : "heart")
+                }
                 if book.isRemote {
                     Button { Importer.prefetch(book, in: context) } label: {
                         Label("Download", systemImage: "arrow.down.circle")

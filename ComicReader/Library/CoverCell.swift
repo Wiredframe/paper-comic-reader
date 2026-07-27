@@ -74,8 +74,9 @@ struct CoverCell: View {
                     .truncationMode(.tail)
 
                 HStack(spacing: 5) {
-                    // Availability leads the row: whether the comic is on the device at all comes
-                    // before how far into it you've read.
+                    // The favourite mark leads, then availability: what you chose about the comic
+                    // comes before facts about the file, and both before how far into it you've read.
+                    if book.isFavorite { FavoriteHeart() }
                     if book.isRemote { AvailabilityBadge() }
                     Text(book.pageCountLabel)
                     if book.progress > 0 { ProgressPie(progress: book.progress) }
@@ -110,6 +111,13 @@ struct CoverCell: View {
     @ViewBuilder private var menu: some View {
         Button(action: onOpen) { Label("Read", systemImage: "book") }
         Button(action: onShowDetail) { Label("Details", systemImage: "info.circle") }
+        Button {
+            book.isFavorite.toggle()
+            try? context.save()
+        } label: {
+            Label(book.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                  systemImage: book.isFavorite ? "heart.slash" : "heart")
+        }
         Button {
             book.isRead.toggle()
             try? context.save()

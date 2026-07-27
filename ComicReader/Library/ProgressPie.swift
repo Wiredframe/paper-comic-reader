@@ -40,10 +40,26 @@ struct ReadCheck: View {
     }
 }
 
-/// Shown first in a comic's status row when it's folder-backed but not downloaded yet — the
-/// "lives in your library folder, fetched when you open it" mark. Its absence means the comic is
-/// local (owned copies and downloaded comics show nothing, local being the default expectation),
-/// so the row stays uncluttered for the common case.
+/// The favourite mark, shown FIRST in a comic's status row — ahead of availability and progress.
+/// It leads because it's the only badge there the reader put on deliberately: the others state
+/// facts about the file or about the reading, this one states a preference. Red rather than the
+/// accent, which is a bright orange-yellow that a small heart would read as gold against.
+struct FavoriteHeart: View {
+    var size: CGFloat = 15
+    @ScaledMetric(relativeTo: .caption) private var unit: CGFloat = 1
+
+    var body: some View {
+        Image(systemName: "heart.fill")
+            .font(.system(size: size * unit))
+            .foregroundStyle(.red)
+            .accessibilityLabel("Favorite")
+    }
+}
+
+/// Shown early in a comic's status row — after the favourite heart, before progress — when it's
+/// folder-backed but not downloaded yet: the "lives in your library folder, fetched when you open
+/// it" mark. Its absence means the comic is local (owned copies and downloaded comics show
+/// nothing, local being the default expectation), so the row stays uncluttered for the common case.
 struct AvailabilityBadge: View {
     var size: CGFloat = 15
     @ScaledMetric(relativeTo: .caption) private var unit: CGFloat = 1

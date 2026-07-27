@@ -306,9 +306,9 @@ final class ReaderPageCell: UICollectionViewCell {
         let landscape = bounds.width > bounds.height
         let zoom = landscape ? CGFloat(settings?.doubleTapZoom ?? 1.0) : 1.0
         switch fit {
-        case .fitWidth:     place([fitWidth(0, in: bounds, zoom: zoom)], in: bounds, focusColumn: nil)
-        case .fitHeight:    place([fitHeight(0, in: bounds)], in: bounds, focusColumn: nil)
-        case .spread:       place(spreadSizes(in: bounds), in: bounds, focusColumn: nil)
+        case .fitWidth:     place([fitWidth(0, in: bounds, zoom: zoom)], in: bounds)
+        case .fitHeight:    place([fitHeight(0, in: bounds)], in: bounds)
+        case .spread:       place(spreadSizes(in: bounds), in: bounds)
         case .focus(let i): placeFocus(focusSizes(in: bounds, zoom: focusZoomEnabled ? zoom : 1.0),
                                        focused: pageIndices.count > 1 ? i : 0, in: bounds)
         }
@@ -365,9 +365,12 @@ final class ReaderPageCell: UICollectionViewCell {
     /// whichever axis it's smaller. The scroll content is at least the bounds — so it
     /// stays put when it fits and pans when it doesn't — and `contentInset` stays ZERO.
     /// That's the point: on a rotation only the frames change, which animate inside the
-    /// turn, so there's no inset/offset snap (smooth regardless of the chrome). A
-    /// `focusColumn` scrolls that page to the left edge (spread focus); else it centres.
-    private func place(_ sizes: [CGSize], in bounds: CGSize, focusColumn: Int?) {
+    /// turn, so there's no inset/offset snap (smooth regardless of the chrome).
+    ///
+    /// Always centres, including a fit-width page narrowed by the fit-width zoom: Align to Screen
+    /// Edges is about a spread's two halves, and a lone page has no facing page to hand the spare
+    /// width to. Spread focus goes through `placeFocus` instead.
+    private func place(_ sizes: [CGSize], in bounds: CGSize) {
         let rowWidth = sizes.reduce(0) { $0 + $1.width }
         let rowHeight = sizes.map(\.height).max() ?? bounds.height
         let contentW = max(rowWidth, bounds.width)
@@ -386,19 +389,17 @@ final class ReaderPageCell: UICollectionViewCell {
 
         scrollView.contentInset = .zero
         scrollView.contentSize = CGSize(width: contentW, height: contentH)
-        if let focusColumn, focusColumn < sizes.count {
-            let colX = startX + sizes.prefix(focusColumn).reduce(0) { $0 + $1.width }
-            scrollView.contentOffset = CGPoint(x: min(colX, contentW - bounds.width), y: 0)
-        } else {
-            scrollView.contentOffset = CGPoint(x: (contentW - bounds.width) / 2, y: 0)
-        }
+        scrollView.contentOffset = CGPoint(x: (contentW - bounds.width) / 2, y: 0)
     }
 
-    /// Focus placement for a spread: each page at fit-width(*zoom), the focused page
-    /// centred horizontally like single-page fit-width, the other poking in from the
-    /// side. Symmetric side padding lets an edge page centre too. At zoom 1 this exactly
-    /// reproduces the old full-width, edge-aligned focus (and the rotation morph's
-    /// portrait endpoint).
+    /// Focus placement for a spread: each page at fit-width(*zoom), the focused page brought to
+    /// rest by `focusColumnOffsetX` (centred, or against its own screen edge with Align to Screen
+    /// Edges on), the other poking in from the side. Symmetric side padding is what gives an edge
+    /// page the room to centre. At zoom 1 this exactly reproduces the old full-width, edge-aligned
+    /// focus (and the rotation morph's portrait endpoint) whichever way the setting is.
+    ///
+    /// The frames are laid out the same either way — only the resting offset differs — so the two
+    /// halves stay contiguous and the alignment can never open a gap down the gutter.
     private func placeFocus(_ sizes: [CGSize], focused: Int, in bounds: CGSize) {
         guard let pageW = sizes.first?.width else { return }
         let sidePad = max(0, (bounds.width - pageW) / 2)
@@ -449,8 +450,17 @@ final class ReaderPageCell: UICollectionViewCell {
         pageShadow.layer.shadowPath = UIBezierPath(rect: pageShadow.bounds).cgPath
     }
 
-    /// Content-offset x that centres focus column `col` — the source of truth for both
+    /// Content-offset x that brings focus column `col` to rest — the source of truth for both
     /// `placeFocus` and the tap-scroll cross-over, so they always agree.
+    ///
+    /// Centres the column by default. With Align to Screen Edges on, a two-page slot instead rests
+    /// the column's OUTER edge against the screen's matching edge: the left page flush left, the
+    /// right page flush right, which spends the fit-width zoom's spare width on the facing page
+    /// rather than on a margin. Only this resting OFFSET moves — the page frames are untouched, so
+    /// the two halves stay contiguous and the gutter never opens up.
+    ///
+    /// At zoom 1 both branches evaluate to the same number (`sidePad` is 0 and `pageW` is the full
+    /// width), so the setting is inert at 100% by arithmetic rather than by a special case.
     private func focusColumnOffsetX(_ col: Int, in bounds: CGSize? = nil) -> CGFloat {
         let size = bounds ?? scrollView.bounds.size
         let landscape = size.width > size.height
@@ -458,8 +468,16 @@ final class ReaderPageCell: UICollectionViewCell {
         let pageW = size.width * zoom
         let sidePad = max(0, (size.width - pageW) / 2)
         let contentW = pageW * CGFloat(max(pageIndices.count, 1)) + 2 * sidePad
-        let center = sidePad + (CGFloat(col) + 0.5) * pageW
-        return min(max(center - size.width / 2, 0), max(0, contentW - size.width))
+        let target: CGFloat
+        if settings?.alignToEdges == true, pageIndices.count > 1 {
+            // Column 0 is the left page (its left edge to the screen's left); anything beyond it
+            // is a right page (its right edge to the screen's right).
+            target = col == 0 ? sidePad
+                              : sidePad + CGFloat(col + 1) * pageW - size.width
+        } else {
+            target = sidePad + (CGFloat(col) + 0.5) * pageW - size.width / 2
+        }
+        return min(max(target, 0), max(0, contentW - size.width))
     }
 
     // MARK: Gestures

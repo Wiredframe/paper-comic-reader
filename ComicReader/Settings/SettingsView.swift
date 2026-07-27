@@ -61,10 +61,11 @@ struct SettingsView: View {
                     // Settings Form (which holds the library @Query). Under @Observable only the
                     // view that READS `doubleTapZoom` — the live "%" label here — is invalidated.
                     ZoomSettingRow(reader: reader)
+                    Toggle("Align to Screen Edges", isOn: $reader.alignToEdges)
                 } header: {
                     Text("Zoom")
                 } footer: {
-                    Text("How wide a single page fills the screen — the default view and the double-tap zoom. Lower it if fit-width feels too wide or too zoomed-in; the page then sits centred with more of its height on screen.")
+                    Text("How wide a single page fills the screen, for the default view and the double-tap zoom. Lower it if fit-width feels too wide or too zoomed-in; the page then shows more of its height. Align to Screen Edges decides where the spare width goes when you zoom into one page of a double page: off, that page sits centred with an even gap either side; on, the left page rests against the left edge and the right page against the right, so the spare width shows more of the facing page instead. At 100% there is no spare width, so it changes nothing.")
                 }
 
                 Section("Appearance") {

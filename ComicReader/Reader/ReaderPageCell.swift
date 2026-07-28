@@ -52,6 +52,14 @@ final class ReaderPageCell: UICollectionViewCell {
     /// `didSingleTapAtX` split, so change the feel value here only.
     static let navEdgeFraction: CGFloat = 0.10
 
+    /// How much background shows between the two halves of a double page when Page Gap is on.
+    /// Deliberately a fixed, small metric rather than a second slider: it's there to tell the two
+    /// halves apart, and anything wide enough to notice as a space stops reading as one spread.
+    /// A hairline is the whole point: enough to feel where one page ends, not enough to read as
+    /// a margin. Tried at 6 and 3 first; both looked like the spread had been pulled apart.
+    static let spreadGap: CGFloat = 1
+
+
     /// How far a pinch can magnify the page(s). The zoom is a transient overlay — any other
     /// gesture (tap, double-tap, page turn, rotation) springs it straight back to 1 — so nothing
     /// about it is persisted; see the `// MARK: Pinch Zoom` section.
@@ -341,6 +349,14 @@ final class ReaderPageCell: UICollectionViewCell {
         return CGSize(width: r > 0 ? bounds.height * r : bounds.width, height: bounds.height)
     }
 
+    /// The gutter between this slot's two halves: `spreadGap` when Page Gap is on, else nothing.
+    /// Zero for a slot holding a single page, which has no facing page to be separated from.
+    /// Every layout that puts two pages in a row reads it from here, so they can't disagree about
+    /// how wide the row is, and a row measured wrong is dead scroll travel past the page.
+    private var pageGap: CGFloat {
+        (settings?.pageGap == true && pageIndices.count > 1) ? Self.spreadGap : 0
+    }
+
     /// Both pages sharing one height so together they fill the width exactly (→ no
     /// horizontal scroll; only vertical if the spread is taller than the screen).
     private func spreadSizes(in bounds: CGSize) -> [CGSize] {
@@ -348,7 +364,10 @@ final class ReaderPageCell: UICollectionViewCell {
         let rL = aspect(0)
         let rR = two ? aspect(1) : 0
         let total = rL + rR
-        let h = total > 0 ? bounds.width / total : bounds.height
+        // The gutter comes out of the width the two pages share, so the pair PLUS the gap still
+        // fills the slot exactly and the spread stays free of horizontal scroll.
+        let available = max(1, bounds.width - pageGap)
+        let h = total > 0 ? available / total : bounds.height
         var sizes = [CGSize(width: h * rL, height: h)]
         if two { sizes.append(CGSize(width: h * rR, height: h)) }
         return sizes
@@ -371,7 +390,8 @@ final class ReaderPageCell: UICollectionViewCell {
     /// Edges is about a spread's two halves, and a lone page has no facing page to hand the spare
     /// width to. Spread focus goes through `placeFocus` instead.
     private func place(_ sizes: [CGSize], in bounds: CGSize) {
-        let rowWidth = sizes.reduce(0) { $0 + $1.width }
+        let gap = sizes.count > 1 ? pageGap : 0
+        let rowWidth = sizes.reduce(0) { $0 + $1.width } + gap * CGFloat(max(sizes.count - 1, 0))
         let rowHeight = sizes.map(\.height).max() ?? bounds.height
         let contentW = max(rowWidth, bounds.width)
         let contentH = max(rowHeight, bounds.height)
@@ -382,7 +402,7 @@ final class ReaderPageCell: UICollectionViewCell {
             pageViews[i].frame = CGRect(x: x, y: (contentH - size.height) / 2,
                                         width: size.width, height: size.height)
             pageViews[i].isHidden = false
-            x += size.width
+            x += size.width + gap
         }
         for i in sizes.count..<pageViews.count { pageViews[i].isHidden = true }
         layoutShadow(around: sizes.count)
@@ -398,13 +418,14 @@ final class ReaderPageCell: UICollectionViewCell {
     /// full-width, edge-aligned focus (and the rotation morph's portrait endpoint) whichever way
     /// the setting is.
     ///
-    /// The two pages always touch, so the spread casts one unbroken shadow. What Align to Screen
-    /// Edges changes is the empty margin AROUND the pair (see `focusSidePad`), which is also the
-    /// scroll's travel.
+    /// The only space between the two pages is `pageGap`, so with Page Gap off they still touch and
+    /// the spread casts one unbroken shadow; what Align to Screen Edges changes is the empty margin
+    /// AROUND the pair (see `focusSidePad`), which is also the scroll's travel.
     private func placeFocus(_ sizes: [CGSize], focused: Int, in bounds: CGSize) {
         guard let pageW = sizes.first?.width else { return }
         let sidePad = focusSidePad(pageWidth: pageW, in: bounds, pageCount: sizes.count)
-        let rowWidth = pageW * CGFloat(sizes.count)
+        let gap = sizes.count > 1 ? pageGap : 0
+        let rowWidth = pageW * CGFloat(sizes.count) + gap * CGFloat(max(sizes.count - 1, 0))
         let contentW = rowWidth + 2 * sidePad
         let contentH = max(sizes.map(\.height).max() ?? bounds.height, bounds.height)
 
@@ -413,7 +434,7 @@ final class ReaderPageCell: UICollectionViewCell {
             pageViews[i].frame = CGRect(x: x, y: (contentH - size.height) / 2,
                                         width: size.width, height: size.height)
             pageViews[i].isHidden = false
-            x += pageW
+            x += pageW + gap
         }
         for i in sizes.count..<pageViews.count { pageViews[i].isHidden = true }
         layoutShadow(around: sizes.count)
@@ -427,13 +448,20 @@ final class ReaderPageCell: UICollectionViewCell {
     /// so the page reads as a sheet resting on the letterbox mat rather than a picture pasted
     /// onto it.
     ///
-    /// The union is what keeps the spread's gutter clean: the two halves touch, so a single
-    /// shadow around the pair has nowhere to draw between them — the whole spread casts one
-    /// shadow, like the real open comic it's imitating. (A shadow per page would seam straight
-    /// down the middle.) It follows that the shadow is only ever *seen* where a page doesn't
-    /// reach the slot's edge, since the scroll view clips there: above and below a portrait
-    /// page, and around a fit-height or a sub-full-width fit-width page. Where the page runs to
-    /// the screen edge there's no mat to catch a shadow anyway.
+    /// With Page Gap OFF the path is that single enclosing rectangle, and that is what keeps the
+    /// spread's gutter clean: the two halves touch, so one shadow around the pair has nowhere to
+    /// draw between them. The whole spread casts one shadow, like the real open comic it's
+    /// imitating. (A shadow per page would seam straight down the middle of a solid spread.)
+    ///
+    /// With Page Gap ON there IS a gutter, and the halves should read as two sheets, so the path
+    /// becomes one subpath per page and each casts into the gap. Still one shadow layer either
+    /// way; only the path differs, and the setting can't change mid-spread, so the subpath count
+    /// stays fixed across any animation.
+    ///
+    /// It follows that the shadow is only ever *seen* where a page doesn't reach the slot's edge,
+    /// since the scroll view clips there: above and below a portrait page, around a fit-height or
+    /// a sub-full-width fit-width page, and now in the gutter. Where the page runs to the screen
+    /// edge there's no mat to catch a shadow anyway.
     ///
     /// `shadowPath` is set explicitly for two reasons: Core Animation then never derives the
     /// shadow from the layer's alpha channel (an offscreen pass every frame, which the rotation
@@ -448,7 +476,17 @@ final class ReaderPageCell: UICollectionViewCell {
         for view in pageViews.prefix(count).dropFirst() { union = union.union(view.frame) }
         pageShadow.isHidden = false
         pageShadow.frame = union
-        pageShadow.layer.shadowPath = UIBezierPath(rect: pageShadow.bounds).cgPath
+
+        let path = UIBezierPath()
+        if pageGap > 0, count > 1 {
+            // The frames are in the scroll view's space; the path wants the shadow view's own.
+            for view in pageViews.prefix(count) {
+                path.append(UIBezierPath(rect: view.frame.offsetBy(dx: -union.minX, dy: -union.minY)))
+            }
+        } else {
+            path.append(UIBezierPath(rect: pageShadow.bounds))
+        }
+        pageShadow.layer.shadowPath = path.cgPath
     }
 
     /// The empty margin left either side of the focused row's pages, and with it the slack the
@@ -468,15 +506,15 @@ final class ReaderPageCell: UICollectionViewCell {
         return max(0, (bounds.width - pageWidth) / 2)
     }
 
-    /// Content-offset x that brings focus column `col` to rest, the source of truth for both
+    /// Content-offset x that brings focus column `col` to rest — the source of truth for both
     /// `placeFocus` and the tap-scroll cross-over, so they always agree.
     ///
     /// Centres the column by default. With Align to Screen Edges on, a two-page slot instead rests
     /// the column's OUTER edge against the screen's matching edge: the left page flush left, the
     /// right page flush right, which spends the fit-width zoom's spare width on the facing page
-    /// rather than on a margin. Paired with `focusSidePad` returning zero there, both of those
-    /// resting offsets are also the ends of the scroll's travel, so a page can't be dragged off
-    /// the edge it is supposed to rest against.
+    /// rather than on a margin. Paired with `focusSidePad` returning zero there, both of these
+    /// resting offsets are also the ends of the scroll's travel, so the pages can't be dragged off
+    /// their edge.
     ///
     /// At zoom 1 both branches evaluate to the same number (`sidePad` is 0 and `pageW` is the full
     /// width), so the setting is inert at 100% by arithmetic rather than by a special case.
@@ -487,10 +525,11 @@ final class ReaderPageCell: UICollectionViewCell {
         let pageW = size.width * zoom
         let sidePad = focusSidePad(pageWidth: pageW, in: size, pageCount: pageIndices.count)
         let count = max(pageIndices.count, 1)
-        let contentW = pageW * CGFloat(count) + 2 * sidePad
-        // Where the column's own left edge sits in the content; it has to match the stride
-        // `placeFocus` lays the frames out on.
-        let colX = sidePad + CGFloat(col) * pageW
+        let gap = pageGap
+        let contentW = pageW * CGFloat(count) + gap * CGFloat(count - 1) + 2 * sidePad
+        // Where the column's own left edge sits in the content, the one place the gutter enters
+        // this calculation, and it has to match the stride `placeFocus` lays the frames out on.
+        let colX = sidePad + CGFloat(col) * (pageW + gap)
         let target: CGFloat
         if settings?.alignToEdges == true, pageIndices.count > 1 {
             // Column 0 is the left page (its left edge to the screen's left); anything beyond it

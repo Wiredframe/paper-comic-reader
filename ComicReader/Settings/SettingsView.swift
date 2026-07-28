@@ -46,6 +46,8 @@ struct SettingsView: View {
             Form {
                 Section {
                     Toggle("Double Page (Landscape)", isOn: $reader.doublePage)
+                    Toggle("Page Gap", isOn: $reader.pageGap)
+                        .disabled(!reader.doublePage)
                     Toggle("Page Shadow", isOn: $reader.pageShadow)
                     Toggle("Tap to Navigate", isOn: $reader.tapToNavigate)
                     Toggle("Live Text", isOn: $reader.liveText)
@@ -53,7 +55,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Reader")
                 } footer: {
-                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Page Shadow rests the page on its background with a soft shadow, wherever the page doesn't reach the screen edge; a double page casts one shadow around the pair, never down the middle. Tap to Navigate lets you tap the left/right edges to move through the page half a screen at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
+                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Page Gap leaves a thin line of the background between those two pages so they read as two sheets instead of one wide one; a page with no facing page is unaffected. Page Shadow rests the page on its background with a soft shadow, wherever the page doesn't reach the screen edge; without a gap a double page casts one shadow around the pair rather than down the middle, and with one each page casts its own. Tap to Navigate lets you tap the left/right edges to move through the page half a screen at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
                 }
 
                 Section {

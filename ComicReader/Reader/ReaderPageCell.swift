@@ -59,6 +59,15 @@ final class ReaderPageCell: UICollectionViewCell {
     /// a margin. Tried at 6 and 3 first; both looked like the spread had been pulled apart.
     static let spreadGap: CGFloat = 1
 
+    /// How far two facing scans may differ in aspect and still be laid out as one shape (see
+    /// `aspect(_:)`). Trim variance between two scans of the same comic is a fraction of a percent,
+    /// so this sits well clear of it while staying far below a page whose proportions differ for a
+    /// REASON: a true landscape spread stored as one wide image, a differently scanned inside
+    /// cover, an ad page. `ReaderPaging` pairs purely by index and never looks at a page's shape,
+    /// so those really do land in a pair, and harmonising them would crop away artwork rather than
+    /// a scanner edge. At this limit the taller scan gives up about 1% of its height at each edge;
+    /// on the scans it's meant for it gives up a handful of pixels.
+    static let pairAspectTolerance: CGFloat = 0.02
 
     /// How far a pinch can magnify the page(s). The zoom is a transient overlay — any other
     /// gesture (tap, double-tap, page turn, rotation) springs it straight back to 1 — so nothing
@@ -160,7 +169,14 @@ final class ReaderPageCell: UICollectionViewCell {
 
         for view in pageViews {
             view.backgroundColor = .clear
-            view.contentMode = .scaleAspectFit
+            // Aspect-FILL with clipping, not aspect-fit. Every frame this cell builds already
+            // carries its own page's aspect, so for anything but a harmonised pair the two modes
+            // draw identical pixels. Where they differ is exactly the case `aspect(_:)` creates:
+            // two facing scans handed one shape, where fill is what crops the taller scan's
+            // surplus away instead of letterboxing it inside its half. A letterbox there would
+            // leave a hairline of mat down the gutter, the one place it would be noticed.
+            view.contentMode = .scaleAspectFill
+            view.clipsToBounds = true
             scrollView.addSubview(view)
         }
 
@@ -324,8 +340,43 @@ final class ReaderPageCell: UICollectionViewCell {
         tapTargetY = nil          // the scroll position was just reset by the layout
     }
 
-    /// Aspect (w/h) of page `i`, falling back to a sibling / typical page while it loads.
+    /// Aspect (w/h) of page `i` as the LAYOUT should use it.
+    ///
+    /// Where two facing scans differ only by trim variance (the same comic, a few pixels of
+    /// difference in the JPEGs), both halves report the shorter page's aspect, so everything
+    /// downstream measures the pair as one shape: equal widths, the gutter exactly on the screen's
+    /// centre line, the same scale on both halves, and a shadow outline that matches the pages
+    /// instead of overhanging the shorter one.
+    ///
+    /// Without it the mismatch still has to go somewhere, and it goes somewhere different in every
+    /// layout: `spreadSizes` shares one height, so it surfaces as unequal widths and an off-centre
+    /// gutter; `focusSizes` shares one width, so it surfaces as unequal heights, and since each
+    /// page is centred vertically on its own, the artwork steps a few points as you pan across the
+    /// gutter. One harmonised aspect settles all three at once, because all three read from here.
+    ///
+    /// The taller scan's surplus is then cropped by the page views' `.scaleAspectFill`, in equal
+    /// parts top and bottom. Taking the SHORTER page (the LARGER w/h) as the target is what keeps
+    /// the crop on that axis: with both aspects at or below the frame's, a page can only ever
+    /// overflow vertically, so neither can be cut at the gutter or the outer trim, which is where
+    /// a comic's artwork actually runs to the edge and where the eye follows the panel borders.
+    /// Harmonising to the average would halve the crop, but it would move part of it onto exactly
+    /// those two edges.
+    ///
+    /// Pairs only, and only within `pairAspectTolerance`. A lone page (the cover, an unpaired last
+    /// page, every slot outside double mode) has no facing page to agree with and keeps its own
+    /// aspect, which is also why `.fitHeight` is never touched: it is reachable only when the slot
+    /// holds a single page.
     private func aspect(_ i: Int) -> CGFloat {
+        guard pageIndices.count > 1 else { return rawAspect(i) }
+        let left = rawAspect(0), right = rawAspect(1)
+        let target = max(left, right)          // the larger w/h is the SHORTER page
+        guard target > 0,
+              abs(left - right) / target <= Self.pairAspectTolerance else { return rawAspect(i) }
+        return target
+    }
+
+    /// The page's own aspect (w/h), falling back to a sibling / typical page while it loads.
+    private func rawAspect(_ i: Int) -> CGFloat {
         if i < images.count, let image = images[i], image.size.height > 0 {
             return image.size.width / image.size.height
         }

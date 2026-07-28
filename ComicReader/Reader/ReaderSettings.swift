@@ -42,7 +42,7 @@ final class ReaderSettings {
 
     /// Where a page that doesn't fill the width comes to rest. Off, it sits centred with an even
     /// gap either side. On, a zoomed double page rests its LEFT page against the screen's left edge
-    /// and its RIGHT page against the right, the way a printed spread's outer margins sit — so the
+    /// and its RIGHT page against the right, the way a printed spread's outer margins sit, so the
     /// spare width goes to showing more of the facing page instead of two dead margins. Paired with
     /// `doubleTapZoom` above, and only ever visible below 100%: at 100% there is no spare width to
     /// place and the layout arithmetic collapses to the same answer either way (see

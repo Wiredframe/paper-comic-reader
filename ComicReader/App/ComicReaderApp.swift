@@ -66,6 +66,9 @@ struct ComicReaderApp: App {
                     // already-seeded library (it no-ops on content when the library isn't empty).
                     ScreenshotSupport.seedIfRequested(into: modelContainer.mainContext)
                     #endif
+                    // Caches this device's name for the backup document, which names the library
+                    // it came from. UIDevice is main-actor bound and the capture may not be.
+                    BackupDevice.refreshName()
                 }
         }
         .modelContainer(modelContainer)

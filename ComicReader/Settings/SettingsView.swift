@@ -27,7 +27,15 @@ struct SettingsView: View {
     // name so the row updates the moment a folder is chosen or removed; `scan` is non-nil while a
     // scan runs, driving the inline progress.
     @State private var folderName = LibrarySource.displayName
-    @State private var showFolderPicker = false
+    // ONE file importer for the whole screen, aimed by `pickerTarget`.
+    //
+    // Not two. Two `.fileImporter` modifiers leave only one of them working, and attaching the
+    // second to a row inside the Form doesn't help: a row shares the Form's presentation context
+    // rather than making a new one, so the outer one keeps winning and the other button silently
+    // does nothing. Which button is broken then depends on the order the modifiers are applied,
+    // which is a coin toss nobody should be spending debugging time on.
+    @State private var pickerTarget = PickerTarget.comicFolder
+    @State private var isPickerPresented = false
     @State private var scan: (done: Int, total: Int)?
     @State private var refresh: (done: Int, total: Int)?
     @State private var showRemoveFolderConfirm = false
@@ -36,7 +44,6 @@ struct SettingsView: View {
     // non-nil while one is being written or read, driving the determinate row.
     @State private var backupFile: BackupFile?
     @State private var backupProgress: BackupProgress?
-    @State private var showBackupImporter = false
     @State private var backupMessage: String?
     #if DEBUG
     @State private var showPaperForShot = false   // screenshot deep-link to the Paper Effect detail
@@ -129,7 +136,7 @@ struct SettingsView: View {
                             Button { startMetadataRefresh() } label: {
                                 Label("Re-read Metadata", systemImage: "arrow.triangle.2.circlepath")
                             }
-                            Button { showFolderPicker = true } label: {
+                            Button { present(.comicFolder) } label: {
                                 Label("Change Folder…", systemImage: "folder")
                             }
                             Button(role: .destructive) { showRemoveFolderConfirm = true } label: {
@@ -137,7 +144,7 @@ struct SettingsView: View {
                             }
                         }
                     } else {
-                        Button { showFolderPicker = true } label: {
+                        Button { present(.comicFolder) } label: {
                             Label("Choose Comic Folder…", systemImage: "folder.badge.plus")
                         }
                     }
@@ -176,15 +183,8 @@ struct SettingsView: View {
                             Label(backupFile == nil ? "Export Library…" : "Export Again…",
                                   systemImage: backupFile == nil ? "square.and.arrow.up" : "arrow.clockwise")
                         }
-                        Button { showBackupImporter = true } label: {
+                        Button { present(.libraryBackup) } label: {
                             Label("Import Library…", systemImage: "square.and.arrow.down")
-                        }
-                        // Attached to this button, not to the Form: the Form already carries the
-                        // comic-folder importer, and two `.fileImporter` modifiers on the SAME view
-                        // leave only one of them working.
-                        .fileImporter(isPresented: $showBackupImporter,
-                                      allowedContentTypes: [.zip]) { result in
-                            handleBackupChosen(result)
                         }
                     }
                 } header: {
@@ -236,8 +236,12 @@ struct SettingsView: View {
             .onAppear { applyScreenshotScene(proxy) }
             #endif
             .task { storageText = storageDescription }
-            .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
-                handleFolderChosen(result)
+            .fileImporter(isPresented: $isPickerPresented,
+                          allowedContentTypes: pickerTarget.contentTypes) { result in
+                switch pickerTarget {
+                case .comicFolder:  handleFolderChosen(result)
+                case .libraryBackup: handleBackupChosen(result)
+                }
             }
             .confirmationDialog("Remove this comic folder?",
                                 isPresented: $showRemoveFolderConfirm,
@@ -268,6 +272,19 @@ struct SettingsView: View {
         }
     }
     #endif
+
+    // MARK: The file picker
+
+    /// Aims the single importer and then presents it, one runloop turn apart.
+    ///
+    /// The two steps are the point. `allowedContentTypes` is read from `pickerTarget`, so flipping
+    /// both in the same update would race: SwiftUI could build the importer with the OLD target's
+    /// types and then present it, offering folders when a backup file was wanted. Setting the target
+    /// first lets the body rebuild with the right types, and the presentation follows.
+    private func present(_ target: PickerTarget) {
+        pickerTarget = target
+        DispatchQueue.main.async { isPickerPresented = true }
+    }
 
     // MARK: Comic folder
 
@@ -428,6 +445,20 @@ struct SettingsView: View {
         return items.reduce(0) { sum, item in
             let size = (try? item.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             return sum + Int64(size)
+        }
+    }
+}
+
+/// What the screen's one file importer is currently for. See `SettingsView.present(_:)` for why
+/// there is only one.
+private enum PickerTarget {
+    case comicFolder
+    case libraryBackup
+
+    var contentTypes: [UTType] {
+        switch self {
+        case .comicFolder:   return [.folder]
+        case .libraryBackup: return [.zip]
         }
     }
 }

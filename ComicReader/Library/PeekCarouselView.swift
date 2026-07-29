@@ -447,6 +447,13 @@ private struct CarouselInfoPanel: View {
                         Label(book.isRead ? "Mark as Unread" : "Mark as Read",
                               systemImage: book.isRead ? "circle" : "checkmark.circle")
                     }
+                    // Discover is where the open count is actually visible (the info panel's
+                    // "Opened 7 times"), so clearing it belongs here most of all.
+                    if book.openCount > 0 {
+                        Button { resetOpenCount(book) } label: {
+                            Label("Reset Open Count", systemImage: "arrow.counterclockwise")
+                        }
+                    }
                     // Same folder-backed availability actions the cover grid and list offer.
                     if book.isRemote {
                         Button { Importer.prefetch(book, in: context) } label: {
@@ -496,6 +503,11 @@ private struct CarouselInfoPanel: View {
 
     private func toggleFavorite(_ book: ComicBook) {
         book.isFavorite.toggle()
+        try? context.save()
+    }
+
+    private func resetOpenCount(_ book: ComicBook) {
+        book.resetOpenCount()
         try? context.save()
     }
 }

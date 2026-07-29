@@ -125,6 +125,16 @@ struct CoverCell: View {
             Label(book.isRead ? "Mark as Unread" : "Mark as Read",
                   systemImage: book.isRead ? "circle" : "checkmark.circle")
         }
+        // Only offered once there is something to forget: on a never-opened comic the row would
+        // be permanently greyed-out furniture in a menu that is already long.
+        if book.openCount > 0 {
+            Button {
+                book.resetOpenCount()
+                try? context.save()
+            } label: {
+                Label("Reset Open Count", systemImage: "arrow.counterclockwise")
+            }
+        }
         // Folder-backed comics can be pre-fetched or freed here — an owned copy has neither
         // choice (its archive is simply always local).
         if book.isRemote {

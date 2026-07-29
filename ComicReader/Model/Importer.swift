@@ -433,31 +433,139 @@ enum Importer {
         }
     }
 
-    /// One archive already in the library, as plain data. The duplicate scan reads files and
-    /// so runs off the main actor, where the SwiftData models it came from can't go — this
-    /// carries the two things the scan needs across.
+    /// One comic already in the library, as plain data. The duplicate scan reads files and so runs
+    /// off the main actor, where the SwiftData models it came from can't go — this carries across
+    /// everything the scan is allowed to compare.
     struct ExistingArchive: Sendable {
         let id: UUID
-        let path: String
+        /// Where this comic's bytes are locally, or nil for a folder-backed comic that hasn't been
+        /// downloaded. Nil is the whole reason the other two fields exist: with no local file there
+        /// is nothing to compare byte-for-byte, and content comparison alone would call the comic
+        /// new and import it a second time.
+        let path: String?
+        /// The comic's path inside the library folder, for a folder-backed entry.
+        let sourceRelativePath: String?
+        /// The imported file's name without its extension, as `ComicBook.title` stores it.
+        let title: String
+        let pageCount: Int
+
+        /// Snapshots a library entry on the main actor so the checks can run off it. `path` is nil
+        /// for a folder-backed comic with no download — asked of the file system rather than of
+        /// `hasLocalArchive`, because a comparison against a file that isn't really there is worse
+        /// than no comparison at all.
+        @MainActor init(book: ComicBook) {
+            let archive = book.archiveURL
+            self.id = book.id
+            self.path = Storage.fm.fileExists(atPath: archive.path) ? archive.path : nil
+            self.sourceRelativePath = book.sourceRelativePath
+            self.title = book.title
+            self.pageCount = book.pageCount
+        }
     }
 
-    /// The book in `existing` whose archive is byte-for-byte the file at `sourceURL`, or nil
-    /// if this comic is new.
+    /// The comic in `existing` that the file at `sourceURL` already is, or nil if it's new.
     ///
-    /// Size first, bytes only on a match: importing a genuinely new comic costs one `stat`
-    /// per library entry and reads nothing. Content rather than file name on purpose — a
-    /// renamed copy is still the same comic, and two unrelated comics can share a name.
+    /// Three passes, cheapest and most certain first:
+    ///
+    ///  1. **Inside the library folder.** If the pick is literally a file in the configured folder,
+    ///     its relative path IS the identity a folder-backed entry stores. No reading at all, and
+    ///     it catches the most common way to end up with a duplicate: browsing to the shared folder
+    ///     in Files and importing from there something the folder scan already brought in.
+    ///  2. **Byte-for-byte** against every local archive. Size first, bytes only on a match, so a
+    ///     genuinely new comic costs one `stat` per entry and reads nothing. Content rather than
+    ///     name on purpose: a renamed copy is the same comic, and two unrelated comics can share
+    ///     a name.
+    ///  3. **Name and page count** against folder-backed entries with no download. These have no
+    ///     bytes here to compare, so this is the only pass that can see them at all. Weaker than
+    ///     the others, hence last and reported separately — but it is the case the reader actually
+    ///     hits: the folder scan listed a comic, they never opened it, and then they import the
+    ///     file by hand.
+    ///
+    /// Passes 1 and 2 run here, before anything is copied or opened. Pass 3 needs the page count,
+    /// which means opening the archive, so it is `undownloadedFolderEntry(matching:)` below and runs
+    /// only once a file has got past these two.
     static func duplicate(of sourceURL: URL, among existing: [ExistingArchive]) -> UUID? {
         let scoped = sourceURL.startAccessingSecurityScopedResource()
         defer { if scoped { sourceURL.stopAccessingSecurityScopedResource() } }
 
+        if let folderMatch = folderPathMatch(for: sourceURL, among: existing) {
+            return folderMatch
+        }
+
         guard let size = fileSize(sourceURL) else { return nil }
         for candidate in existing {
-            let url = URL(fileURLWithPath: candidate.path)
+            guard let path = candidate.path else { continue }
+            let url = URL(fileURLWithPath: path)
             guard fileSize(url) == size, sameContents(sourceURL, url) else { continue }
             return candidate.id
         }
         return nil
+    }
+
+    /// Pass 3: the folder-backed entry with no download that this file appears to be, by file name
+    /// and page count.
+    ///
+    /// Runs on a `Prepared`, because the page count is only known once the archive has been opened.
+    /// Only ever answers when exactly one entry fits: two folder entries with the same name and
+    /// length are rare, but guessing between them would attach the download to the wrong comic, and
+    /// a duplicate entry is far easier to notice and undo than that.
+    static func undownloadedFolderEntry(matching prepared: Prepared,
+                                        among existing: [ExistingArchive]) -> UUID? {
+        let candidates = existing.filter {
+            $0.path == nil && $0.pageCount == prepared.pageCount && sameTitle($0.title, prepared.title)
+        }
+        return candidates.count == 1 ? candidates[0].id : nil
+    }
+
+    /// The entry whose `sourceRelativePath` is exactly where `sourceURL` sits in the library folder.
+    /// Resolving the folder bookmark can touch the network, so this only runs when a folder is
+    /// configured at all, and a folder that won't resolve simply yields no match rather than
+    /// failing the import.
+    private static func folderPathMatch(for sourceURL: URL,
+                                        among existing: [ExistingArchive]) -> UUID? {
+        guard LibrarySource.isConfigured,
+              let folder = try? LibrarySource.resolveFolder() else { return nil }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        guard LibrarySource.contains(sourceURL, in: folder) else { return nil }
+        let relative = LibrarySource.relativePath(of: sourceURL, in: folder)
+        return existing.first { $0.sourceRelativePath == relative }?.id
+    }
+
+    /// Case- and diacritic-insensitive, because the same file reached the two entries by different
+    /// routes (a folder listing and a file picker) and only the reader thinks of them as one name.
+    private static func sameTitle(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.compare(rhs, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
+
+    /// Hands a just-prepared archive to an existing folder-backed entry that had no download,
+    /// instead of throwing the bytes away.
+    ///
+    /// This is the pay-off of pass 3. The reader imported a comic the library already lists but
+    /// hasn't fetched; the honest outcome is not "duplicate, discarded" but "you already have this,
+    /// and now it's downloaded". The prepared cover is dropped rather than applied — the entry
+    /// already has one from the folder scan, and replacing it would make an import look like it
+    /// changed a comic it only completed.
+    @MainActor
+    static func adoptAsDownload(_ prepared: Prepared, into book: ComicBook,
+                               from context: ModelContext) {
+        let staged = Storage.comicURL(prepared.fileName)
+        let destination = book.archiveURL
+        do {
+            if Storage.fm.fileExists(atPath: destination.path) {
+                try Storage.fm.removeItem(at: destination)
+            }
+            try Storage.fm.moveItem(at: staged, to: destination)
+            book.hasLocalArchive = true
+            try? context.save()
+        } catch {
+            // Couldn't take it: leave the entry un-downloaded (it still fetches on open) and bin
+            // the staged copy, so a failure here costs nothing but the work already done.
+            try? Storage.fm.removeItem(at: staged)
+        }
+        if let cover = prepared.coverName {
+            try? Storage.fm.removeItem(at: Storage.coverURL(cover))
+        }
     }
 
     private static func fileSize(_ url: URL) -> Int? {

@@ -192,6 +192,14 @@ private struct LibraryRow: View {
                     Label(book.isFavorite ? "Remove from Favorites" : "Add to Favorites",
                           systemImage: book.isFavorite ? "heart.slash" : "heart")
                 }
+                if book.openCount > 0 {
+                    Button {
+                        book.resetOpenCount()
+                        try? context.save()
+                    } label: {
+                        Label("Reset Open Count", systemImage: "arrow.counterclockwise")
+                    }
+                }
                 if book.isRemote {
                     Button { Importer.prefetch(book, in: context) } label: {
                         Label("Download", systemImage: "arrow.down.circle")

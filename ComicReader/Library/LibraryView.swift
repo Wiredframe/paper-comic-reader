@@ -627,10 +627,15 @@ struct LibraryView: View {
             var failures = 0
             var firstBook: ComicBook?
             var firstWasDuplicate = false
+            // Counted separately from plain duplicates: nothing was skipped in these, an entry the
+            // library already had just gained its download, and saying "already imported" alone
+            // would hide the one thing that actually changed.
+            var adopted = 0
+            var firstWasAdopted = false
             // What's already imported, by archive content. Snapshotted off the SwiftData
             // models (which can't leave the main actor) and grown as each file lands, so a
             // file that duplicates one earlier in the same batch is skipped too.
-            var existing = books.map { Importer.ExistingArchive(id: $0.id, path: $0.archiveURL.path) }
+            var existing = books.map(Importer.ExistingArchive.init(book:))
             for url in urls {
                 do {
                     let snapshot = existing
@@ -647,9 +652,26 @@ struct LibraryView: View {
                         let prepared = try await Task.detached(priority: .userInitiated) {
                             try Importer.prepare(from: url)
                         }.value
-                        let book = Importer.commit(prepared, into: context)
-                        existing.append(Importer.ExistingArchive(id: book.id, path: book.archiveURL.path))
-                        if firstBook == nil { firstBook = book }
+                        // Now that the archive has been opened, the page count makes one more kind
+                        // of duplicate visible: a folder-backed entry the scan listed but never
+                        // downloaded, which has no local bytes for the checks above to compare.
+                        // Its archive is exactly what was just prepared, so it becomes the download
+                        // rather than a second entry.
+                        if let entryID = Importer.undownloadedFolderEntry(matching: prepared, among: snapshot),
+                           let entry = books.first(where: { $0.id == entryID }) {
+                            Importer.adoptAsDownload(prepared, into: entry, from: context)
+                            existing = books.map(Importer.ExistingArchive.init(book:))
+                            adopted += 1
+                            if firstBook == nil {
+                                firstBook = entry
+                                firstWasDuplicate = true
+                                firstWasAdopted = true
+                            }
+                        } else {
+                            let book = Importer.commit(prepared, into: context)
+                            existing.append(Importer.ExistingArchive(book: book))
+                            if firstBook == nil { firstBook = book }
+                        }
                     }
                 } catch {
                     failures += 1
@@ -666,7 +688,9 @@ struct LibraryView: View {
                     // than opening the reader. Focus only takes in Discover mode, where the
                     // carousel is on screen; in the grid the comic is simply present.
                     if viewMode == .discover { focusBookID = book.id }
-                    if firstWasDuplicate {
+                    if firstWasAdopted {
+                        alreadyImportedNote = "“\(book.displayTitle)” was already in your library from your comic folder. It's now downloaded."
+                    } else if firstWasDuplicate {
                         alreadyImportedNote = "“\(book.displayTitle)” is already in your library."
                     }
                 } else {
@@ -674,7 +698,16 @@ struct LibraryView: View {
                     importError = "Couldn't open “\(name)”. It may not be a valid CBZ."
                 }
             case .picker:
-                if failures > 0 { importError = "Couldn't import \(failures) file(s)." }
+                if failures > 0 {
+                    importError = "Couldn't import \(failures) file(s)."
+                } else if adopted > 0 {
+                    // Worth saying out loud: the picker otherwise skips duplicates in silence, and
+                    // a reader who just imported five comics and sees no new covers would assume
+                    // it failed rather than that the entries were already there.
+                    alreadyImportedNote = adopted == 1
+                        ? "That comic was already in your library from your comic folder. It's now downloaded."
+                        : "\(adopted) of those comics were already in your library from your comic folder. They're now downloaded."
+                }
             }
         }
     }

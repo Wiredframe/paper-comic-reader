@@ -131,6 +131,18 @@ final class ComicBook {
     /// what the reader downloads on open. Owned copies are never remote.
     var isRemote: Bool { isFolderBacked && !hasLocalArchive }
 
+    /// Forgets how often this comic was opened, putting it back to "Never opened".
+    ///
+    /// `openCount` is otherwise monotonic — deliberately not cleared by Recents' "Clear", which
+    /// only forgets `dateOpened` — because the Discover modes read it as popularity and a counter
+    /// that quietly resets makes those modes lie. This is the one way to clear it, and it is a
+    /// deliberate per-comic act: it leaves `dateOpened`, the reading progress and everything else
+    /// exactly where they were, so a comic dropped out of "Popular" still sits in Recents where
+    /// the reader left it.
+    func resetOpenCount() {
+        openCount = 0
+    }
+
     /// Copies parsed ComicInfo.xml values onto the book. A nil `info` (untagged comic, or one
     /// whose XML holds nothing useful) clears the fields rather than leaving stale ones behind,
     /// so re-reading an archive whose metadata was stripped does the right thing.

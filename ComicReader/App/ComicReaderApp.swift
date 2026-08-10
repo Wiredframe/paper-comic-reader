@@ -104,7 +104,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 enum OrientationGate {
     /// Free rotation while the reader is open — the device orientation decides. The mask
     /// stays permissive so the manual landscape/portrait nudges below work either way.
-    static func free() { AppDelegate.mask = .allButUpsideDown }
+    ///
+    /// Setting the mask is not enough on its own: UIKit resolves the supported orientations
+    /// once while it presents, and caches them. Usually that is harmless, because the reader
+    /// controller's `viewWillAppear` (which calls this) runs inside the present transition.
+    /// A folder-backed comic that still has to download breaks that assumption: the cover is
+    /// presented showing `ReaderDownloadingView`, so UIKit caches the app's portrait-only mask,
+    /// and the controller only appears once the fetch and the archive open have finished. The
+    /// first open after a download then refused to rotate until the reader was closed and
+    /// reopened, so tell UIKit to ask again.
+    static func free() {
+        AppDelegate.mask = .allButUpsideDown
+        invalidateSupportedOrientations()
+    }
 
     /// Nudge the interface to a specific orientation *now* — the reader's manual
     /// landscape/portrait toggle. Works even under the device rotation lock because it's
@@ -141,6 +153,23 @@ enum OrientationGate {
         guard let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene }).first else { return }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientations)) { _ in }
-        scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        invalidateSupportedOrientations()
+    }
+
+    /// Tells UIKit that `AppDelegate.mask` changed, so it re-asks instead of reusing what it
+    /// resolved at presentation time.
+    ///
+    /// Walks the whole presentation chain rather than only the root: the reader is a
+    /// fullScreenCover, and it is the topmost presented controller whose orientations actually
+    /// decide what the interface does.
+    private static func invalidateSupportedOrientations() {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first,
+              var vc = scene.keyWindow?.rootViewController else { return }
+        vc.setNeedsUpdateOfSupportedInterfaceOrientations()
+        while let presented = vc.presentedViewController {
+            presented.setNeedsUpdateOfSupportedInterfaceOrientations()
+            vc = presented
+        }
     }
 }

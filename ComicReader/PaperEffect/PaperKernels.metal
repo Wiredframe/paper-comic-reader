@@ -14,8 +14,17 @@
 //  The grain is isotropic (no horizontal/vertical bias): every fBm octave is
 //  rotated so the value-noise lattice is never axis-aligned.
 //
-//  Built with -fcikernel (compile) + -cikernel (metallib link); see project.yml.
-//  Loaded via CIKernel(functionName:fromMetalLibraryData:).
+//  Built as a [[stitchable]] Metal function into the normal default.metallib
+//  (Metal linker flag -framework CoreImage; see project.yml), and loaded via
+//  CIKernel(functionName:fromMetalLibraryData:).
+//
+//  NOT built with the legacy -fcikernel / -cikernel pair: that flag pins
+//  CIKernelMetalLib.h to __CIKERNEL_METAL_VERSION__ 200 (see the #if
+//  __METAL_CIKERNEL__ clamp in that header) no matter how new the deployment
+//  target is, so the kernel is compiled against the iOS 12 era coreimage::sampler
+//  and coreimage::destination layouts. iOS 27 binds those arguments the modern
+//  way, the two disagree, and every pixel came back pure white. Staying off
+//  -fcikernel keeps the kernel on the same ABI the OS actually passes.
 //
 
 #include <metal_stdlib>
@@ -58,12 +67,12 @@ static inline float sc_fbm(float2 p)
 	return n;
 }
 
-extern "C" float4 paperTexture(coreimage::sampler src,
-							   float grainStrength,   // MULTIPLY body on the light stock
-							   float peekStrength,    // SCREEN paper peeking through ink
-							   float scale,           // fibre size in pixels
-							   float3 paperTint,      // cream colour of the peek-through
-							   coreimage::destination dest)
+[[stitchable]] float4 paperTexture(coreimage::sampler src,
+								   float grainStrength,   // MULTIPLY body on the light stock
+								   float peekStrength,    // SCREEN paper peeking through ink
+								   float scale,           // fibre size in pixels
+								   float3 paperTint,      // cream colour of the peek-through
+								   coreimage::destination dest)
 {
 	float4 c = src.sample(src.coord());
 	float2 p = dest.coord() / max(scale, 0.5);

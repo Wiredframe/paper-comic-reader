@@ -51,8 +51,13 @@ settings:
     # path reads these two.
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: "7RN999S858"
-    # Link the Core Image Metal kernel library as CI kernels.
-    MTLLINKER_FLAGS: "-cikernel"
+    # PaperKernels.metal is a [[stitchable]] Core Image kernel in the ordinary
+    # default.metallib, so the Metal linker only needs CoreImage to resolve the
+    # coreimage::sampler / destination entry points. Deliberately NOT the legacy
+    # -cikernel (plus -fcikernel per file): that pair clamps CIKernelMetalLib.h to
+    # __CIKERNEL_METAL_VERSION__ 200, and iOS 27 passes kernel arguments the
+    # modern way. The mismatch rendered every page pure white.
+    MTLLINKER_FLAGS: "-framework CoreImage"
 
 targets:
   ComicReader:
@@ -65,16 +70,13 @@ targets:
       # with the app — no separate install step, and build-ipa.sh picks it up for free.
       - target: ComicThumbnail
     sources:
-      # App sources. The Metal kernel needs a per-file flag (below), so it is
-      # excluded here. Info.plist is the target's INFOPLIST_FILE, not a resource —
-      # excluded so it isn't also copied into the bundle as a stray file.
+      # App sources, PaperKernels.metal included: as a [[stitchable]] kernel it
+      # compiles with no per-file flag and lands in the normal default.metallib.
+      # Info.plist is the target's INFOPLIST_FILE, not a resource, so it is
+      # excluded here and isn't also copied into the bundle as a stray file.
       - path: ComicReader
         excludes:
-          - "PaperEffect/PaperKernels.metal"
           - "Info.plist"
-      # The Core Image Metal kernel is compiled with -fcikernel.
-      - path: ComicReader/PaperEffect/PaperKernels.metal
-        compilerFlags: "-fcikernel"
       # App icon — Icon Composer (.icon) file, referenced directly from the source
       # folder so re-exports are picked up automatically. Compiled by actool via
       # ASSETCATALOG_COMPILER_APPICON_NAME below. `type: file` keeps the bundle a

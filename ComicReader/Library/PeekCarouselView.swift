@@ -388,6 +388,8 @@ private struct CarouselInfoPanel: View {
             }
             HStack(spacing: 5) {
                 if book.isFavorite { FavoriteHeart(size: 12) }
+                // Just the cloud here, never the ring: the button below is this panel's download,
+                // and two rings for one download in a 150pt panel is one too many.
                 if book.isRemote { AvailabilityBadge(size: 12) }
                 if let date = book.year.map(String.init) {
                     Text(date)
@@ -406,13 +408,8 @@ private struct CarouselInfoPanel: View {
             // Read keeps its label; everything that isn't reading or the bookmarks hint goes
             // in the overflow. With four buttons abreast "Read" was truncated down to nothing.
             HStack(spacing: 10) {
-                Button { onOpen(book, nil) } label: {
-                    Label("Read", systemImage: "book")
-                        .frame(maxWidth: .infinity, minHeight: buttonLabelHeight)
-                        // The accent is a bright orange-yellow — white on it barely reads.
-                        .foregroundStyle(.black)
-                }
-                .buttonStyle(.borderedProminent)
+                ReadOrDownloadButton(book: book, fillsWidth: true,
+                                     minHeight: buttonLabelHeight) { onOpen(book, nil) }
 
                 // Doubles as the "there's more below" hint: the bookmarks and the metadata live
                 // a page down, so their existence is announced up here. Absent when there's
@@ -455,15 +452,7 @@ private struct CarouselInfoPanel: View {
                         }
                     }
                     // Same folder-backed availability actions the cover grid and list offer.
-                    if book.isRemote {
-                        Button { Importer.prefetch(book, in: context) } label: {
-                            Label("Download", systemImage: "arrow.down.circle")
-                        }
-                    } else if book.isFolderBacked {
-                        Button { Importer.evictDownload(book, from: context) } label: {
-                            Label("Remove Download", systemImage: "arrow.down.circle.dotted")
-                        }
-                    }
+                    DownloadMenuItems(book: book)
                     if let onRemoveFromRecents {
                         Button { onRemoveFromRecents(book) } label: {
                             Label("Remove from Recents", systemImage: "clock.badge.xmark")

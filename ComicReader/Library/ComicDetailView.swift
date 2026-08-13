@@ -76,7 +76,7 @@ struct ComicDetailView: View {
 
                 HStack(spacing: 5) {
                     if book.isFavorite { FavoriteHeart(size: 12) }
-                    if book.isRemote { AvailabilityBadge(size: 12) }
+                    AvailabilityIndicator(book: book, size: 12)
                     Text(book.pageCountLabel)
                     if book.progress > 0 { ProgressPie(progress: book.progress, size: 12) }
                     if book.isRead { ReadCheck(size: 12) }
@@ -84,17 +84,14 @@ struct ComicDetailView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                Button {
-                    // Only ask to dismiss; the reader is opened from the sheet's onDismiss so
-                    // the two presentations don't overlap. See `onRead`.
+                // Same three jobs as Discover's button, which is also what makes the ring in the
+                // row above actionable here: fetch it, stop fetching it, or read it. Reading only
+                // asks to dismiss; the reader is opened from the sheet's onDismiss so the two
+                // presentations don't overlap. See `onRead`.
+                ReadOrDownloadButton(book: book) {
                     onRead()
                     dismiss()
-                } label: {
-                    Label("Read", systemImage: "book")
-                        // The accent is a bright orange-yellow — white on it barely reads.
-                        .foregroundStyle(.black)
                 }
-                .buttonStyle(.borderedProminent)
                 .padding(.top, 4)
 
                 Spacer(minLength: 0)

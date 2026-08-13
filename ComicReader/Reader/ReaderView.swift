@@ -36,6 +36,7 @@ struct ReaderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(PaperSettings.self) private var paper
     @Environment(ReaderSettings.self) private var settings
+    @Environment(DownloadManager.self) private var downloads
     // The reader is a fullScreenCover; `.preferredColorScheme` set on the tab view does
     // not reach it, so it reads the appearance itself to keep the reader background and
     // any presented sheets in the chosen theme.
@@ -103,16 +104,21 @@ struct ReaderView: View {
     // MARK: Folder-backed fetch (only used when this comic's bytes aren't local)
     //
     // The single funnel: every way into the reader lands here, so materialising a folder-backed
-    // comic's archive on demand is done once, in `ensureLocalThenOpen`, rather than at each call site.
+    // comic's archive on demand is done once, in `ensureLocalThenOpen`, rather than at each call
+    // site. The fetch itself belongs to `DownloadManager`, and the reader only watches it: opening
+    // a comic the library is already fetching joins that download instead of starting a second
+    // one, and leaving the reader mid-fetch no longer throws the megabytes away.
 
     /// True while the archive is being fetched from the library folder — shows the download state
     /// instead of the plain open spinner.
     @State private var isDownloading = false
     /// Set when the fetch fails, which raises the resolve dialog (update folder path / choose a
-    /// file / cancel). Nil the rest of the time.
-    @State private var resolveError: LibrarySource.SourceError?
-    @State private var showFolderPicker = false
-    @State private var showFilePicker = false
+    /// file / cancel). Nil the rest of the time. Stays set until the source is really sorted out,
+    /// so the reader can't be left waiting on a picker that came back empty (see `ComicResolve`).
+    @State private var resolveRequest: ComicResolveRequest?
+    /// The fetch was stopped rather than failed (from here or from the library), so the reader
+    /// waits on nothing and offers to start it again.
+    @State private var didStopFetch = false
 
     private var pageCount: Int { store?.pageCount ?? book.pageCount }
     private var isBookmarked: Bool {
@@ -144,12 +150,17 @@ struct ReaderView: View {
             } else if store != nil {
                 // Archive couldn't be opened (missing / corrupt after import).
                 ReaderUnavailableView()
-            } else if resolveError != nil {
+            } else if resolveRequest != nil {
                 // Fetch failed — the resolve dialog below drives the choice; this is what sits
-                // behind it (and what remains if the user dismisses without choosing).
-                ReaderNotDownloadedView()
+                // behind it (and what remains if the user dismisses without choosing), with the
+                // way back in, since the dialog can be dismissed by tapping outside it.
+                ReaderNotDownloadedView(onRetry: retryFetch)
             } else if isDownloading {
-                ReaderDownloadingView()
+                ReaderDownloadingView(book: book) { downloads.cancel(book.id) }
+            } else if didStopFetch {
+                // The download was stopped, here or from the library. Same state as a failed
+                // fetch minus the explanation: there's nothing wrong, it just isn't here.
+                ReaderNotDownloadedView(onRetry: retryFetch)
             } else {
                 ProgressView().tint(.secondary)   // reads on both the dark and the light letterbox mat
             }
@@ -224,27 +235,10 @@ struct ReaderView: View {
                 .presentationSizing(.page)
             }
         }
-        // A folder-backed comic that wouldn't fetch. The failure is deliberately surfaced only
-        // here, on open — never a background sweep. The three choices cover both real causes
-        // without guessing between them: the whole folder moved (update its path, which re-links
-        // every entry at once), or just this file did (pick it directly), or the share is simply
-        // offline right now (cancel and come back on the right network).
-        .confirmationDialog("Couldn’t load this comic",
-                            isPresented: Binding(get: { resolveError != nil },
-                                                 set: { if !$0 { resolveError = nil } }),
-                            titleVisibility: .visible) {
-            Button("Update Folder Path…") { showFolderPicker = true }
-            Button("Choose Another File…") { showFilePicker = true }
-            Button("Cancel", role: .cancel) { close() }
-        } message: {
-            Text(resolveMessage)
-        }
-        .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
-            handleFolderPicked(result)
-        }
-        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: ComicUTType.all) { result in
-            handleReplacementPicked(result)
-        }
+        // A folder-backed comic that wouldn't fetch. Shared with the library, which can now start
+        // the same download and hit the same wall (see `ComicResolve`). Resolving it here means
+        // trying this comic again; cancelling means there is nothing to read, so the reader goes.
+        .comicResolve($resolveRequest, onResolved: { _ in retryFetch() }, onCancel: close)
     }
 
     // MARK: Chrome
@@ -426,29 +420,32 @@ struct ReaderView: View {
     }
 
     /// Fetches the archive first when this is a folder-backed comic without local bytes, then
-    /// opens it. On a fetch failure it raises the resolve dialog and stops — the retry paths
-    /// (`handleFolderPicked` / `handleReplacementPicked`) call back in here.
+    /// opens it. On a fetch failure it raises the resolve dialog and stops; whatever answers that
+    /// dialog comes back through `retryFetch`.
     ///
     /// The presence check is the file system, not `book.hasLocalArchive`: the flag drives the
     /// library badge but can drift (a purged file), and the reader must act on what's actually
     /// on disk. When they disagree, the flag is reconciled below.
     private func ensureLocalThenOpen() async {
         if book.isFolderBacked, !Storage.fm.fileExists(atPath: book.archiveURL.path) {
-            guard let relativePath = book.sourceRelativePath else {
+            guard book.sourceRelativePath != nil else {
                 presentResolve(.notConfigured); return
             }
-            let dest = book.archiveURL
             isDownloading = true
             do {
-                try await Importer.downloadArchive(relativePath: relativePath, into: dest) { _ in }
+                // The fetch belongs to `DownloadManager`, not to this view: it may already be
+                // running (started from a listing), and it carries on if the reader goes away.
+                try await downloads.join(book, in: context)
                 isDownloading = false
-                book.hasLocalArchive = true
-                try? context.save()
             } catch let error as LibrarySource.SourceError {
                 isDownloading = false
-                // Closing the reader mid-fetch cancels the task — nothing to resolve, just leave.
-                if case .cancelled = error { return }
+                // Cancelled from here or from a listing: nothing to resolve, just stop.
+                if case .cancelled = error { didStopFetch = true; return }
                 presentResolve(error)
+                return
+            } catch is CancellationError {
+                isDownloading = false
+                didStopFetch = true
                 return
             } catch {
                 isDownloading = false
@@ -456,7 +453,19 @@ struct ReaderView: View {
                 return
             }
         }
+        // The reader may have been dismissed while the bytes were coming in. The download
+        // outlives it; this open must not.
+        guard !Task.isCancelled else { return }
         await openStore()
+    }
+
+    /// Try this comic again after the source was sorted out, or after a cancelled download.
+    /// Its own task: whatever raised this (the resolve dialog, a button) is not the `.task`
+    /// that owns the open.
+    private func retryFetch() {
+        resolveRequest = nil
+        didStopFetch = false
+        Task { await ensureLocalThenOpen() }
     }
 
     /// Opens the (now-local) archive and settles the reader on it. The open runs OFF the main
@@ -489,57 +498,11 @@ struct ReaderView: View {
 
     // MARK: Resolve a missing source
 
+    /// Take the failure over from the download manager: whoever is in front explains it, and the
+    /// library behind must not raise a second dialog about the same comic.
     private func presentResolve(_ error: LibrarySource.SourceError) {
-        resolveError = error
-    }
-
-    /// The reason text for the resolve dialog, tuned to the failure but never over-committing:
-    /// "file missing" and "folder offline" look identical from here, so each message keeps the
-    /// "or the server is offline" door open rather than pushing the user to re-pick needlessly.
-    private var resolveMessage: String {
-        switch resolveError {
-        case .notConfigured:
-            return "This comic comes from a library folder that isn’t set up on this device. Choose the folder, or pick this comic’s file directly."
-        case .fileMissing:
-            return "“\(book.displayTitle)” isn’t where it used to be in your comic folder. If the whole folder moved, update its path — that re-links everything at once. If just this file moved or was renamed, choose it directly. Or the server may simply be offline — try again later."
-        default:   // .unresolved / .copyFailed
-            return "Your comic folder couldn’t be reached — the server may be offline, or the folder may have moved. Update the folder path, choose this file directly, or try again on the right network."
-        }
-    }
-
-    /// The user re-pointed the whole library folder. Every folder-backed entry now resolves
-    /// against the new location by its unchanged relative path, so just retry this open.
-    private func handleFolderPicked(_ result: Result<URL, Error>) {
-        guard case .success(let url) = result else { return }
-        do { try LibrarySource.setFolder(url) } catch { return }
-        resolveError = nil
-        Task { await ensureLocalThenOpen() }
-    }
-
-    /// The user picked a replacement file for just this comic. Copy it in now so it opens, and
-    /// re-point the entry's source when the pick lives inside the library folder (see
-    /// `Importer.relink`). Follows the shipping import path: security scope is taken inside the
-    /// detached task, exactly as `LibraryView.runImport` does with a picker URL.
-    private func handleReplacementPicked(_ result: Result<URL, Error>) {
-        guard case .success(let url) = result else { return }
-        let dest = book.archiveURL
-        resolveError = nil
-        isDownloading = true
-        Task {
-            do {
-                let newRelativePath = try await Task.detached(priority: .userInitiated) {
-                    try Importer.relink(from: url, into: dest)
-                }.value
-                if let newRelativePath { book.sourceRelativePath = newRelativePath }
-                book.hasLocalArchive = true
-                try? context.save()
-                isDownloading = false
-                await openStore()
-            } catch {
-                isDownloading = false
-                presentResolve(.copyFailed)
-            }
-        }
+        downloads.clearFailure(for: book.id)
+        resolveRequest = ComicResolveRequest(book: book, error: error)
     }
 
     private func clampedStart(_ count: Int) -> Int {
@@ -616,13 +579,30 @@ private struct ReaderUnavailableView: View {
     }
 }
 
-/// Shown while a folder-backed comic's archive is being fetched from the library folder. The
-/// progress is deliberately indeterminate: a coordinated read over a share doesn't report a
-/// reliable byte count, and a spinner that says "working" beats a bar that lies.
+/// Shown while a folder-backed comic's archive is being fetched from the library folder: the
+/// same ring the library shows, at a size worth tapping, with the stop mark in the middle.
+///
+/// A leaf that looks the download up itself, so the megabyte-by-megabyte progress re-renders
+/// this and nothing else.
 private struct ReaderDownloadingView: View {
+    let book: ComicBook
+    let onCancel: () -> Void
+
+    @Environment(DownloadManager.self) private var downloads
+
     var body: some View {
         VStack(spacing: 14) {
-            ProgressView().tint(.secondary)
+            Button(action: onCancel) {
+                // Grey rather than accent: it sits alone on the letterbox mat, where the accent
+                // would shout, and the rest of the loading state is grey too. One ring for the
+                // whole fetch — it turns while the copy is still working out how big this is,
+                // then fills (see `DownloadRing`).
+                DownloadRing(progress: downloads.ticket(for: book.id)?.progress ?? 0,
+                             size: 56, glyph: "stop.fill", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop downloading")
+
             Text("Downloading from your library…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -631,13 +611,18 @@ private struct ReaderDownloadingView: View {
 }
 
 /// Sits behind the resolve dialog when a folder-backed comic won't fetch, and remains if the
-/// user dismisses the dialog without choosing — the reader's Close button is then the way out.
+/// user dismisses the dialog without choosing. It carries the way back in, since a dialog
+/// dismissed by tapping outside would otherwise leave the Close button as the only move.
 private struct ReaderNotDownloadedView: View {
+    let onRetry: () -> Void
+
     var body: some View {
-        ContentUnavailableView(
-            "Not downloaded",
-            systemImage: "icloud.slash",
-            description: Text("This comic isn’t on your device yet.")
-        )
+        ContentUnavailableView {
+            Label("Not downloaded", systemImage: "icloud.slash")
+        } description: {
+            Text("This comic isn’t on your device yet.")
+        } actions: {
+            Button("Download", action: onRetry).buttonStyle(.borderedProminent)
+        }
     }
 }

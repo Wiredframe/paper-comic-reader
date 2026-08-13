@@ -41,6 +41,10 @@ struct ComicReaderApp: App {
     /// Hand-off for comics opened from outside the app (Files, "Open With", share sheet).
     @State private var fileOpener = FileOpenCoordinator()
 
+    /// The downloads in flight. App-wide because a download outlives the view that started it:
+    /// begun in a listing, watched in the reader, still running after either goes away.
+    @State private var downloads = DownloadManager()
+
     init() {
         // Fold the old `library.listMode` Bool into the three-way view mode. Property
         // initializers run before this, but nothing reads @AppStorage until the WindowGroup
@@ -57,8 +61,12 @@ struct ComicReaderApp: App {
                 .environment(paper)
                 .environment(readerSettings)
                 .environment(fileOpener)
+                .environment(downloads)
                 .onOpenURL(perform: handleOpenURL)
                 .task {
+                    // Bin any half-finished download from a run that was killed mid-copy. First
+                    // thing, while nothing can be downloading yet (see `clearPartialDownloads`).
+                    Storage.clearPartialDownloads()
                     // First launch into an empty library gets the bundled demo comics.
                     SampleLibrary.seedIfNeeded(into: modelContainer.mainContext)
                     #if DEBUG

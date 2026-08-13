@@ -25,6 +25,20 @@ enum Storage {
         cacheDir("PageThumbs/\(bookID.uuidString)")
     }
 
+    /// Deletes half-finished downloads. A download that is cancelled or fails removes its own
+    /// temp file; what this is for is the run that never got the chance, because the app was
+    /// killed or crashed mid-copy. Nothing ever reads these again, and each is as big as the
+    /// comic got, so they would otherwise sit in Application Support for good.
+    ///
+    /// Called at launch, which is also the only moment it is unconditionally safe: no download
+    /// can be in flight yet, so there is no live temp file to mistake for an abandoned one.
+    static func clearPartialDownloads() {
+        let urls = (try? fm.contentsOfDirectory(at: comics, includingPropertiesForKeys: nil)) ?? []
+        for url in urls where url.pathExtension == "part" {
+            try? fm.removeItem(at: url)
+        }
+    }
+
     /// Deletes regenerable caches (page-grid thumbnails). Safe — they rebuild on demand.
     static func clearCaches() {
         let base = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]

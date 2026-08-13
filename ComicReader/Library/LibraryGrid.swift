@@ -136,9 +136,10 @@ private struct LibraryRow: View {
     let onOpen: () -> Void
 
     @Environment(\.modelContext) private var context
+    @Environment(DownloadManager.self) private var downloads
 
     var body: some View {
-        Button(action: onOpen) {
+        Button(action: tapped) {
             HStack(spacing: 12) {
                 if selectionMode {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -160,7 +161,7 @@ private struct LibraryRow: View {
                     }
                     HStack(spacing: 5) {
                         if book.isFavorite { FavoriteHeart(size: 13) }
-                        if book.isRemote { AvailabilityBadge(size: 13) }
+                        AvailabilityIndicator(book: book, size: 13)
                         Text(book.pageCountLabel)
                         if let stories = book.storyCountLabel {
                             Text("·")
@@ -200,16 +201,18 @@ private struct LibraryRow: View {
                         Label("Reset Open Count", systemImage: "arrow.counterclockwise")
                     }
                 }
-                if book.isRemote {
-                    Button { Importer.prefetch(book, in: context) } label: {
-                        Label("Download", systemImage: "arrow.down.circle")
-                    }
-                } else if book.isFolderBacked {
-                    Button { Importer.evictDownload(book, from: context) } label: {
-                        Label("Remove Download", systemImage: "arrow.down.circle.dotted")
-                    }
-                }
+                DownloadMenuItems(book: book)
             }
+        }
+    }
+
+    /// A tap stops a download in flight. The x in the ring in this row is what says so, and it
+    /// is far too small to be the target itself. Otherwise it opens the comic, as always.
+    private func tapped() {
+        if downloads.isDownloading(book.id) {
+            downloads.cancel(book.id)
+        } else {
+            onOpen()
         }
     }
 }

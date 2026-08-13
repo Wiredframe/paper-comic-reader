@@ -25,9 +25,10 @@ struct CoverCell: View {
     let onOpen: () -> Void
 
     @Environment(\.modelContext) private var context
+    @Environment(DownloadManager.self) private var downloads
 
     var body: some View {
-        Button(action: onOpen) {
+        Button(action: tapped) {
             VStack(spacing: 7) {
                 DiskImage(url: book.coverURL, contentMode: .fill, maxPixel: maxPixel)
                     .aspectRatio(LibraryGridMetrics.coverAspect, contentMode: .fit)
@@ -77,7 +78,7 @@ struct CoverCell: View {
                     // The favourite mark leads, then availability: what you chose about the comic
                     // comes before facts about the file, and both before how far into it you've read.
                     if book.isFavorite { FavoriteHeart() }
-                    if book.isRemote { AvailabilityBadge() }
+                    AvailabilityIndicator(book: book)
                     Text(book.pageCountLabel)
                     if book.progress > 0 { ProgressPie(progress: book.progress) }
                     // "Read" is independent of progress (browsing never overwrites it),
@@ -92,6 +93,17 @@ struct CoverCell: View {
         .accessibilityAddTraits(selectionMode && isSelected ? .isSelected : [])
         // No per-item context menu while selecting — the toolbar carries the batch actions.
         .contextMenu { if !selectionMode { menu } }
+    }
+
+    /// While this comic is being fetched, the tap stops the fetch, which is what the x in the
+    /// ring on the cell is saying and the only cancel target here big enough to hit. Otherwise
+    /// it opens the comic, as always.
+    private func tapped() {
+        if downloads.isDownloading(book.id) {
+            downloads.cancel(book.id)
+        } else {
+            onOpen()
+        }
     }
 
     /// The corner check shown in selection mode — filled accent when picked, a hollow ring
@@ -135,17 +147,9 @@ struct CoverCell: View {
                 Label("Reset Open Count", systemImage: "arrow.counterclockwise")
             }
         }
-        // Folder-backed comics can be pre-fetched or freed here — an owned copy has neither
-        // choice (its archive is simply always local).
-        if book.isRemote {
-            Button { Importer.prefetch(book, in: context) } label: {
-                Label("Download", systemImage: "arrow.down.circle")
-            }
-        } else if book.isFolderBacked {
-            Button { Importer.evictDownload(book, from: context) } label: {
-                Label("Remove Download", systemImage: "arrow.down.circle.dotted")
-            }
-        }
+        // Folder-backed comics can be fetched, stopped or freed here. An owned copy has none of
+        // those choices: its archive is simply always local.
+        DownloadMenuItems(book: book)
         Divider()
         Button(role: .destructive) { onDelete(book) } label: {
             Label(book.isFolderBacked ? "Delete Entry" : "Delete", systemImage: "trash")

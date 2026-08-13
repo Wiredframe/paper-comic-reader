@@ -72,6 +72,81 @@ struct AvailabilityBadge: View {
     }
 }
 
+/// A download in flight: the fetched share as a ring, with the mark for stopping it in the middle.
+/// The same shape iOS uses for an app downloading to the Home Screen, so it reads as "working, and
+/// you can stop it" without a label.
+///
+/// The ring animates to each new value because the copy layer reports progress once per megabyte,
+/// which without the tween would step visibly. It stays a hair short of the full circle until the
+/// bytes have actually landed: the indicator disappearing is what says "done", so a ring closing
+/// early would claim it twice.
+///
+/// Until the first megabyte it turns instead of filling. That gap is real — the copy reports
+/// nothing before it, and nothing at all for a source that can't say how big it is — and one ring
+/// that spins and then fills says "working" throughout, where a ring frozen at zero would read as
+/// stuck and a spinner stood in front of would just be two marks in one place.
+struct DownloadRing: View {
+    let progress: Double
+    var size: CGFloat = 15
+    /// `xmark` at caption sizes, where it is the only cancel mark that survives being 5 points
+    /// wide; the reader's big ring uses the stop bars instead.
+    var glyph: String = "xmark"
+    /// Everything is drawn in this one colour (the track as a faded version of it), so the ring
+    /// can sit on the accent-coloured Discover button as readably as it sits in a caption row.
+    var tint: Color = .accentColor
+    @ScaledMetric(relativeTo: .caption) private var unit: CGFloat = 1
+
+    /// Drives the waiting turn. One 360° rotation repeating forever, so it's a single
+    /// render-server animation rather than anything per frame.
+    @State private var turning = false
+
+    private var clamped: Double { min(1, max(0, progress)) }
+    private var isWaiting: Bool { clamped <= 0 }
+
+    var body: some View {
+        let side = size * unit
+        ZStack {
+            Circle()
+                .stroke(tint.opacity(0.25), lineWidth: side * 0.11)
+            Circle()
+                .trim(from: 0, to: isWaiting ? 0.25 : clamped)
+                .stroke(tint, style: StrokeStyle(lineWidth: side * 0.11, lineCap: .round))
+                .rotationEffect(.degrees(isWaiting && turning ? 270 : -90))
+                .animation(isWaiting ? .linear(duration: 0.9).repeatForever(autoreverses: false) : nil,
+                           value: turning)
+                .animation(.linear(duration: 0.25), value: clamped)
+            Image(systemName: glyph)
+                .font(.system(size: side * 0.42, weight: .bold))
+                .foregroundStyle(tint)
+        }
+        .frame(width: side, height: side)
+        .onAppear { turning = true }
+        .accessibilityLabel("Downloading")
+        .accessibilityValue(isWaiting ? "Starting" : "\(Int((clamped * 100).rounded())) percent")
+    }
+}
+
+/// What a comic's status row says about where its bytes are: nothing when it's local, the cloud
+/// when it's waiting in the library folder, the ring while it's being fetched.
+///
+/// A leaf on purpose. It looks its own download up in the environment rather than being handed one,
+/// so a progress tick re-renders this badge and nothing above it: neither the grid's memoised
+/// derivation nor the carousel's scroll (see the header of `PeekCarouselView`).
+struct AvailabilityIndicator: View {
+    let book: ComicBook
+    var size: CGFloat = 15
+
+    @Environment(DownloadManager.self) private var downloads
+
+    var body: some View {
+        if let ticket = downloads.ticket(for: book.id) {
+            DownloadRing(progress: ticket.progress, size: size)
+        } else if book.isRemote {
+            AvailabilityBadge(size: size)
+        }
+    }
+}
+
 private struct PieWedge: Shape {
     let progress: Double
     func path(in rect: CGRect) -> Path {

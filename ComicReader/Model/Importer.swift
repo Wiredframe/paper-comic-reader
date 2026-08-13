@@ -160,8 +160,8 @@ enum Importer {
     /// comic's `archiveURL`) via a temp file, so a failed or cancelled fetch never leaves a
     /// half-written archive that would read as present. Takes value types, not the `ComicBook`, so
     /// nothing main-actor-bound crosses into the background — same discipline as `PageImageStore.open`.
-    /// NOT main-actor and not detached: it's awaited straight from the reader's `.task`, so it runs
-    /// off-main AND inherits that task's cancellation (closing the reader mid-fetch cancels it).
+    /// NOT main-actor and not detached: `DownloadManager` awaits it from a task it holds, so it
+    /// runs off-main AND inherits that task's cancellation (cancelling the download stops the copy).
     /// Throws `LibrarySource.SourceError` on any failure.
     static func downloadArchive(relativePath: String, into dest: URL,
                                 onProgress: @escaping @Sendable (Double) -> Void) async throws {
@@ -174,8 +174,13 @@ enum Importer {
             throw LibrarySource.SourceError.fileMissing
         }
 
-        let temp = dest.appendingPathExtension("part")
-        try? Storage.fm.removeItem(at: temp)
+        // A name of this run's own, not a fixed `<archive>.part`. A cancelled download tidies up
+        // at its next chunk boundary, which can be up to a megabyte after the tap, so a download
+        // restarted straight away would otherwise share the temp file with the run winding down
+        // and have it deleted out from under itself. Anything left by a run that never got to
+        // tidy up (the app was killed mid-copy) is swept at the next launch: see
+        // `Storage.clearPartialDownloads`.
+        let temp = dest.appendingPathExtension("\(UUID().uuidString).part")
         do {
             try copyWithProgress(from: source, to: temp, onProgress: onProgress)
         } catch is CancellationError {
@@ -235,23 +240,10 @@ enum Importer {
         try? context.save()
     }
 
-    /// Best-effort background pre-fetch of a folder-backed comic, for the library's "Download"
-    /// menu item. Fire-and-forget: it flips the badge when the bytes land and stays quiet on
-    /// failure — progress and errors belong to opening the comic, which shows both. A no-op for
-    /// an owned copy or one already local, so callers can wire it without pre-checking.
-    @MainActor static func prefetch(_ book: ComicBook, in context: ModelContext) {
-        guard let rel = book.sourceRelativePath, book.isRemote else { return }
-        let dest = book.archiveURL
-        Task {
-            do {
-                try await downloadArchive(relativePath: rel, into: dest) { _ in }
-                book.hasLocalArchive = true
-                try? context.save()
-            } catch {
-                // Left "not downloaded" — opening it surfaces the reason.
-            }
-        }
-    }
+    // A fire-and-forget `prefetch` used to live here for the library's "Download" menu item: an
+    // unstructured task nobody held, so it couldn't be shown, cancelled, or stopped from running
+    // twice into the same temp file. Downloads are `DownloadManager`'s job now, and every caller
+    // goes through it.
 
     /// Copies a user-picked replacement archive into `destURL` (a comic's `archiveURL`) so a
     /// comic whose source went missing opens right away. Returns the pick's path relative to the

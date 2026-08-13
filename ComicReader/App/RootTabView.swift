@@ -19,7 +19,14 @@ struct RootTabView: View {
 
     @State private var screen: Screen = Self.initialScreen
     @Environment(FileOpenCoordinator.self) private var fileOpener
+    @Environment(DownloadManager.self) private var downloads
+    @Environment(\.modelContext) private var modelContext
     @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.system.rawValue
+
+    /// A download that failed, asked about here rather than in the listing that started it: the
+    /// listing may well be gone by then (`listingTab` tears an unselected tab down), and a
+    /// download outlives the view that started it by design.
+    @State private var resolveRequest: ComicResolveRequest?
 
     private static var initialScreen: Screen {
         #if DEBUG
@@ -59,6 +66,16 @@ struct RootTabView: View {
         // only bumps for those opens, so there's nothing to test: reading `pendingURL` here
         // would race the Library's own onChange, which may already have consumed it.
         .onChange(of: fileOpener.token) { _, _ in screen = .library }
+        // Hand a failed download over to the shared dialog. Resolving it starts the download
+        // again; there is nothing to cancel, the comic simply stays where it was.
+        .onChange(of: downloads.failure?.id) { _, _ in
+            guard let failure = downloads.failure else { return }
+            resolveRequest = ComicResolveRequest(book: failure.book, error: failure.error)
+            downloads.failure = nil
+        }
+        .comicResolve($resolveRequest) { book in
+            downloads.start(book, in: modelContext)
+        }
     }
 
     /// Instantiate a listing view only while its tab is SELECTED. The native TabView otherwise keeps

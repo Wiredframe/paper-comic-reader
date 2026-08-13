@@ -48,6 +48,14 @@ enum LibraryViewMode: String, CaseIterable, Identifiable {
 struct LibraryView: View {
     @Environment(\.modelContext) private var context
     @Environment(FileOpenCoordinator.self) private var fileOpener
+    /// Drives how many trailing toolbar buttons we ask for; see `toolbar`.
+    ///
+    /// On iPhone the tab bar sits at the bottom, so the navigation bar owns the whole top row.
+    /// iPadOS 26 puts the tab bar in that SAME row: in portrait, four tabs plus the search field
+    /// leave no room for two buttons, so SwiftUI folds them into a system "..." overflow and the
+    /// menu ends up a level deeper than it should be (and Shuffle vanishes from the bar entirely).
+    /// Asking for one item there instead of two keeps the menu a single tap.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @Query private var books: [ComicBook]
 
@@ -394,6 +402,14 @@ struct LibraryView: View {
     }
     #endif
 
+    /// Shuffling means "show me something else", never "open something": the carousel glides to a
+    /// random comic, and the grid / list scrolls one into view and highlights it (see focusRandom)
+    /// instead of yanking the reader open.
+    private func shuffle() {
+        if viewMode == .discover { randomTick += 1 }
+        else if let book = displayedBooks.randomElement() { focusRandom(book) }
+    }
+
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if selectionMode {
             ToolbarItem(placement: .topBarLeading) {
@@ -418,21 +434,24 @@ struct LibraryView: View {
                 .disabled(selection.isEmpty)
             }
         } else {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    // Shuffling means "show me something else", never "open something": the
-                    // carousel glides to a random comic, and the grid / list scrolls one into view
-                    // and highlights it (see focusRandom) instead of yanking the reader open.
-                    if viewMode == .discover { randomTick += 1 }
-                    else if let book = displayedBooks.randomElement() { focusRandom(book) }
-                } label: {
-                    Image(systemName: "shuffle")
+            // Its own button only where the top row has the width for it (iPhone). On iPad it
+            // rides in the menu below instead, so the bar keeps a single trailing item.
+            if horizontalSizeClass == .compact {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { shuffle() } label: {
+                        Image(systemName: "shuffle")
+                    }
+                    .accessibilityLabel("Show a random comic")
+                    .disabled(displayedBooks.isEmpty)
                 }
-                .accessibilityLabel("Show a random comic")
-                .disabled(displayedBooks.isEmpty)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if horizontalSizeClass != .compact {
+                        Button { shuffle() } label: { Label("Show a Random Comic", systemImage: "shuffle") }
+                            .disabled(displayedBooks.isEmpty)
+                        Divider()
+                    }
                     Button { showImporter = true } label: { Label("Import", systemImage: "square.and.arrow.down") }
                     Button { enterSelection() } label: { Label("Select", systemImage: "checkmark.circle") }
                         // A carousel shows one comic at a time — batch selection has nothing to act on.

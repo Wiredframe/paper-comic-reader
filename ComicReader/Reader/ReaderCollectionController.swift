@@ -80,6 +80,20 @@ final class ReaderCollectionController: UIViewController,
     /// it's on screen it also gates touches, so a turn can't be interrupted mid-flight.
     private var turnSnapshot: UIView?
 
+    /// The reader is reading one half of a spread at fit-width (picked up by a double-tap zoom,
+    /// put down by the double tap back out). Kept here because cells are recycled and this has to
+    /// outlive them: with Keep Zoom Across Pages on it's what makes the NEXT slot open zoomed too.
+    /// Tracked whether or not the setting is on (only `isCarrying` reads the setting), so switching
+    /// it mid-read doesn't need the reader to be re-armed.
+    private var carriesFocus = false
+
+    /// The slot on screen was entered from its END (a backward page change while the fit-width look
+    /// is carried), so it rests at the bottom of its page rather than the top. The half it rests on
+    /// needs no flag of its own: that is `currentPage`, which already follows the page being read.
+    /// Only `land(onSlot:)` and `settle(onPage:)` write this and `currentPage`, and they always
+    /// write both, so the two can't drift apart.
+    private var entryAtBottom = false
+
     var onPageChanged: ((Int) -> Void)?
     /// Fires when the slot now on screen holds the FINAL page. Separate from onPageChanged
     /// because `currentPage` is the slot's LEFT half: for an odd-length comic in double-page
@@ -195,6 +209,11 @@ final class ReaderCollectionController: UIViewController,
         super.viewWillTransition(to: size, with: coordinator)
         clearVisibleZoom()              // never carry a pinch transform into the rotation morph
         endActiveTurn()                 // settle any in-flight page turn before rotating
+        // The morph deliberately settles on the whole spread (see `ReaderPageCell.setRotationSpread`),
+        // so the carried fit-width look is put down here rather than fought with; the next
+        // double-tap zoom picks it up again.
+        carriesFocus = false
+        settle(onPage: currentPage)
         isRotating = true
         let newDouble = wantsDouble(for: size)
         let modeFlip = newDouble != isDouble
@@ -310,10 +329,15 @@ final class ReaderCollectionController: UIViewController,
         clearVisibleZoom()
         endActiveTurn()
         let target = clampPage(page)
-        currentPage = target
-        if let offset = offset(forSlot: paging.slot(forPage: target)) {
+        let slot = paging.slot(forPage: target)
+        // A jump is a page change too, so the carried fit-width look comes along, on the page that
+        // was actually asked for: a bookmark on a right page opens on that right page. Landing
+        // inside the spread already on screen brings no new cell with it, hence the refresh.
+        land(onSlot: slot, page: target)
+        if let offset = offset(forSlot: slot) {
             collectionView.setContentOffset(offset, animated: false)
         }
+        refreshVisibleOpenings()
         notifyPageChange()
         prefetchNeighbours(of: target)
     }
@@ -323,7 +347,10 @@ final class ReaderCollectionController: UIViewController,
     private func go(toSlot slot: Int, animated: Bool) {
         let target = min(max(slot, 0), max(paging.slotCount - 1, 0))
         guard target != paging.slot(forPage: currentPage), let offset = offset(forSlot: target) else { return }
-        currentPage = paging.pages(inSlot: target).first ?? currentPage
+        // Land BEFORE the offset moves: the cell can be shown at any point after this (a prefetched
+        // one may already exist), and `opening(forSlot:)` reads the landing, not the other way
+        // round, so nothing depends on when that happens.
+        land(onSlot: target)
         if animated {
             animatePageTurn(to: offset)
         } else {
@@ -398,6 +425,60 @@ final class ReaderCollectionController: UIViewController,
     private func clampPage(_ page: Int) -> Int { min(max(page, 0), max(pageCount - 1, 0)) }
     private func wantsDouble(for size: CGSize) -> Bool { settings.doublePage && size.width > size.height }
 
+    // MARK: Reading position (and Keep Zoom Across Pages)
+
+    /// Whether the reader is carrying the fit-width look at all. Asked at the moment a slot is
+    /// shown, never remembered on a cell, so turning the zoom on or off can't leave a slot behind
+    /// in the state it had when it was built.
+    private var isCarrying: Bool { settings.keepZoom && carriesFocus && isDouble }
+
+    /// The reader moved to another slot: a page turn, a swipe, a jump to `page`.
+    ///
+    /// One rule for all of them, in one place. Reading backward while the fit-width look is carried
+    /// enters the slot on its LAST page at the bottom, where reading forward would have left it;
+    /// everything else enters on the first page from the top. A jump names its own page and always
+    /// arrives at the top.
+    private func land(onSlot slot: Int, page: Int? = nil) {
+        let pages = paging.pages(inSlot: slot)
+        let fromEnd = page == nil && isCarrying && slot < paging.slot(forPage: currentPage)
+        entryAtBottom = fromEnd
+        currentPage = page ?? ((fromEnd ? pages.last : pages.first) ?? currentPage)
+    }
+
+    /// The reader moved WITHIN the slot on screen: a double-tap zoom, a tap-scroll across the
+    /// gutter, a hand pan. The page it rests on is now the cell's business, not the arrival's.
+    private func settle(onPage page: Int) {
+        entryAtBottom = false
+        currentPage = page
+    }
+
+    /// How `slot` should look when it goes on screen. The single source for it, so a slot can't be
+    /// prepared one way and shown another.
+    ///
+    /// The slot on screen reads its half straight off `currentPage`, which already follows the page
+    /// being read, so it stays right however long ago the cell was built. Slots either side are
+    /// answered by direction: ahead of the reader opens on the left page from the top, behind on
+    /// the right page at the bottom. That also covers a swipe, whose incoming cell is prepared
+    /// while dragging, before `currentPage` moves.
+    private func opening(forSlot slot: Int) -> ReaderPageCell.Opening {
+        let pages = paging.pages(inSlot: slot)
+        guard isCarrying, !pages.isEmpty else { return .standard }
+        let currentSlot = paging.slot(forPage: currentPage)
+        if slot == currentSlot {
+            return .page(column: pages.firstIndex(of: currentPage) ?? 0, atEnd: entryAtBottom)
+        }
+        return slot < currentSlot ? .page(column: pages.count - 1, atEnd: true)
+                                  : .page(column: 0, atEnd: false)
+    }
+
+    /// Re-settle what is already on screen. `willDisplay` covers every slot that ARRIVES; this is
+    /// for the move that doesn't bring one in, a jump landing inside the spread already shown.
+    private func refreshVisibleOpenings() {
+        for case let cell as ReaderPageCell in collectionView.visibleCells {
+            cell.prepareForDisplay(opening(forSlot: cell.slotIndex))
+        }
+    }
+
     /// Report the current page, then — separately — whether the slot on screen holds the final
     /// page. `currentPage` is the slot's left half, so the last page of an odd-length comic in
     /// double mode is the right half of the closing spread and never equals it; downstream
@@ -439,8 +520,18 @@ final class ReaderCollectionController: UIViewController,
         cv.bounds.size
     }
 
-    /// A slot that scrolls off screen resets to its default fit, so returning to it
-    /// (or reusing the cell) never shows a stuck fit-height.
+    /// How a slot looks is decided HERE, and only here: this is the one callback that fires every
+    /// time a slot actually goes on screen. `cellForItemAt` is not that moment (the collection view
+    /// builds cells ahead of time and shows them again without rebuilding them), so a look decided
+    /// there would be whatever the reader was doing when the cell happened to be built.
+    /// This runs before the cell is drawn, so settling it here is invisible.
+    func collectionView(_ cv: UICollectionView, willDisplay cell: UICollectionViewCell,
+                        forItemAt indexPath: IndexPath) {
+        (cell as? ReaderPageCell)?.prepareForDisplay(opening(forSlot: indexPath.item))
+    }
+
+    /// A slot that scrolls off screen drops back to its default fit, so a stuck fit-height never
+    /// greets you on the way back. What it opens at when it returns is decided in `willDisplay`.
     func collectionView(_ cv: UICollectionView, didEndDisplaying cell: UICollectionViewCell,
                         forItemAt indexPath: IndexPath) {
         (cell as? ReaderPageCell)?.resetToDefault()
@@ -472,11 +563,10 @@ final class ReaderCollectionController: UIViewController,
         guard !isProgrammaticScroll, collectionView.bounds.width > 0 else { return }
         let slot = Int((collectionView.contentOffset.x / collectionView.bounds.width).rounded())
         let clamped = min(max(slot, 0), max(paging.slotCount - 1, 0))
-        let landed = paging.pages(inSlot: clamped).first ?? 0
-        guard landed != currentPage else { return }
-        currentPage = landed
+        guard clamped != paging.slot(forPage: currentPage) else { return }
+        land(onSlot: clamped)          // same landing rule as a tapped turn, direction and all
         notifyPageChange()
-        prefetchNeighbours(of: landed)
+        prefetchNeighbours(of: currentPage)
     }
 
     // MARK: ReaderPageCellDelegate
@@ -505,9 +595,17 @@ final class ReaderCollectionController: UIViewController,
     func pageCell(_ cell: ReaderPageCell, didFocusPageAt globalIndex: Int) {
         let target = clampPage(globalIndex)
         guard target != currentPage else { return }
-        currentPage = target
+        settle(onPage: target)
         notifyPageChange()
         prefetchNeighbours(of: target)
+    }
+
+    /// A double tap zoomed into one half of the spread, or put it back down. That gesture is the
+    /// on / off switch for the carried fit-width look, held here rather than in the cell because
+    /// the cell is recycled at the next page change and this has to survive it.
+    func pageCell(_ cell: ReaderPageCell, didChangeFitWidthFocus focused: Bool) {
+        carriesFocus = focused
+        settle(onPage: currentPage)   // the reader is driving the page now, not its arrival
     }
 
     func pageCell(_ cell: ReaderPageCell, didChangeZoomActive active: Bool) {

@@ -40,6 +40,11 @@ protocol ReaderPageCellDelegate: AnyObject {
     /// across the enlarged page can't also swipe to the next spread) and the shell disables the
     /// interactive dismiss (so a downward pan doesn't race the sheet's drag-to-dismiss).
     func pageCell(_ cell: ReaderPageCell, didChangeZoomActive active: Bool)
+
+    /// A double tap zoomed the spread into one page (`true`) or put it back down to the whole
+    /// spread (`false`). Cells are recycled, so the controller keeps this: it's what Keep Zoom
+    /// Across Pages carries to the next slot (see `FocusEntry`).
+    func pageCell(_ cell: ReaderPageCell, didChangeFitWidthFocus focused: Bool)
 }
 
 final class ReaderPageCell: UICollectionViewCell {
@@ -74,12 +79,27 @@ final class ReaderPageCell: UICollectionViewCell {
     /// about it is persisted; see the `// MARK: Pinch Zoom` section.
     static let maxZoomScale: CGFloat = 3
 
-    /// How the slot's page(s) fill the screen.
+    /// How a slot looks the moment it goes on screen. The controller decides this, because it is
+    /// the only place that knows how the reader arrived; the cell just does as it's told.
+    enum Opening: Equatable {
+        /// The slot's own default: the whole spread, or a plain fit-width single page.
+        case standard
+        /// One half at fit-width (Keep Zoom Across Pages), resting at that page's top or, entered
+        /// from behind while reading backward, at its bottom.
+        case page(column: Int, atEnd: Bool)
+    }
+
+    /// How the slot's page(s) fill the screen. This is the whole layout state: every case says
+    /// everything `performLayout` needs, so nothing about the fit can drift into a second flag.
     private enum Fit {
         case fitWidth          // single page fills the width (may scroll vertically)
         case fitHeight         // single page fills the height (whole page, letterboxed)
         case spread            // both pages fit-width-combined (each half), vertical only
-        case focus(Int)        // both pages at fit-width each, scrolled to page 0 / 1
+        /// Both pages at fit-width each, panned to `column` (0 = left, 1 = right). `zoomed` says
+        /// whether the configurable fit-width zoom applies: it does for a deliberate double-tap
+        /// and for the look carried across page changes, but never for the rotation morph, whose
+        /// focus is a full-width endpoint.
+        case focus(column: Int, zoomed: Bool)
     }
 
     /// The page shadow: soft, sitting a little below the page, as if lit from above. Sized
@@ -122,10 +142,12 @@ final class ReaderPageCell: UICollectionViewCell {
     private var images: [UIImage?] = []
     private var loadToken = 0
     private var fit: Fit = .fitWidth
-    /// True only when `.focus` was entered by a deliberate double-tap zoom, so the
-    /// configurable fit-width zoom applies to it. The rotation morph also uses `.focus`,
-    /// but as a full-width endpoint that must NOT be zoomed — it leaves this false.
-    private var focusZoomEnabled = false
+    /// The slot was opened at the bottom of its focused page (`Opening.page(atEnd: true)`, a
+    /// backward page change), so `placeFocus` rests it there instead of at the top. Deliberately
+    /// NOT part of `fit`: it describes the arrival, not the layout, and stops being true of the
+    /// slot the moment the reader moves it (see `readerTookOver`). It does survive the extra
+    /// layouts a slot gets while its images arrive, which is the whole reason it's stored.
+    private var openAtBottom = false
     private var isDouble = false
     private var lastLaidOutBounds: CGSize = .zero
     /// The vertical offset the last tap-scroll aimed at (nil = derive from the live
@@ -237,6 +259,8 @@ final class ReaderPageCell: UICollectionViewCell {
 
     // MARK: Configure
 
+    /// Fill the cell with a slot's pages. How the slot will LOOK isn't decided here: a cell is
+    /// often built long before it is shown, so that is settled in `prepareForDisplay(_:)`.
     func configure(slotIndex: Int, pageIndices: [Int], isDouble: Bool,
                    store: PageImageStore, settings: ReaderSettings,
                    delegate: ReaderPageCellDelegate) {
@@ -245,8 +269,7 @@ final class ReaderPageCell: UICollectionViewCell {
         self.isDouble = isDouble
         self.settings = settings
         self.delegate = delegate
-        self.fit = isDouble ? .spread : .fitWidth
-        self.focusZoomEnabled = false
+        apply(.standard)
         self.images = Array(repeating: nil, count: pageIndices.count)
         self.lastLaidOutBounds = .zero
         pageViews[1].isHidden = pageIndices.count < 2
@@ -269,16 +292,52 @@ final class ReaderPageCell: UICollectionViewCell {
         }
     }
 
-    /// Back to the slot's default fit (called when it scrolls off screen), so a
-    /// stuck fit-height never greets you on the way back.
+    /// Back to the slot's default fit, called when it scrolls off screen, so a stuck fit-height
+    /// never greets you on the way back. What it will actually open at is settled when it is shown
+    /// again, in `prepareForDisplay(_:)`.
     func resetToDefault() {
         guard !images.isEmpty else { return }
         resetZoom(animated: false)
-        fit = isDouble ? .spread : .fitWidth
-        lastLaidOutBounds = .zero
+        apply(.standard)
         setNeedsLayout()
         layoutIfNeeded()
     }
+
+    /// Settle how the slot looks, right before it goes on screen. THE one place a slot's look is
+    /// decided, deliberately not `configure`: the collection view builds cells ahead of time and
+    /// shows them again without rebuilding them, so anything decided at build time would be shown
+    /// as it was whenever that happened to be. It re-fits the pages and puts the scroll back at the
+    /// slot's resting position, which is what an arriving slot wants; nothing is animated, and a
+    /// slot whose images haven't arrived is skipped by `layoutSubviews` and re-fitted when they do.
+    func prepareForDisplay(_ opening: Opening) {
+        apply(opening)
+        setNeedsLayout()
+        layoutIfNeeded()
+    }
+
+    /// The single writer of the opening state: one `Opening` in, `fit` and the arrival flag out,
+    /// so they can't be set apart from each other.
+    ///
+    /// `.page` keeps `zoomed` on because it continues a deliberate double-tap zoom, and without it
+    /// the page would snap back to full width at every page change. A slot holding a single page
+    /// (the cover, an unpaired last page) takes it too: `.focus` is fit-width there just like
+    /// `.spread`, but unlike `.spread` it honours the chosen zoom level.
+    private func apply(_ opening: Opening) {
+        switch opening {
+        case .page(let column, let atEnd) where isDouble && !pageIndices.isEmpty:
+            fit = .focus(column: min(max(column, 0), pageIndices.count - 1), zoomed: true)
+            openAtBottom = atEnd
+        default:
+            fit = isDouble ? .spread : .fitWidth
+            openAtBottom = false
+        }
+        lastLaidOutBounds = .zero
+    }
+
+    /// The reader has taken the page over (a tap-scroll, a drag, a double tap), so where it was
+    /// ENTERED no longer describes where it rests. Only the layouts that still belong to the
+    /// arrival, including the re-fits while the images arrive, put the page at its bottom.
+    private func readerTookOver() { openAtBottom = false }
 
     /// Drive one endpoint of the portrait⇄landscape rotation morph on a spread cell.
     /// `.focus` is the PORTRAIT look — the reader's page fills the width with its partner
@@ -290,8 +349,10 @@ final class ReaderPageCell: UICollectionViewCell {
     /// or an unpaired last page) has no partner, so both endpoints simply fit the width.
     func setRotationSpread(_ spread: Bool, focusPos: Int) {
         resetZoom(animated: false)   // never morph from a pinch-scaled scroll view
-        fit = spread ? .spread : .focus(focusPos)
-        focusZoomEnabled = false     // the morph's focus is a full-width endpoint, never zoomed
+        // The morph's focus is a full-width endpoint, never zoomed, and always from the top
+        // whatever the slot arrived at.
+        fit = spread ? .spread : .focus(column: focusPos, zoomed: false)
+        openAtBottom = false
         lastLaidOutBounds = .zero
         setNeedsLayout()
         layoutIfNeeded()
@@ -330,11 +391,12 @@ final class ReaderPageCell: UICollectionViewCell {
         let landscape = bounds.width > bounds.height
         let zoom = landscape ? CGFloat(settings?.doubleTapZoom ?? 1.0) : 1.0
         switch fit {
-        case .fitWidth:     place([fitWidth(0, in: bounds, zoom: zoom)], in: bounds)
-        case .fitHeight:    place([fitHeight(0, in: bounds)], in: bounds)
-        case .spread:       place(spreadSizes(in: bounds), in: bounds)
-        case .focus(let i): placeFocus(focusSizes(in: bounds, zoom: focusZoomEnabled ? zoom : 1.0),
-                                       focused: pageIndices.count > 1 ? i : 0, in: bounds)
+        case .fitWidth:  place([fitWidth(0, in: bounds, zoom: zoom)], in: bounds)
+        case .fitHeight: place([fitHeight(0, in: bounds)], in: bounds)
+        case .spread:    place(spreadSizes(in: bounds), in: bounds)
+        case .focus(let column, let zoomed):
+            placeFocus(focusSizes(in: bounds, zoom: zoomed ? zoom : 1.0),
+                       focused: pageIndices.count > 1 ? column : 0, in: bounds)
         }
         updateLiveTextEnabled(landscape: landscape)
         tapTargetY = nil          // the scroll position was just reset by the layout
@@ -492,7 +554,10 @@ final class ReaderPageCell: UICollectionViewCell {
 
         scrollView.contentInset = .zero
         scrollView.contentSize = CGSize(width: contentW, height: contentH)
-        scrollView.contentOffset = CGPoint(x: focusColumnOffsetX(focused, in: bounds), y: 0)
+        // Normally the page rests at its top; a slot entered from a backward page change rests at
+        // its bottom instead, so reading backward continues where reading forward would have left off.
+        let y = openAtBottom ? max(0, contentH - bounds.height) : 0
+        scrollView.contentOffset = CGPoint(x: focusColumnOffsetX(focused, in: bounds), y: y)
     }
 
     /// Wrap the `count` pages just laid out in ONE shadow, sized to the union of their frames,
@@ -572,7 +637,7 @@ final class ReaderPageCell: UICollectionViewCell {
     private func focusColumnOffsetX(_ col: Int, in bounds: CGSize? = nil) -> CGFloat {
         let size = bounds ?? scrollView.bounds.size
         let landscape = size.width > size.height
-        let zoom = (landscape && focusZoomEnabled) ? CGFloat(settings?.doubleTapZoom ?? 1.0) : 1.0
+        let zoom = (landscape && focusIsZoomed) ? CGFloat(settings?.doubleTapZoom ?? 1.0) : 1.0
         let pageW = size.width * zoom
         let sidePad = focusSidePad(pageWidth: pageW, in: size, pageCount: pageIndices.count)
         let count = max(pageIndices.count, 1)
@@ -599,16 +664,21 @@ final class ReaderPageCell: UICollectionViewCell {
         // A pinch-zoom is transient: a double tap first springs it back to the full page and does
         // nothing else. The fit toggle then applies from the un-zoomed page on the next double tap.
         if isZoomActive { resetZoom(animated: true); return }
+        readerTookOver()
         if isDouble {
             // Spread ⇄ zoom the tapped page (fit-width * zoom, centred), animated in place
             // (both pages stay laid out → smooth zoom, no black flash, pan to the other).
+            // Either way the controller is told, since this is the gesture that picks the
+            // carried fit-width look up and puts it back down (Keep Zoom Across Pages).
             switch fit {
-            case .focus: fit = .spread
+            case .focus:
+                fit = .spread
+                delegate?.pageCell(self, didChangeFitWidthFocus: false)
             default:
                 let column = tappedPage(atX: gesture.location(in: self).x)
-                fit = .focus(column)
-                focusZoomEnabled = true      // deliberate zoom → honour the fit-width zoom setting
-                reportFocus(column: column)  // zooming a half makes it the current page
+                fit = .focus(column: column, zoomed: true)   // deliberate zoom → honour the setting
+                reportFocus(column: column)                  // and it makes that half current
+                delegate?.pageCell(self, didChangeFitWidthFocus: true)
             }
         } else {
             fit = isFitWidth ? .fitHeight : .fitWidth
@@ -627,6 +697,15 @@ final class ReaderPageCell: UICollectionViewCell {
         if case .fitWidth = fit { return true }
         return false
     }
+
+    /// The focused half and whether it is zoomed, for the code that has to act on the focus it is
+    /// already in (tap-scroll, a hand pan across the gutter) rather than set a new one.
+    private var focusState: (column: Int, zoomed: Bool)? {
+        if case .focus(let column, let zoomed) = fit { return (column, zoomed) }
+        return nil
+    }
+
+    private var focusIsZoomed: Bool { focusState?.zoomed ?? false }
 
     private func tappedPage(atX x: CGFloat) -> Int {
         guard pageIndices.count > 1 else { return 0 }
@@ -665,8 +744,8 @@ final class ReaderPageCell: UICollectionViewCell {
         // tap turns the page like every other view. Returning false lets handleSingleTap
         // fall through to the controller (prev / next / chrome).
         if case .spread = fit { return false }
-        if case .focus(let column) = fit, pageIndices.count > 1 {
-            return focusTapScroll(forward: forward, column: column)
+        if let focus = focusState, pageIndices.count > 1 {
+            return focusTapScroll(forward: forward, focus: focus)
         }
         return scrollColumn(forward: forward, columnX: scrollView.contentOffset.x)
     }
@@ -703,6 +782,7 @@ final class ReaderPageCell: UICollectionViewCell {
     /// the previous animator) means two fast taps chain straight through to the page end.
     private func animateTapScroll(to offset: CGPoint) {
         stopTapScroll()
+        readerTookOver()
         let animator = UIViewPropertyAnimator(duration: settings?.tapScrollDuration ?? 0.25,
                                               curve: .easeInOut) { [weak self] in
             self?.scrollView.contentOffset = offset
@@ -720,24 +800,19 @@ final class ReaderPageCell: UICollectionViewCell {
 
     /// Tap-scroll inside a zoomed spread: scroll the focused page; at its bottom cross
     /// to the OTHER page at fit-width (keeping the zoom); only past the last page does
-    /// it return false, so the controller turns to the next / previous spread — which
-    /// resets the zoom. `column` is the focused page (0 = left, 1 = right).
-    private func focusTapScroll(forward: Bool, column: Int) -> Bool {
-        if scrollColumn(forward: forward, columnX: focusColumnOffsetX(column)) { return true }
+    /// it return false, so the controller turns to the next / previous spread. Crossing
+    /// the gutter enters the other page the way a page turn enters a slot: forward at its
+    /// top, backward at its bottom.
+    private func focusTapScroll(forward: Bool, focus: (column: Int, zoomed: Bool)) -> Bool {
+        if scrollColumn(forward: forward, columnX: focusColumnOffsetX(focus.column)) { return true }
         let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
-        if forward {
-            guard column == 0 else { return false }        // right page finished → next spread
-            fit = .focus(1)
-            tapTargetY = 0
-            animateTapScroll(to: CGPoint(x: focusColumnOffsetX(1), y: 0))
-            reportFocus(column: 1)                         // crossed to the right half
-        } else {
-            guard column == 1 else { return false }        // left page top → previous spread
-            fit = .focus(0)
-            tapTargetY = maxY
-            animateTapScroll(to: CGPoint(x: focusColumnOffsetX(0), y: maxY))
-            reportFocus(column: 0)                         // crossed back to the left half
-        }
+        let crossTo = forward ? 1 : 0
+        guard focus.column != crossTo else { return false }   // no page left this way → turn the slot
+        let restY = forward ? 0 : maxY
+        fit = .focus(column: crossTo, zoomed: focus.zoomed)
+        tapTargetY = restY
+        animateTapScroll(to: CGPoint(x: focusColumnOffsetX(crossTo), y: restY))
+        reportFocus(column: crossTo)
         updateLiveTextEnabled(landscape: bounds.width > bounds.height)
         return true
     }
@@ -880,7 +955,29 @@ extension ReaderPageCell: UIScrollViewDelegate {
     /// tap-scroll target, so the next tap picks up from wherever the user left the page.
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         stopTapScroll()
+        readerTookOver()
         tapTargetY = nil
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate { adoptScrolledColumn() }
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { adoptScrolledColumn() }
+
+    /// A hand-dragged pan across the gutter changes which page is being read just as a double-tap
+    /// zoom or a tap-scroll crossing does, so the focus follows it here. Without this the cell would
+    /// still hold the page you panned AWAY from: tap-scroll would jump back to it, the bookmark
+    /// would land on it, and the next page turn would carry the wrong half over.
+    private func adoptScrolledColumn() {
+        guard let focus = focusState, pageIndices.count > 1 else { return }
+        let centre = scrollView.contentOffset.x + scrollView.bounds.width / 2
+        let landed = abs(pageViews[0].frame.midX - centre) <= abs(pageViews[1].frame.midX - centre) ? 0 : 1
+        guard landed != focus.column else { return }
+        fit = .focus(column: landed, zoomed: focus.zoomed)
+        tapTargetY = nil
+        updateLiveTextEnabled(landscape: bounds.width > bounds.height)
+        reportFocus(column: landed)
     }
 }
 

@@ -55,6 +55,15 @@ final class ReaderSettings {
     /// `ReaderPageCell.focusColumnOffsetX`). Off by default, so nobody's reader shifts under them.
     var alignToEdges: Bool { didSet { defaults.set(alignToEdges, forKey: K.alignToEdges) } }
 
+    /// Carry the double-tap zoom from one double page to the next, instead of every page change
+    /// dropping back to the whole spread. Landscape double-page only, and deliberately sticky
+    /// rather than a mode: the zoom is picked up when you double-tap into a page and put down when
+    /// you double-tap back out, so with the switch on the reader still opens (and comes out of a
+    /// rotation) on the full spread. Reading forward, the next double page then opens on its left
+    /// page from the top; reading backward, the previous one opens on its right page at the bottom,
+    /// where you would have left it going the other way. Off by default.
+    var keepZoom: Bool { didSet { defaults.set(keepZoom, forKey: K.keepZoom) } }
+
     // Animation timing. With Fast Animations OFF every reader transition uses the iOS
     // defaults — the standard ~0.25s UIView.animate baseline paired with the system
     // ease-in-out curve. Every reader movement is driven by Core Animation (no custom
@@ -81,6 +90,7 @@ final class ReaderSettings {
         static let pageShadow = "reader.pageShadow"
         static let alignToEdges = "reader.alignToEdges"
         static let pageGap = "reader.pageGap"
+        static let keepZoom = "reader.keepZoom"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -93,6 +103,7 @@ final class ReaderSettings {
         doubleTapZoom = defaults.object(forKey: K.zoom) as? Double ?? 1.0
         alignToEdges = defaults.object(forKey: K.alignToEdges) as? Bool ?? false
         pageGap = defaults.object(forKey: K.pageGap) as? Bool ?? false
+        keepZoom = defaults.object(forKey: K.keepZoom) as? Bool ?? false
         // Legacy force-landscape preference from old builds. The reader now just follows the
         // device orientation, so drop any leftover value rather than let it linger.
         defaults.removeObject(forKey: "reader.forceLandscape")

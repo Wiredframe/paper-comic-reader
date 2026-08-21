@@ -126,12 +126,20 @@ enum OrientationGate {
         invalidateSupportedOrientations()
     }
 
-    /// Nudge the interface to a specific orientation *now* — the reader's manual
-    /// landscape/portrait toggle. Works even under the device rotation lock because it's
-    /// an explicit request; the mask stays permissive, so turning the device afterwards
-    /// still rotates freely.
-    static func rotate(to orientation: UIInterfaceOrientationMask) {
-        requestOrientation(orientation)
+    /// Hold the interface sideways until the reader lets go again, whatever the device is doing.
+    /// The reader's own landscape toggle; `free()` above releases it.
+    ///
+    /// This is a MASK change rather than a one-shot `requestGeometryUpdate`, and that is the
+    /// whole point. A nudge is forgotten as soon as the app goes to the background and comes
+    /// back, which is exactly how the old forced landscape used to drift out from under the
+    /// reader. The mask is what UIKit asks on every resolution, so the hold survives the round
+    /// trip without anything having to re-assert it on `scenePhase`.
+    ///
+    /// Both landscape sides stay in the mask, so with the rotation lock OFF the reader still
+    /// flips between them when the device is turned end for end.
+    static func holdLandscape() {
+        AppDelegate.mask = .landscape
+        invalidateSupportedOrientations()
     }
 
     /// Back to portrait-only (called when the reader closes), rotating the device back if

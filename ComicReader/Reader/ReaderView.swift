@@ -100,6 +100,11 @@ struct ReaderView: View {
     /// True while a page is pinch-zoomed. Disables the interactive drag-down dismiss so a
     /// downward pan across the zoomed page pans the page instead of dismissing the reader.
     @State private var isZoomed = false
+    /// The reader is holding the interface sideways, because the landscape button in the bottom
+    /// bar was tapped. Per presentation on purpose: it is an act on the comic in front of you,
+    /// not a preference, so the next comic starts on the device orientation again. Held through
+    /// a trip to another app and back, which is what `OrientationGate.holdLandscape` is for.
+    @State private var holdsLandscape = false
 
     // MARK: Folder-backed fetch (only used when this comic's bytes aren't local)
     //
@@ -308,6 +313,11 @@ struct ReaderView: View {
                 toggleBookmark()
             }
             barButton("square.grid.2x2", label: "Page grid") { showGrid = true }
+            barButton("rectangle.landscape.rotate",
+                      label: holdsLandscape ? "Follow device orientation" : "Read in landscape",
+                      tint: holdsLandscape ? .accentColor : .primary) {
+                toggleLandscapeHold()
+            }
         }
         .padding(.horizontal, 24).padding(.vertical, 13)
         .glassEffect(in: Capsule())
@@ -389,6 +399,23 @@ struct ReaderView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + OrientationGate.settleDuration) {
             dismiss()
         }
+    }
+
+    /// Turns the reader sideways and keeps it there, or hands it back to the device.
+    ///
+    /// The reader is the only thing on screen when this runs, so the rotation is the system's
+    /// own animation over the page and the spread morph that already rides it (see
+    /// `ReaderCollectionController.viewWillTransition`). Nothing else in the app is visible to
+    /// rotate with it, which is the reason this lives here rather than being decided before the
+    /// reader is presented.
+    ///
+    /// Under the device rotation lock this is the only way to reach the double-page spread at
+    /// all: iOS will not turn the interface on its own, so it has to be asked.
+    private func toggleLandscapeHold() {
+        holdsLandscape.toggle()
+        if holdsLandscape { OrientationGate.holdLandscape() } else { OrientationGate.free() }
+        // The chrome is cleared by the geometry change that follows (see `body`), so there is
+        // deliberately no fade to arrange here.
     }
 
     // MARK: Actions

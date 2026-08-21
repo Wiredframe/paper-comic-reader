@@ -17,7 +17,7 @@ final class PaperSettings {
 		didSet { defaults.set(isEnabled, forKey: K.enabled) }
 	}
 
-	var params: PaperParams = .cream {
+	var params: PaperParams = .standard {
 		didSet { persist(params) }
 	}
 
@@ -37,7 +37,7 @@ final class PaperSettings {
 		// NB: property observers do not fire during init, so this loads without
 		// immediately writing back.
 		isEnabled = defaults.object(forKey: K.enabled) as? Bool ?? true
-		let base = PaperParams.cream
+		let base = PaperParams.standard
 		params = PaperParams(
 			showThrough: Self.load(defaults, K.showThrough, base.showThrough),
 			grain:       Self.load(defaults, K.grain, base.grain),

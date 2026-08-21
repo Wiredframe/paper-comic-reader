@@ -58,6 +58,18 @@ struct SettingsView: View {
         return NavigationStack {
             ScrollViewReader { proxy in
             Form {
+                // First, deliberately: the paper effect is the thing that decides what a comic
+                // LOOKS like here, so it leads rather than sitting below the reading mechanics.
+                Section("Paper Effect") {
+                    Toggle("Paper Effect", isOn: $paper.isEnabled)
+                    NavigationLink {
+                        PaperSettingsView(settings: paper)
+                    } label: {
+                        Label("Adjust…", systemImage: "slider.horizontal.3")
+                    }
+                    .disabled(!paper.isEnabled)
+                }
+
                 Section {
                     Toggle("Double Page (Landscape)", isOn: $reader.doublePage)
                     Toggle("Page Gap", isOn: $reader.pageGap)
@@ -92,16 +104,6 @@ struct SettingsView: View {
                             Text(appearance.label).tag(appearance.rawValue)
                         }
                     }
-                }
-
-                Section("Paper Effect") {
-                    Toggle("Paper Effect", isOn: $paper.isEnabled)
-                    NavigationLink {
-                        PaperSettingsView(settings: paper)
-                    } label: {
-                        Label("Adjust…", systemImage: "slider.horizontal.3")
-                    }
-                    .disabled(!paper.isEnabled)
                 }
 
                 Section("Library") {

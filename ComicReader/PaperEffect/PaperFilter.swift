@@ -52,7 +52,7 @@ public final class PaperFilter {
 	// MARK: - Public API
 
 	/// Core transform: CIImage → CIImage.
-	public func apply(to input: CIImage, params: PaperParams = .cream) -> CIImage {
+	public func apply(to input: CIImage, params: PaperParams = .standard) -> CIImage {
 		let t = tones(warmth: params.warmth, blackLift: params.blackLift)
 
 		// 1. Compress tonal range + tint: out = in * (ceil - floor) + floor.
@@ -86,7 +86,7 @@ public final class PaperFilter {
 	}
 
 	/// Renders the effect to a new CGImage.
-	public func makeCGImage(from cg: CGImage, params: PaperParams = .cream) -> CGImage? {
+	public func makeCGImage(from cg: CGImage, params: PaperParams = .standard) -> CGImage? {
 		let input = CIImage(cgImage: cg)
 		let output = apply(to: input, params: params)
 		return context.createCGImage(output, from: input.extent,
@@ -95,7 +95,7 @@ public final class PaperFilter {
 
 	#if canImport(UIKit)
 	/// Convenience: UIImage → UIImage (nil if it can not be rendered).
-	public func apply(to image: UIImage, params: PaperParams = .cream) -> UIImage? {
+	public func apply(to image: UIImage, params: PaperParams = .standard) -> UIImage? {
 		guard let cg = image.cgImage,
 			  let out = makeCGImage(from: cg, params: params) else { return nil }
 		return UIImage(cgImage: out, scale: image.scale, orientation: image.imageOrientation)

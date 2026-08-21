@@ -61,7 +61,7 @@ final class ReaderSettings {
     /// you double-tap back out, so with the switch on the reader still opens (and comes out of a
     /// rotation) on the full spread. Reading forward, the next double page then opens on its left
     /// page from the top; reading backward, the previous one opens on its right page at the bottom,
-    /// where you would have left it going the other way. Off by default.
+    /// where you would have left it going the other way. On by default.
     var keepZoom: Bool { didSet { defaults.set(keepZoom, forKey: K.keepZoom) } }
 
     // Animation timing. With Fast Animations OFF every reader transition uses the iOS
@@ -100,10 +100,10 @@ final class ReaderSettings {
         fastAnimations = defaults.object(forKey: K.fastAnim) as? Bool ?? false
         doublePage = defaults.object(forKey: K.double) as? Bool ?? true
         pageShadow = defaults.object(forKey: K.pageShadow) as? Bool ?? true
-        doubleTapZoom = defaults.object(forKey: K.zoom) as? Double ?? 1.0
+        doubleTapZoom = defaults.object(forKey: K.zoom) as? Double ?? 0.9
         alignToEdges = defaults.object(forKey: K.alignToEdges) as? Bool ?? false
-        pageGap = defaults.object(forKey: K.pageGap) as? Bool ?? false
-        keepZoom = defaults.object(forKey: K.keepZoom) as? Bool ?? false
+        pageGap = defaults.object(forKey: K.pageGap) as? Bool ?? true
+        keepZoom = defaults.object(forKey: K.keepZoom) as? Bool ?? true
         // Legacy force-landscape preference from old builds. The reader now just follows the
         // device orientation, so drop any leftover value rather than let it linger.
         defaults.removeObject(forKey: "reader.forceLandscape")

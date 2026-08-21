@@ -101,9 +101,6 @@ final class ReaderCollectionController: UIViewController,
     /// currentPage — a `currentPage == last` read check would never fire (see ReaderView.markRead).
     var onReachedEnd: (() -> Void)?
     var onToggleChrome: (() -> Void)?
-    /// Fires when a page enters / leaves pinch-zoom, so the shell can block the interactive
-    /// dismiss while zoomed (see ReaderView). Paging is frozen here in the delegate callback.
-    var onZoomActiveChanged: ((Bool) -> Void)?
 
     private let layout = PagingFlowLayout()
     private var collectionView: UICollectionView!
@@ -194,6 +191,10 @@ final class ReaderCollectionController: UIViewController,
         // it alone and reconcile the frame when the animation completes.
         if !isRotating && !isTurning { collectionView.frame = view.bounds }
         guard collectionView.bounds.width > 0, pageCount > 0 else { return }
+        // Self-healing: paging being off is the one state a missed sync could strand the reader
+        // in, so every settled layout re-derives it from the cell rather than trusting the last
+        // write. Cheap (one lookup, one Bool) and skipped mid-rotation, where fits are transient.
+        if !isRotating { syncSidewaysNavigation() }
         if pendingInitialScroll {
             isDouble = wantsDouble(for: collectionView.bounds.size)
             collectionView.reloadData()
@@ -202,12 +203,12 @@ final class ReaderCollectionController: UIViewController,
                 collectionView.contentOffset = offset
             }
             pendingInitialScroll = false
+            syncSidewaysNavigation()
         }
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        clearVisibleZoom()              // never carry a pinch transform into the rotation morph
         endActiveTurn()                 // settle any in-flight page turn before rotating
         // The morph deliberately settles on the whole spread (see `ReaderPageCell.setRotationSpread`),
         // so the carried fit-width look is put down here rather than fought with; the next
@@ -284,6 +285,7 @@ final class ReaderCollectionController: UIViewController,
             }
             self.isRotating = false
             self.collectionView.frame = self.view.bounds   // reconcile any drift
+            self.syncSidewaysNavigation()                  // the morph rebuilt every fit
         })
     }
 
@@ -312,6 +314,7 @@ final class ReaderCollectionController: UIViewController,
         if let offset = offset(forSlot: paging.slot(forPage: page)) {
             cv.setContentOffset(offset, animated: false)
         }
+        syncSidewaysNavigation()
     }
 
     /// Rebuilds visible pages (e.g. after the paper effect toggled).
@@ -326,7 +329,6 @@ final class ReaderCollectionController: UIViewController,
 
     /// Jumps to a page (page grid / bookmarks) instantly.
     func jump(to page: Int) {
-        clearVisibleZoom()
         endActiveTurn()
         let target = clampPage(page)
         let slot = paging.slot(forPage: target)
@@ -486,6 +488,7 @@ final class ReaderCollectionController: UIViewController,
     private func notifyPageChange() {
         store.setActivePage(currentPage)   // lets superseded prefetch decodes bail (see PageImageStore)
         onPageChanged?(currentPage)
+        syncSidewaysNavigation()           // every caller here has just changed the slot or its half
         if pageCount > 0,
            paging.pages(inSlot: paging.slot(forPage: currentPage)).contains(pageCount - 1) {
             onReachedEnd?()
@@ -528,6 +531,7 @@ final class ReaderCollectionController: UIViewController,
     func collectionView(_ cv: UICollectionView, willDisplay cell: UICollectionViewCell,
                         forItemAt indexPath: IndexPath) {
         (cell as? ReaderPageCell)?.prepareForDisplay(opening(forSlot: indexPath.item))
+        syncSidewaysNavigation()
     }
 
     /// A slot that scrolls off screen drops back to its default fit, so a stuck fit-height never
@@ -606,18 +610,33 @@ final class ReaderCollectionController: UIViewController,
     func pageCell(_ cell: ReaderPageCell, didChangeFitWidthFocus focused: Bool) {
         carriesFocus = focused
         settle(onPage: currentPage)   // the reader is driving the page now, not its arrival
+        syncSidewaysNavigation()
     }
 
-    func pageCell(_ cell: ReaderPageCell, didChangeZoomActive active: Bool) {
-        // Freeze paging while a page is zoomed, so a pan across the enlarged content can't also
-        // swipe to the next spread; restore it when the zoom springs back.
-        collectionView.isScrollEnabled = !active
-        onZoomActiveChanged?(active)
+    /// The slot on screen is zoomed into its last half this way and has nothing left to cross to,
+    /// so the swipe means the next / previous spread after all.
+    func pageCell(_ cell: ReaderPageCell, didRequestTurn forward: Bool) {
+        let slot = paging.slot(forPage: currentPage)
+        go(toSlot: forward ? slot + 1 : slot - 1, animated: true)
     }
 
-    /// Clear any pinch zoom on the on-screen cells before a rotation or a programmatic jump, so
-    /// the transform never fights the frame-based morph / re-layout.
-    private func clearVisibleZoom() {
-        for case let cell as ReaderPageCell in collectionView.visibleCells { cell.clearZoom() }
+    /// Hand the collection view's paging to the slot on screen while it is zoomed into one half of
+    /// a spread, and take it back the moment it isn't.
+    ///
+    /// Paging is by SLOT, and a slot is the whole spread, so a swipe from the left half turns past
+    /// the right half without ever showing it. With Keep Zoom Across Pages on, the next spread
+    /// then opens on ITS left half, and a reader who only ever swipes sees no right page at all.
+    /// While the cell owns the direction it answers the swipe itself, crossing the gutter first
+    /// and asking for a turn only when there is nothing left to cross to — the same order the edge
+    /// taps have always used.
+    ///
+    /// Pulled from the cell rather than tracked here on purpose: the cell's `fit` is the fact, and
+    /// two copies of a fact drift. Called from every path that can change either the slot on
+    /// screen or its fit.
+    private func syncSidewaysNavigation() {
+        let slot = paging.slot(forPage: currentPage)
+        let cell = collectionView.cellForItem(at: IndexPath(item: slot, section: 0)) as? ReaderPageCell
+        collectionView.isScrollEnabled = !(cell?.ownsSidewaysNavigation ?? false)
     }
+
 }

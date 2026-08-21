@@ -24,7 +24,6 @@ struct ReaderHost: UIViewControllerRepresentable {
     var backgroundColor: UIColor
     var onToggleChrome: () -> Void
     var onReachedEnd: () -> Void
-    var onZoomActiveChanged: (Bool) -> Void
 
     func makeUIViewController(context: Context) -> ReaderCollectionController {
         let controller = ReaderCollectionController(store: store, settings: settings, startIndex: startIndex, backgroundColor: backgroundColor)
@@ -33,7 +32,6 @@ struct ReaderHost: UIViewControllerRepresentable {
         }
         controller.onToggleChrome = onToggleChrome
         controller.onReachedEnd = onReachedEnd
-        controller.onZoomActiveChanged = onZoomActiveChanged
         context.coordinator.controller = controller
         context.coordinator.lastPaperVersion = paperVersion
         return controller

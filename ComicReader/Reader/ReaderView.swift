@@ -97,9 +97,6 @@ struct ReaderView: View {
     /// class (which is regular in both orientations on iPad). Gates the drag-down dismiss —
     /// see `body`.
     @State private var isLandscape = false
-    /// True while a page is pinch-zoomed. Disables the interactive drag-down dismiss so a
-    /// downward pan across the zoomed page pans the page instead of dismissing the reader.
-    @State private var isZoomed = false
     /// The reader is holding the interface sideways, because the landscape button in the bottom
     /// bar was tapped. Per presentation on purpose: it is an act on the comic in front of you,
     /// not a preference, so the next comic starts on the device orientation again. Held through
@@ -149,8 +146,7 @@ struct ReaderView: View {
                            jumpTarget: $jumpTarget,
                            backgroundColor: readerBackgroundUIColor,
                            onToggleChrome: toggleChrome,
-                           onReachedEnd: markRead,
-                           onZoomActiveChanged: { isZoomed = $0 })
+                           onReachedEnd: markRead)
                     .ignoresSafeArea()
             } else if store != nil {
                 // Archive couldn't be opened (missing / corrupt after import).
@@ -190,7 +186,7 @@ struct ReaderView: View {
         // that only exists in portrait, and the rotation can't be got out of the way first the
         // way the Close button does it (`close()`) — an interactive dismiss is already under
         // way by the time anyone could ask. Close and the manual portrait toggle still work.
-        .interactiveDismissDisabled(isLandscape || isZoomed)
+        .interactiveDismissDisabled(isLandscape)
         .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { nowLandscape in
             guard nowLandscape != isLandscape else { return }   // a real portrait/landscape flip
             isLandscape = nowLandscape

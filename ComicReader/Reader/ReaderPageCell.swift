@@ -477,6 +477,18 @@ final class ReaderPageCell: UICollectionViewCell {
         return CGSize(width: w, height: r > 0 ? w / r : bounds.height)
     }
 
+    /// Is `.fitHeight` the tighter of the two single-page fits for this slot?
+    ///
+    /// True when the page is proportionally wider than the slot (a portrait phone holding a comic
+    /// page), because filling the height then pushes the page out past both sides. Where the slot
+    /// is the wider shape (landscape) it is the other way round and fit-width is the close-up.
+    /// The pinch reads this so that spreading the fingers always moves toward the closer fit.
+    private var fitHeightIsCloser: Bool {
+        let bounds = scrollView.bounds.size
+        guard bounds.width > 0, bounds.height > 0 else { return false }
+        return aspect(0) > bounds.width / bounds.height
+    }
+
     /// A page filling the height (fit-height): as wide as its aspect makes it.
     private func fitHeight(_ i: Int, in bounds: CGSize) -> CGSize {
         let r = aspect(i)
@@ -950,8 +962,13 @@ final class ReaderPageCell: UICollectionViewCell {
     /// Move one rung: `closer` = pinched out (more page, less of it on screen), else pinched in.
     ///
     /// The ladders, tightest first:
-    ///   single page  fit-height  →  fit-width
+    ///   single page  whole page  →  the other fit (see `fitHeightIsCloser`)
     ///   spread       whole spread  →  fit-width spread  →  one page at the chosen zoom
+    ///
+    /// Which of the two single-page fits is the CLOSER one depends on the slot, not on the name:
+    /// in landscape a page fits its height and fit-width blows it up, in portrait it fits its
+    /// width and fit-height is the one that overflows. `fitHeightIsCloser` asks the geometry
+    /// instead of assuming, so spreading the fingers always means more page, either way up.
     ///
     /// Going into a spread's focused page is the same event as the double-tap zoom, so it reports
     /// the same things: the half being read becomes current, and Keep Zoom Across Pages picks the
@@ -959,9 +976,9 @@ final class ReaderPageCell: UICollectionViewCell {
     /// answer — there is no rung to move to.
     private func stepFit(closer: Bool, atX x: CGFloat) {
         switch fit {
-        case .fitHeight where closer:
+        case .fitHeight where closer != fitHeightIsCloser:
             fit = .fitWidth
-        case .fitWidth where !closer:
+        case .fitWidth where closer == fitHeightIsCloser:
             fit = .fitHeight
         case .spreadHeight where closer:
             fit = .spread

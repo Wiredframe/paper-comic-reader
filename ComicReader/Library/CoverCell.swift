@@ -127,14 +127,14 @@ struct CoverCell: View {
             book.isFavorite.toggle()
             try? context.save()
         } label: {
-            Label(book.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+            Label(book.isFavorite ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
                   systemImage: book.isFavorite ? "heart.slash" : "heart")
         }
         Button {
             book.isRead.toggle()
             try? context.save()
         } label: {
-            Label(book.isRead ? "Mark as Unread" : "Mark as Read",
+            Label(book.isRead ? String(localized: "Mark as Unread") : String(localized: "Mark as Read"),
                   systemImage: book.isRead ? "circle" : "checkmark.circle")
         }
         // Only offered once there is something to forget: on a never-opened comic the row would
@@ -152,7 +152,7 @@ struct CoverCell: View {
         DownloadMenuItems(book: book)
         Divider()
         Button(role: .destructive) { onDelete(book) } label: {
-            Label(book.isFolderBacked ? "Delete Entry" : "Delete", systemImage: "trash")
+            Label(book.isFolderBacked ? String(localized: "Delete Entry") : String(localized: "Delete"), systemImage: "trash")
         }
     }
 }

@@ -36,7 +36,10 @@ enum LibrarySource {
 
     /// A human label for the chosen folder — its name, for the Settings row. Nil when unset.
     static var displayName: String? {
-        UserDefaults.standard.string(forKey: displayKey)
+        guard let name = UserDefaults.standard.string(forKey: displayKey) else { return nil }
+        // A folder without a name of its own is stored blank (older builds stored the English
+        // fallback itself) and named here, in the reader's language.
+        return name.isEmpty || name == "Selected folder" ? String(localized: "Selected folder") : name
     }
 
     /// Persists the picked folder as a security-scoped bookmark. `url` comes from the folder
@@ -50,8 +53,7 @@ enum LibrarySource {
         let data = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         let defaults = UserDefaults.standard
         defaults.set(data, forKey: bookmarkKey)
-        defaults.set(url.lastPathComponent.isEmpty ? "Selected folder" : url.lastPathComponent,
-                     forKey: displayKey)
+        defaults.set(url.lastPathComponent, forKey: displayKey)
     }
 
     /// Forgets the folder. Existing folder-backed comics are left in place: they simply fail to

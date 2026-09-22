@@ -17,6 +17,8 @@ struct RecentsView: View {
     private var books: [ComicBook]
 
     @State private var target: ReaderTarget?
+    /// Centres a comic in the carousel (a widget tap), so its cover is on screen to zoom out of.
+    @State private var focusBookID: UUID?
     /// Ties the carousel's cover to the reader it opens — see LibraryView.
     @Namespace private var readerZoom
 
@@ -36,7 +38,8 @@ struct RecentsView: View {
                     PeekCarouselView(books: books,
                                      showsFilters: false,
                                      onRemoveFromRecents: removeFromRecents,
-                                     transitionNamespace: readerZoom) { book, page in
+                                     transitionNamespace: readerZoom,
+                                     focusID: $focusBookID) { book, page in
                         target = ReaderTarget(book: book, page: page)
                     }
                 }
@@ -55,21 +58,37 @@ struct RecentsView: View {
             ReaderView(book: target.book, initialPage: target.page)
                 .navigationTransition(.zoom(sourceID: target.book.id, in: readerZoom))
         }
-        // Both, because this view only exists while its tab is selected: a widget tap from another
-        // tab (or a cold launch) creates it with the request already waiting, one while it is on
-        // screen arrives as a change.
+        // A widget tap. On appear too: switching tabs creates this view with the request already
+        // waiting. And on `openReaders`: a reader that was still up has just gone.
         .onAppear(perform: openWidgetRequest)
         .onChange(of: fileOpener.comicToken) { _, _ in openWidgetRequest() }
+        .onChange(of: fileOpener.openReaders) { _, _ in openWidgetRequest() }
     }
 
-    /// Opens the comic the Recent Comic widget was tapped for, at its resume page (a nil page
-    /// is exactly that, see `ReaderView.initialPage`).
+    /// Opens the comic the Recent Comic widget was tapped for, at its resume page, zooming out of
+    /// its cover in the carousel the way a tap on that cover would. That cover is the widget's own
+    /// (the top of Recents), so the motion runs on from the widget, and the zoom is also what
+    /// gives the reader its swipe-down dismiss.
+    ///
+    /// The cover is centred first and the reader presented a moment later: the zoom needs its
+    /// source laid out on screen, and a freshly created carousel isn't yet on this runloop turn.
     private func openWidgetRequest() {
-        guard let id = fileOpener.consumeComicID(), target?.book.id != id else { return }
-        var descriptor = FetchDescriptor<ComicBook>(predicate: #Predicate { $0.id == id })
-        descriptor.fetchLimit = 1
-        guard let book = try? context.fetch(descriptor).first else { return }
-        target = ReaderTarget(book: book)
+        guard fileOpener.openReaders == 0, target == nil,
+              let id = fileOpener.pendingComicID else { return }
+        focusBookID = id
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(60))
+            guard target == nil, fileOpener.openReaders == 0,
+                  fileOpener.consumeComicID() == id else { return }
+            var descriptor = FetchDescriptor<ComicBook>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            guard let book = try? context.fetch(descriptor).first else {
+                // Deleted since the widget was drawn: nothing to open, and the widget is stale.
+                RecentComicSync.refresh(in: context)
+                return
+            }
+            target = ReaderTarget(book: book)
+        }
     }
 
     /// Clears the Recents list by forgetting every open date. Comics and their

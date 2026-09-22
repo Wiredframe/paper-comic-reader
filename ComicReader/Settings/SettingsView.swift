@@ -185,7 +185,7 @@ struct SettingsView: View {
                             }
                         }
                         Button { startBackupExport() } label: {
-                            Label(backupFile == nil ? "Export Library…" : "Export Again…",
+                            Label(backupFile == nil ? String(localized: "Export Library…") : String(localized: "Export Again…"),
                                   systemImage: backupFile == nil ? "square.and.arrow.up" : "arrow.clockwise")
                         }
                         Button { present(.libraryBackup) } label: {
@@ -344,7 +344,7 @@ struct SettingsView: View {
         guard backupProgress == nil else { return }
         let backup = LibraryBackupStore.capture(from: books)
         backupFile = nil
-        backupProgress = BackupProgress(done: 0, total: 1, verb: "Exporting")
+        backupProgress = BackupProgress(done: 0, total: 1, kind: .export)
         Task {
             let result = await Task.detached(priority: .userInitiated) { () -> Result<URL, Error> in
                 do {
@@ -352,8 +352,7 @@ struct SettingsView: View {
                     // the main actor without flooding it.
                     let url = try LibraryBackupArchive.write(backup) { done, total in
                         Task { @MainActor in
-                            backupProgress = BackupProgress(done: done, total: total,
-                                                            verb: "Exporting")
+                            backupProgress = BackupProgress(done: done, total: total, kind: .export)
                         }
                     }
                     return .success(url)
@@ -375,7 +374,7 @@ struct SettingsView: View {
     /// it is discarded in every path out of here.
     private func handleBackupChosen(_ result: Result<URL, Error>) {
         guard case .success(let url) = result, backupProgress == nil else { return }
-        backupProgress = BackupProgress(done: 0, total: 1, verb: "Importing")
+        backupProgress = BackupProgress(done: 0, total: 1, kind: .import)
         Task {
             let opened = await Task.detached(priority: .userInitiated) {
                 Result { try LibraryBackupArchive.read(at: url) }
@@ -408,26 +407,23 @@ struct SettingsView: View {
     /// Plain sentences rather than a row of counts. A restore is something the reader asked for
     /// once, and what they want back is what it did.
     private func describe(_ report: LibraryBackupStore.Report, from backup: LibraryBackup) -> String {
-        let source = "Backup from \(backup.deviceName), \(backup.createdAt.formatted(date: .abbreviated, time: .shortened))."
+        let date = backup.createdAt.formatted(date: .abbreviated, time: .shortened)
+        var sentences = [String(localized: "Backup from \(backup.deviceName), \(date).")]
         guard !report.isEmpty else {
-            return "\(source) Everything in it was already here."
+            sentences.append(String(localized: "Everything in it was already here."))
+            return sentences.joined(separator: " ")
         }
         var parts: [String] = []
-        if report.comicsAdded > 0 { parts.append("added \(comics(report.comicsAdded))") }
-        if report.comicsUpdated > 0 { parts.append("updated \(comics(report.comicsUpdated))") }
-        if report.bookmarksAdded > 0 {
-            let n = report.bookmarksAdded
-            parts.append("restored \(n) bookmark\(n == 1 ? "" : "s")")
-        }
-        var sentence = "\(source) Imported: " + parts.joined(separator: ", ") + "."
+        if report.comicsAdded > 0 { parts.append(String(localized: "added \(report.comicsAdded) comics")) }
+        if report.comicsUpdated > 0 { parts.append(String(localized: "updated \(report.comicsUpdated) comics")) }
+        if report.bookmarksAdded > 0 { parts.append(String(localized: "restored \(report.bookmarksAdded) bookmarks")) }
+        sentences.append(String(localized: "Imported: \(parts.formatted(.list(type: .and)))."))
         if report.comicsWithoutArchive > 0 {
             let n = report.comicsWithoutArchive
-            sentence += " \(comics(n)) came back without \(n == 1 ? "its file" : "their files") and can't be opened until you import \(n == 1 ? "it" : "them") again."
+            sentences.append(String(localized: "\(n) comics came back without their files and can't be opened until you import them again."))
         }
-        return sentence
+        return sentences.joined(separator: " ")
     }
-
-    private func comics(_ n: Int) -> String { "\(n) comic\(n == 1 ? "" : "s")" }
 
     private var backupAlertBinding: Binding<Bool> {
         Binding(get: { backupMessage != nil }, set: { if !$0 { backupMessage = nil } })
@@ -480,9 +476,16 @@ private struct BackupFile: Identifiable {
 private struct BackupProgress {
     var done: Int
     var total: Int
-    var verb: String
+    var kind: Kind
 
-    var label: String { "\(verb) \(done) of \(total)…" }
+    enum Kind { case export, `import` }
+
+    var label: String {
+        switch kind {
+        case .export: return String(localized: "Exporting \(done) of \(total)…")
+        case .import: return String(localized: "Importing \(done) of \(total)…")
+        }
+    }
 }
 
 /// The Fit-Width Zoom row (label + live "%" + slider), split out of `SettingsView` so a drag

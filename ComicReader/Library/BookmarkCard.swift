@@ -90,7 +90,7 @@ struct BookmarkCard: View {
         // carousel's "more below" button) rather than greying them out.
         if let onAssignStory, !(bookmark.book?.stories.isEmpty ?? true) {
             Button(action: onAssignStory) {
-                Label(bookmark.hasStory ? "Change Story…" : "Assign to Story…",
+                Label(bookmark.hasStory ? String(localized: "Change Story…") : String(localized: "Assign to Story…"),
                       systemImage: "text.book.closed")
             }
         }

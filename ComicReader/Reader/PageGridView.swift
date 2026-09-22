@@ -56,7 +56,7 @@ struct PageGridView: View {
                 // the active page — otherwise the scroll target row may not exist yet.
                 .onAppear { DispatchQueue.main.async { proxy.scrollTo(current, anchor: .center) } }
             }
-            .navigationTitle("\(pageCount) page\(pageCount == 1 ? "" : "s")")
+            .navigationTitle(String(localized: "\(pageCount) pages"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

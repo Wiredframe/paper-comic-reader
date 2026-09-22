@@ -126,13 +126,13 @@ struct LibraryView: View {
     private var allSelected: Bool { !books.isEmpty && selection.count == books.count }
 
     private var navTitle: String {
-        guard selectionMode else { return "Library" }
-        return selection.isEmpty ? "Select Comics" : "\(selection.count) Selected"
+        guard selectionMode else { return String(localized: "Library") }
+        return selection.isEmpty ? String(localized: "Select Comics") : String(localized: "\(selection.count) Selected")
     }
 
     private var deleteConfirmTitle: String {
         let n = selection.count
-        return "Delete \(n) comic\(n == 1 ? "" : "s")?"
+        return String(localized: "Delete \(n) comics?")
     }
 
     /// Whether any comic carries a series — gates the Series sort, which would otherwise be a
@@ -416,7 +416,7 @@ struct LibraryView: View {
                 Button("Done") { exitSelection() }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button(allSelected ? "Deselect All" : "Select All") {
+                Button(allSelected ? String(localized: "Deselect All") : String(localized: "Select All")) {
                     if allSelected { selection.removeAll() }
                     else { selection = Set(books.map(\.id)) }
                 }
@@ -546,9 +546,9 @@ struct LibraryView: View {
 
     private var filteredEmptyTitle: String {
         switch (onlyFavorites, onlyDownloaded) {
-        case (true, true):  return "No downloaded favorites"
-        case (true, false): return "No favorites yet"
-        default:            return "No downloaded comics"
+        case (true, true):  return String(localized: "No downloaded favorites")
+        case (true, false): return String(localized: "No favorites yet")
+        default:            return String(localized: "No downloaded comics")
         }
     }
 
@@ -557,11 +557,11 @@ struct LibraryView: View {
     private var filteredEmptyMessage: String {
         switch (onlyFavorites, onlyDownloaded) {
         case (true, true):
-            return "Only favorites downloaded to this device are shown. Turn the filters off to see everything in your library."
+            return String(localized: "Only favorites downloaded to this device are shown. Turn the filters off to see everything in your library.")
         case (true, false):
-            return "No comic is marked as a favorite yet. Add one from a comic's menu, or turn the filter off to see everything in your library."
+            return String(localized: "No comic is marked as a favorite yet. Add one from a comic's menu, or turn the filter off to see everything in your library.")
         default:
-            return "Only comics downloaded to this device are shown. Turn the filter off to see everything in your library."
+            return String(localized: "Only comics downloaded to this device are shown. Turn the filter off to see everything in your library.")
         }
     }
 
@@ -708,24 +708,22 @@ struct LibraryView: View {
                     // carousel is on screen; in the grid the comic is simply present.
                     if viewMode == .discover { focusBookID = book.id }
                     if firstWasAdopted {
-                        alreadyImportedNote = "“\(book.displayTitle)” was already in your library from your comic folder. It's now downloaded."
+                        alreadyImportedNote = String(localized: "“\(book.displayTitle)” was already in your library from your comic folder. It's now downloaded.")
                     } else if firstWasDuplicate {
-                        alreadyImportedNote = "“\(book.displayTitle)” is already in your library."
+                        alreadyImportedNote = String(localized: "“\(book.displayTitle)” is already in your library.")
                     }
                 } else {
                     let name = urls[0].deletingPathExtension().lastPathComponent
-                    importError = "Couldn't open “\(name)”. It may not be a valid CBZ."
+                    importError = String(localized: "Couldn't open “\(name)”. It may not be a valid CBZ.")
                 }
             case .picker:
                 if failures > 0 {
-                    importError = "Couldn't import \(failures) file(s)."
+                    importError = String(localized: "Couldn't import \(failures) files.")
                 } else if adopted > 0 {
                     // Worth saying out loud: the picker otherwise skips duplicates in silence, and
                     // a reader who just imported five comics and sees no new covers would assume
                     // it failed rather than that the entries were already there.
-                    alreadyImportedNote = adopted == 1
-                        ? "That comic was already in your library from your comic folder. It's now downloaded."
-                        : "\(adopted) of those comics were already in your library from your comic folder. They're now downloaded."
+                    alreadyImportedNote = String(localized: "\(adopted) of those comics were already in your library from your comic folder. They're now downloaded.")
                 }
             }
         }

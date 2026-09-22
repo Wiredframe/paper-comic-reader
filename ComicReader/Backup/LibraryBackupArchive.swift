@@ -33,10 +33,10 @@ enum LibraryBackupArchive {
 
         var errorDescription: String? {
             switch self {
-            case .notABackup:       return "That file isn't a Paper Comic library backup."
-            case .unreadable:       return "The backup couldn't be read. It may be incomplete."
-            case .fromNewerVersion: return "That backup was made by a newer version of the app."
-            case .writeFailed:      return "The backup couldn't be written."
+            case .notABackup:       return String(localized: "That file isn't a Paper Comic library backup.")
+            case .unreadable:       return String(localized: "The backup couldn't be read. It may be incomplete.")
+            case .fromNewerVersion: return String(localized: "That backup was made by a newer version of the app.")
+            case .writeFailed:      return String(localized: "The backup couldn't be written.")
             }
         }
     }

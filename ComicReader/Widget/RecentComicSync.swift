@@ -35,11 +35,15 @@ enum RecentComicSync {
                                        coverSource: $0.coverName)
         }
         let current = RecentComicShared.readSnapshot()
+        let fm = FileManager.default
+        // A cover copy that failed earlier (the source was missing at the time) is retried
+        // whenever the app refreshes, not only when something else about the comic changes.
+        let coverMissing = book?.coverURL.map { fm.fileExists(atPath: $0.path) } == true
+            && !fm.fileExists(atPath: coverURL.path)
         // Nothing the widget shows changed: skip the write AND the timeline reload, which the
         // system budgets.
-        guard snapshot != current else { return }
+        guard snapshot != current || coverMissing else { return }
 
-        let fm = FileManager.default
         if let snapshot, let book {
             try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
             if snapshot.coverSource != current?.coverSource || !fm.fileExists(atPath: coverURL.path) {

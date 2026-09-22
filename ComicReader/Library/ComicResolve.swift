@@ -82,12 +82,12 @@ private struct ComicResolveModifier: ViewModifier {
     private var message: String {
         switch request?.error {
         case .notConfigured:
-            return "This comic comes from a library folder that isn’t set up on this device. Choose the folder, or pick this comic’s file directly."
+            return String(localized: "This comic comes from a library folder that isn’t set up on this device. Choose the folder, or pick this comic’s file directly.")
         case .fileMissing:
-            let title = request?.book.displayTitle ?? "This comic"
-            return "“\(title)” isn’t where it used to be in your comic folder. If the whole folder moved, update its path — that re-links everything at once. If just this file moved or was renamed, choose it directly. Or the server may simply be offline — try again later."
+            let title = request?.book.displayTitle ?? String(localized: "This comic")
+            return String(localized: "“\(title)” isn’t where it used to be in your comic folder. If the whole folder moved, update its path — that re-links everything at once. If just this file moved or was renamed, choose it directly. Or the server may simply be offline — try again later.")
         default:   // .unresolved / .copyFailed / nothing pending
-            return "Your comic folder couldn’t be reached — the server may be offline, or the folder may have moved. Update the folder path, choose this file directly, or try again on the right network."
+            return String(localized: "Your comic folder couldn’t be reached — the server may be offline, or the folder may have moved. Update the folder path, choose this file directly, or try again on the right network.")
         }
     }
 

@@ -27,6 +27,9 @@ struct RecentComicWidget: Widget {
         .description("The comic you read last. Tap to continue where you left off.")
         .supportedFamilies(Self.families)
         .contentMarginsDisabled()
+        // The cover IS the widget: StandBy and the lock screen must not strip it away as if it
+        // were decoration.
+        .containerBackgroundRemovable(false)
     }
 
     /// Extra Large Portrait only exists from iOS 27; on 26 the widget is Small only.
@@ -141,16 +144,17 @@ struct RecentComicView: View {
             // has to crop comes off the bottom. Color.clear takes exactly the tile's size and the
             // overlay aligns the oversized image within it; a flexible frame around the image
             // itself would grow to the image's size and leave it centred.
+            // In the content, not the container background: a tinted or clear home screen replaces
+            // the background with its own glass, which left this tile empty.
             Color.clear
-                .containerBackground(for: .widget) {
-                    Color.clear
-                        .overlay(alignment: .top) {
-                            Image(uiImage: cover)
-                                .resizable()
-                                .scaledToFill()
-                        }
-                        .clipped()
+                .overlay(alignment: .top) {
+                    Image(uiImage: cover)
+                        .resizable()
+                        .widgetAccentedRenderingMode(.fullColor)
+                        .scaledToFill()
                 }
+                .clipped()
+                .containerBackground(for: .widget) { Color(.secondarySystemBackground) }
         } else {
             Image(systemName: "book.closed")
                 .font(.largeTitle)
@@ -203,6 +207,7 @@ private struct ExtraLargeComicView: View {
                     .overlay(alignment: .top) {
                         Image(uiImage: cover)
                             .resizable()
+                            .widgetAccentedRenderingMode(.fullColor)
                             .aspectRatio(contentMode: .fill)
                             .frame(width: size.width, height: coverHeight, alignment: .top)
                             .clipped()
@@ -330,7 +335,7 @@ private struct ExtraLargeComicView: View {
         return min(1, max(0, Double(snapshot.lastReadPage) / Double(snapshot.pageCount - 1)))
     }
 
-    private var kicker: String {
+    private var kicker: LocalizedStringKey {
         if snapshot.isRead { return "Finished" }
         return snapshot.lastReadPage == 0 ? "Start reading" : "Continue reading"
     }

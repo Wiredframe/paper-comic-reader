@@ -20,6 +20,9 @@ enum RecentComicShared {
     /// What the widget shows and opens. The link carries only the id: the reader resolves the
     /// resume page itself at open time. The page fields are for the Extra Large tile's progress,
     /// written when the reader saves progress, not on every turn.
+    ///
+    /// Add any new field as an OPTIONAL: an app update meets the old JSON before it rewrites it,
+    /// and a snapshot that no longer decodes leaves the widget blank until the app is opened.
     struct Snapshot: Codable, Equatable {
         var bookID: UUID
         var title: String

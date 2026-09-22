@@ -37,6 +37,7 @@ struct ReaderView: View {
     @Environment(PaperSettings.self) private var paper
     @Environment(ReaderSettings.self) private var settings
     @Environment(DownloadManager.self) private var downloads
+    @Environment(FileOpenCoordinator.self) private var fileOpener
     // The reader is a fullScreenCover; `.preferredColorScheme` set on the tab view does
     // not reach it, so it reads the appearance itself to keep the reader background and
     // any presented sheets in the chosen theme.
@@ -198,7 +199,15 @@ struct ReaderView: View {
             cancelAutoHide()
         }
         .task { await setup() }
+        .onAppear { fileOpener.openReaders += 1 }
+        // A widget tap while reading: the same comic is simply kept, another one closes this
+        // reader so the root can present it (see RootTabView.presentWidgetComic).
+        .onChange(of: fileOpener.comicToken) { _, _ in
+            guard let id = fileOpener.pendingComicID else { return }
+            if id == book.id { _ = fileOpener.consumeComicID() } else { close() }
+        }
         .onDisappear {
+            fileOpener.openReaders -= 1
             cancelAutoHide()
             persistProgress()   // durable checkpoint on leaving the reader
             // Guaranteed portrait reset on close — a fallback for the controller's
@@ -321,7 +330,7 @@ struct ReaderView: View {
         .padding(.bottom, 10)
     }
 
-    private func circleButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+    private func circleButton(_ icon: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.headline)
@@ -332,7 +341,7 @@ struct ReaderView: View {
         .accessibilityLabel(label)
     }
 
-    private func barButton(_ icon: String, label: String, tint: Color = .primary, action: @escaping () -> Void) -> some View {
+    private func barButton(_ icon: String, label: LocalizedStringKey, tint: Color = .primary, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.title3)
@@ -551,6 +560,7 @@ struct ReaderView: View {
         guard !book.isRead else { return }
         book.isRead = true
         try? context.save()
+        RecentComicSync.refresh(in: context)
     }
 
     private func reloadPaper() {

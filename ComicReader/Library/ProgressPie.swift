@@ -36,7 +36,7 @@ struct ReadCheck: View {
         Image(systemName: "checkmark.circle.fill")
             .font(.system(size: size * unit))
             .foregroundStyle(.green)
-            .accessibilityLabel("Read")
+            .accessibilityLabel("Marked as read")
     }
 }
 
@@ -122,7 +122,7 @@ struct DownloadRing: View {
         .frame(width: side, height: side)
         .onAppear { turning = true }
         .accessibilityLabel("Downloading")
-        .accessibilityValue(isWaiting ? "Starting" : "\(Int((clamped * 100).rounded())) percent")
+        .accessibilityValue(isWaiting ? String(localized: "Starting") : String(localized: "\(Int((clamped * 100).rounded())) percent"))
     }
 }
 

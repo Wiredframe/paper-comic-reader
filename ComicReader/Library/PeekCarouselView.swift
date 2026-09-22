@@ -37,9 +37,9 @@ enum DiscoveryFilter: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .discover: return "Discover"
-        case .popular:  return "Popular"
-        case .dust:     return "Gathering Dust"
+        case .discover: return String(localized: "Discover")
+        case .popular:  return String(localized: "Popular")
+        case .dust:     return String(localized: "Gathering Dust")
         }
     }
 
@@ -55,17 +55,17 @@ enum DiscoveryFilter: String, CaseIterable, Identifiable {
 
     var emptyTitle: String {
         switch self {
-        case .discover: return "No comics"
-        case .popular:  return "Nothing's popular yet"
-        case .dust:     return "Nothing's gathering dust"
+        case .discover: return String(localized: "No comics")
+        case .popular:  return String(localized: "Nothing's popular yet")
+        case .dust:     return String(localized: "Nothing's gathering dust")
         }
     }
 
     var emptyMessage: String {
         switch self {
-        case .discover: return "Import a CBZ to get started."
-        case .popular:  return "Comics you open more than once show up here."
-        case .dust:     return "You've opened every comic in your library."
+        case .discover: return String(localized: "Import a CBZ to get started.")
+        case .popular:  return String(localized: "Comics you open more than once show up here.")
+        case .dust:     return String(localized: "You've opened every comic in your library.")
         }
     }
 
@@ -437,11 +437,11 @@ private struct CarouselInfoPanel: View {
                     // Discover has no cover to long-press — the deck's card opens the comic on a
                     // tap — so this menu is where favouriting lives in this mode.
                     Button { toggleFavorite(book) } label: {
-                        Label(book.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                        Label(book.isFavorite ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
                               systemImage: book.isFavorite ? "heart.slash" : "heart")
                     }
                     Button { toggleRead(book) } label: {
-                        Label(book.isRead ? "Mark as Unread" : "Mark as Read",
+                        Label(book.isRead ? String(localized: "Mark as Unread") : String(localized: "Mark as Read"),
                               systemImage: book.isRead ? "circle" : "checkmark.circle")
                     }
                     // Discover is where the open count is actually visible (the info panel's
@@ -462,7 +462,7 @@ private struct CarouselInfoPanel: View {
                     // Same library delete the cover grid offers — with the same confirmation.
                     // For a folder-backed comic this drops only the entry; the server file stays.
                     Button(role: .destructive) { bookToDelete = book } label: {
-                        Label(book.isFolderBacked ? "Delete Entry" : "Delete", systemImage: "trash")
+                        Label(book.isFolderBacked ? String(localized: "Delete Entry") : String(localized: "Delete"), systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -481,8 +481,8 @@ private struct CarouselInfoPanel: View {
     /// What the "more below" button announces. It scrolls to one page holding both, so it says
     /// whichever is actually there.
     private func moreBelowLabel(bookmarks: Int) -> String {
-        guard bookmarks > 0 else { return "Show this comic's details below" }
-        return "\(bookmarks) bookmark\(bookmarks == 1 ? "" : "s"), show below"
+        guard bookmarks > 0 else { return String(localized: "Show this comic's details below") }
+        return String(localized: "\(bookmarks) bookmarks, show below")
     }
 
     private func toggleRead(_ book: ComicBook) {

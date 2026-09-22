@@ -234,7 +234,7 @@ struct BookmarksView: View {
             } label: {
                 Image(systemName: "shuffle")
             }
-            .accessibilityLabel(viewMode == .carousel ? "Show a random bookmark" : "Open a random bookmark")
+            .accessibilityLabel(viewMode == .carousel ? String(localized: "Show a random bookmark") : String(localized: "Open a random bookmark"))
             .disabled(displayedBookmarks.isEmpty)
         }
         ToolbarItem(placement: .topBarTrailing) {
@@ -333,7 +333,7 @@ private struct BookmarkRow: View {
             // Same shape as BookmarkCard's menu: hidden when the comic has no story index.
             if let onAssignStory, !(bookmark.book?.stories.isEmpty ?? true) {
                 Button(action: onAssignStory) {
-                    Label(bookmark.hasStory ? "Change Story…" : "Assign to Story…",
+                    Label(bookmark.hasStory ? String(localized: "Change Story…") : String(localized: "Assign to Story…"),
                           systemImage: "text.book.closed")
                 }
             }

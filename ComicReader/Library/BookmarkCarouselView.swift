@@ -72,7 +72,7 @@ struct BookmarkCarouselView: View {
         // The story leads when there is one, matching the panel below: it's the most specific thing
         // anyone can say about a bookmarked page, and the deck has no caption for VoiceOver to fall
         // back on.
-        let comic = mark.book?.displayTitle ?? "Bookmark"
+        let comic = mark.book?.displayTitle ?? String(localized: "Bookmark")
         let named = mark.storyLabel.map { "\($0), \(comic)" } ?? comic
         return PeekArt(url: mark.thumbURL, aspect: mark.pageAspect ?? (2.0 / 3.0),
                        label: "\(named), \(mark.pageLabel)")
@@ -137,7 +137,7 @@ struct BookmarkCarouselView: View {
                 Menu {
                     if let onAssignStory, let book = mark.book, !book.stories.isEmpty {
                         Button { onAssignStory(mark) } label: {
-                            Label(mark.hasStory ? "Change Story…" : "Assign to Story…",
+                            Label(mark.hasStory ? String(localized: "Change Story…") : String(localized: "Assign to Story…"),
                                   systemImage: "text.book.closed")
                         }
                     }

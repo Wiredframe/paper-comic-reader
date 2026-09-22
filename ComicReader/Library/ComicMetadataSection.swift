@@ -62,7 +62,11 @@ struct ComicMetadataSection: View {
 
     private var storyList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle(book.storyCountLabel ?? "Stories")
+            if let count = book.storyCountLabel {
+                sectionTitle(verbatim: count)
+            } else {
+                sectionTitle("Stories")
+            }
             VStack(spacing: 0) {
                 // Identify by position, not story.number: the number is parsed free-text and a
                 // tagger can repeat it (restarted numbering, two "0." rows), which would collapse
@@ -81,7 +85,8 @@ struct ComicMetadataSection: View {
 
     @ViewBuilder private var credits: some View {
         let roles: [(String, String)] = [
-            ("Writer", book.writers), ("Penciller", book.pencillers), ("Inker", book.inkers)
+            (String(localized: "Writer"), book.writers), (String(localized: "Penciller"), book.pencillers),
+            (String(localized: "Inker"), book.inkers)
         ].compactMap { role, names in names?.nonEmpty.map { (role, $0) } }
 
         if !roles.isEmpty {
@@ -100,9 +105,9 @@ struct ComicMetadataSection: View {
 
     @ViewBuilder private var publication: some View {
         let fields: [(String, String)] = [
-            ("Publisher", book.publisher?.nonEmpty),
-            ("Published", book.dateLabel),
-            ("Language", languageName),
+            (String(localized: "Publisher"), book.publisher?.nonEmpty),
+            (String(localized: "Published"), book.dateLabel),
+            (String(localized: "Language"), languageName),
         ].compactMap { label, value in value.map { (label, $0) } }
 
         if !fields.isEmpty || book.webURL?.nonEmpty != nil || book.notes?.nonEmpty != nil {
@@ -140,13 +145,22 @@ struct ComicMetadataSection: View {
 
     // MARK: Pieces
 
-    private func sectionTitle(_ text: String) -> some View {
-        Text(text)
+    private func sectionTitle(_ text: LocalizedStringKey) -> some View {
+        styledSectionTitle(Text(text))
+    }
+
+    /// For a title that is already localized (the story count).
+    private func sectionTitle(verbatim text: String) -> some View {
+        styledSectionTitle(Text(text))
+    }
+
+    private func styledSectionTitle(_ text: Text) -> some View {
+        text
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.secondary)
     }
 
-    private func block(_ title: String, text: String) -> some View {
+    private func block(_ title: LocalizedStringKey, text: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle(title)
             Text(text)

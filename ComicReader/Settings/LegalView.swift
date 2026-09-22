@@ -10,7 +10,7 @@ import SwiftUI
 
 /// A plain scrollable legal document.
 struct LegalTextView: View {
-    let title: String
+    let title: LocalizedStringKey
     let body_: String
 
     var body: some View {

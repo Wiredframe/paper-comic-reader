@@ -213,7 +213,7 @@ final class ComicBook {
     var storyCountLabel: String? {
         guard !stories.isEmpty else { return nil }
         let n = stories.count
-        return "\(n) \(n == 1 ? "story" : "stories")"
+        return String(localized: "\(n) stories")
     }
 
     /// Series first, then issue number the way a human reads it ("Topolino 2" before
@@ -261,14 +261,14 @@ final class ComicBook {
     }
 
     /// "12 pages" / "1 page" — inflected for the cover and list captions.
-    var pageCountLabel: String { "\(pageCount) page\(pageCount == 1 ? "" : "s")" }
+    var pageCountLabel: String { String(localized: "\(pageCount) pages") }
 
     /// "Opened 7 times" / "Opened once" / "Never opened" — for the Discover info panel.
     var openCountLabel: String {
         switch openCount {
-        case 0:  return "Never opened"
-        case 1:  return "Opened once"
-        default: return "Opened \(openCount) times"
+        case 0:  return String(localized: "Never opened")
+        case 1:  return String(localized: "Opened once")
+        default: return String(localized: "Opened \(openCount) times")
         }
     }
 }

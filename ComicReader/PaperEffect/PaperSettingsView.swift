@@ -26,7 +26,7 @@ struct PaperSettingsView: View {
 			Section("Preset") {
 				Picker("Preset", selection: presetSelection) {
 					ForEach(PaperParams.presets.indices, id: \.self) { i in
-						Text(PaperParams.presets[i].name).tag(i)
+						Text(LocalizedStringKey(PaperParams.presets[i].name)).tag(i)   // keys added by hand to the catalog
 					}
 					Text("Custom").tag(PaperParams.presets.count)
 				}
@@ -59,7 +59,7 @@ struct PaperSettingsView: View {
 	}
 
 	@ViewBuilder
-	private func slider(_ title: String, value: Binding<CGFloat>, in range: ClosedRange<Double>) -> some View {
+	private func slider(_ title: LocalizedStringKey, value: Binding<CGFloat>, in range: ClosedRange<Double>) -> some View {
 		VStack(alignment: .leading, spacing: 2) {
 			HStack {
 				Text(title)

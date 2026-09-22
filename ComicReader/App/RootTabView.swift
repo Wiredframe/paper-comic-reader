@@ -66,8 +66,14 @@ struct RootTabView: View {
         // only bumps for those opens, so there's nothing to test: reading `pendingURL` here
         // would race the Library's own onChange, which may already have consumed it.
         .onChange(of: fileOpener.token) { _, _ in screen = .library }
-        // A tap on the Recent Comic widget: Recents presents the reader (see RecentsView).
-        .onChange(of: fileOpener.comicToken) { _, _ in screen = .recents }
+        // A tap on the Recent Comic widget: Recents opens the reader, zooming it out of the
+        // comic's own cover (see RecentsView.openWidgetRequest). Switched without animation so
+        // the tap reads as one motion, not a tab change and then a reader.
+        .onChange(of: fileOpener.comicToken) { _, _ in
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { screen = .recents }
+        }
         // Hand a failed download over to the shared dialog. Resolving it starts the download
         // again; there is nothing to cancel, the comic simply stays where it was.
         .onChange(of: downloads.failure?.id) { _, _ in

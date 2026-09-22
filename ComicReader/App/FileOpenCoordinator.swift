@@ -46,6 +46,12 @@ final class FileOpenCoordinator {
     /// import, so it travels apart from `pendingURLs` and switches to Recents, not the Library.
     private(set) var pendingComicID: UUID?
 
+    /// How many readers are on screen (0 or 1 in practice). Recents can't present the widget's
+    /// comic while a reader is still up (its own, or one on its way out with a torn-down tab), so
+    /// it waits for this to reach zero; a reader showing a different comic closes itself to make
+    /// way. Clamped, so a missed appear can never leave it negative.
+    var openReaders = 0 { didSet { if openReaders < 0 { openReaders = 0 } } }
+
     /// Bumped on every widget open, for the same reason as `token`.
     private(set) var comicToken: Int = 0
 

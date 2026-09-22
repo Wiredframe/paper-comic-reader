@@ -190,7 +190,7 @@ private struct LibraryRow: View {
                     book.isFavorite.toggle()
                     try? context.save()
                 } label: {
-                    Label(book.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                    Label(book.isFavorite ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
                           systemImage: book.isFavorite ? "heart.slash" : "heart")
                 }
                 if book.openCount > 0 {

@@ -69,7 +69,7 @@ final class Bookmark {
     var thumbURL: URL { Storage.bookmarkThumbURL(thumbName) }
 
     /// "Page 12" — the caption on every bookmark card, row and panel.
-    var pageLabel: String { "Page \(pageIndex + 1)" }
+    var pageLabel: String { String(localized: "Page \(pageIndex + 1)") }
 
     /// Whether a story has been assigned at all.
     var hasStory: Bool { storyTitle?.nonEmpty != nil }

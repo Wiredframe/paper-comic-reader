@@ -58,6 +58,9 @@ settings:
     # __CIKERNEL_METAL_VERSION__ 200, and iOS 27 passes kernel arguments the
     # modern way. The mismatch rendered every page pure white.
     MTLLINKER_FLAGS: "-framework CoreImage"
+    # Every build extracts the UI strings, so Xcode's String Catalog sync (which runs on each
+    # build) sees them all. Without it a plain build marks nearly every catalog entry "stale".
+    SWIFT_EMIT_LOC_STRINGS: YES
 
 targets:
   ComicReader:

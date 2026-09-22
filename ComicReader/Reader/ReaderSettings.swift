@@ -46,6 +46,12 @@ final class ReaderSettings {
     /// the page height and read less zoomed-in.
     var doubleTapZoom: Double { didSet { defaults.set(doubleTapZoom, forKey: K.zoom) } }
 
+    /// Open single pages in PORTRAIT at fit-height instead of fit-width, resting against the left
+    /// edge so reading starts where a page does; the overflow on the right is a pan or an edge tap
+    /// away. Only the resting fit changes: double tap and pinch still reach fit-width, and
+    /// landscape is untouched. Off by default.
+    var portraitFitHeight: Bool { didSet { defaults.set(portraitFitHeight, forKey: K.portraitFitHeight) } }
+
     /// Where a page that doesn't fill the width comes to rest. Off, it sits centred with an even
     /// gap either side. On, a zoomed double page rests its LEFT page against the screen's left edge
     /// and its RIGHT page against the right, the way a printed spread's outer margins sit, so the
@@ -75,6 +81,10 @@ final class ReaderSettings {
     var uiAnimationDuration: TimeInterval { fastAnimations ? 0.15 : 0.25 }
     /// A tap page turn (a full page slide).
     var pageTurnDuration: TimeInterval { fastAnimations ? 0.20 : 0.30 }
+    /// A page turn a swipe asked for, where the reader owns the swipe (a zoomed spread half, a
+    /// wide fit-height page). Shorter than a tap's and eased OUT, because the finger has already
+    /// supplied the start of the motion; a tap turn starting from rest would feel abrupt at this.
+    var swipeTurnDuration: TimeInterval { fastAnimations ? 0.15 : 0.22 }
     /// A tap-scroll step (the shorter vertical part-page move).
     var tapScrollDuration: TimeInterval { fastAnimations ? 0.15 : 0.25 }
     /// A double-tap fit toggle (fit-width ⇄ fit-height, spread ⇄ zoomed page).
@@ -91,6 +101,7 @@ final class ReaderSettings {
         static let alignToEdges = "reader.alignToEdges"
         static let pageGap = "reader.pageGap"
         static let keepZoom = "reader.keepZoom"
+        static let portraitFitHeight = "reader.portraitFitHeight"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -104,6 +115,7 @@ final class ReaderSettings {
         alignToEdges = defaults.object(forKey: K.alignToEdges) as? Bool ?? false
         pageGap = defaults.object(forKey: K.pageGap) as? Bool ?? true
         keepZoom = defaults.object(forKey: K.keepZoom) as? Bool ?? true
+        portraitFitHeight = defaults.object(forKey: K.portraitFitHeight) as? Bool ?? false
         // Legacy force-landscape preference from old builds. The reader now just follows the
         // device orientation, so drop any leftover value rather than let it linger.
         defaults.removeObject(forKey: "reader.forceLandscape")

@@ -89,13 +89,14 @@ struct SettingsView: View {
                     // Settings Form (which holds the library @Query). Under @Observable only the
                     // view that READS `doubleTapZoom` — the live "%" label here — is invalidated.
                     ZoomSettingRow(reader: reader)
+                    Toggle("Fit Height (Portrait)", isOn: $reader.portraitFitHeight)
                     Toggle("Align to Screen Edges", isOn: $reader.alignToEdges)
                     Toggle("Keep Zoom Across Pages", isOn: $reader.keepZoom)
                         .disabled(!reader.doublePage)
                 } header: {
                     Text("Zoom")
                 } footer: {
-                    Text("How wide a single page fills the screen, for the default view and the double-tap zoom. Lower it if fit-width feels too wide or too zoomed-in; the page then shows more of its height. Align to Screen Edges decides where the spare width goes when you zoom into one page of a double page: off, that page sits centred with an even gap either side; on, the left page rests against the left edge and the right page against the right, so the spare width shows more of the facing page instead. At 100% there is no spare width, so it changes nothing. Keep Zoom Across Pages carries that zoomed page over: turn the page and the next double page opens zoomed on its left page instead of dropping back to the whole spread (going back, on its right page at the bottom). Double-tap out and the zoom is put down again, so a comic still opens on the full spread.")
+                    Text("How wide a single page fills the screen, for the default view and the double-tap zoom. Lower it if fit-width feels too wide or too zoomed-in; the page then shows more of its height. Fit Height (Portrait) opens every single page in portrait at the screen's full height instead of its width, resting against the left edge; the rest of the page is a swipe or an edge tap away, and a double tap still switches to fit-width. Align to Screen Edges decides where the spare width goes when you zoom into one page of a double page: off, that page sits centred with an even gap either side; on, the left page rests against the left edge and the right page against the right, so the spare width shows more of the facing page instead. At 100% there is no spare width, so it changes nothing. Keep Zoom Across Pages carries that zoomed page over: turn the page and the next double page opens zoomed on its left page instead of dropping back to the whole spread (going back, on its right page at the bottom). Double-tap out and the zoom is put down again, so a comic still opens on the full spread.")
                 }
 
                 Section("Appearance") {

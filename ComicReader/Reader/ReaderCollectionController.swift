@@ -346,7 +346,7 @@ final class ReaderCollectionController: UIViewController,
 
     // MARK: Navigation
 
-    private func go(toSlot slot: Int, animated: Bool) {
+    private func go(toSlot slot: Int, animated: Bool, swiped: Bool = false) {
         let target = min(max(slot, 0), max(paging.slotCount - 1, 0))
         guard target != paging.slot(forPage: currentPage), let offset = offset(forSlot: target) else { return }
         // Land BEFORE the offset moves: the cell can be shown at any point after this (a prefetched
@@ -354,7 +354,7 @@ final class ReaderCollectionController: UIViewController,
         // round, so nothing depends on when that happens.
         land(onSlot: target)
         if animated {
-            animatePageTurn(to: offset)
+            animatePageTurn(to: offset, swiped: swiped)
         } else {
             endActiveTurn()
             collectionView.setContentOffset(offset, animated: false)
@@ -372,7 +372,7 @@ final class ReaderCollectionController: UIViewController,
     /// both slides are a single `UIView.animate` (standard ease-in-out). The snapshot sits on
     /// top for the duration, so it also swallows taps and the turn can't be interrupted into
     /// an inconsistent state.
-    private func animatePageTurn(to targetOffset: CGPoint) {
+    private func animatePageTurn(to targetOffset: CGPoint, swiped: Bool = false) {
         endActiveTurn()
         let width = collectionView.bounds.width
         guard width > 0, let snapshot = collectionView.snapshotView(afterScreenUpdates: false) else {
@@ -395,8 +395,8 @@ final class ReaderCollectionController: UIViewController,
         collectionView.setContentOffset(targetOffset, animated: false)
         collectionView.transform = CGAffineTransform(translationX: forward ? width : -width, y: 0)
 
-        UIView.animate(withDuration: settings.pageTurnDuration, delay: 0,
-                       options: [.curveEaseInOut]) {
+        UIView.animate(withDuration: swiped ? settings.swipeTurnDuration : settings.pageTurnDuration,
+                       delay: 0, options: [swiped ? .curveEaseOut : .curveEaseInOut]) {
             snapshot.frame = cvFrame.offsetBy(dx: forward ? -width : width, dy: 0)
             self.collectionView.transform = .identity
         } completion: { [weak self] _ in
@@ -617,7 +617,12 @@ final class ReaderCollectionController: UIViewController,
     /// so the swipe means the next / previous spread after all.
     func pageCell(_ cell: ReaderPageCell, didRequestTurn forward: Bool) {
         let slot = paging.slot(forPage: currentPage)
-        go(toSlot: forward ? slot + 1 : slot - 1, animated: true)
+        go(toSlot: forward ? slot + 1 : slot - 1, animated: true, swiped: true)
+    }
+
+    func pageCellDidChangeSidewaysOwnership(_ cell: ReaderPageCell) {
+        guard !isRotating else { return }   // the rotation re-syncs in its completion
+        syncSidewaysNavigation()
     }
 
     /// Hand the collection view's paging to the slot on screen while it is zoomed into one half of

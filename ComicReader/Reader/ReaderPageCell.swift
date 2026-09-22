@@ -55,6 +55,11 @@ protocol ReaderPageCellDelegate: AnyObject {
     /// slot owns sideways navigation (see `ownsSidewaysNavigation`); every other view lets the
     /// collection view page the swipe itself.
     func pageCell(_ cell: ReaderPageCell, didRequestTurn forward: Bool)
+
+    /// `ownsSidewaysNavigation` flipped because the slot's layout changed on its own (a fit change,
+    /// a page image arriving and making the page wider than the screen), so the controller should
+    /// hand the paging over or take it back.
+    func pageCellDidChangeSidewaysOwnership(_ cell: ReaderPageCell)
 }
 
 final class ReaderPageCell: UICollectionViewCell {
@@ -156,6 +161,9 @@ final class ReaderPageCell: UICollectionViewCell {
     /// Sideways navigation on a zoomed spread half, where a swipe means "the other half" rather
     /// than "the next spread" — see `ownsSidewaysNavigation`.
     private var sidewaysPan: UIPanGestureRecognizer?
+    /// The current sideways swipe has already been answered (it went far enough mid-drag), so its
+    /// end must not answer it a second time.
+    private var sidewaysPanHandled = false
 
     private(set) var slotIndex = -1
     private var pageIndices: [Int] = []          // 1 or 2 global page indices
@@ -168,6 +176,14 @@ final class ReaderPageCell: UICollectionViewCell {
     /// slot the moment the reader moves it (see `readerTookOver`). It does survive the extra
     /// layouts a slot gets while its images arrive, which is the whole reason it's stored.
     private var openAtBottom = false
+    /// The slot still rests at its default fit, nobody has double-tapped or pinched it. For a
+    /// single page that default depends on the orientation (Fit Height (Portrait) makes it
+    /// fit-height in portrait only), so it is resolved at layout time from the real bounds,
+    /// which is what keeps a rotation between the two orientations on the right default.
+    private var fitIsStandard = true
+    /// The last `ownsSidewaysNavigation` the controller was told about, so a layout only reports a
+    /// real flip. Nil after reuse: the first layout of a new slot always reports.
+    private var reportedSidewaysOwnership: Bool?
     private var isDouble = false
     private var lastLaidOutBounds: CGSize = .zero
     /// The vertical offset the last tap-scroll aimed at (nil = derive from the live
@@ -268,6 +284,7 @@ final class ReaderPageCell: UICollectionViewCell {
         lastLaidOutBounds = .zero
         tapTargetY = nil
         pendingTapDownX = nil           // the next touch re-captures it in shouldReceive
+        reportedSidewaysOwnership = nil
         pageShadow.isHidden = true      // no stale shadow before the new slot lays out
         for (i, view) in pageViews.enumerated() {
             view.image = nil
@@ -352,7 +369,22 @@ final class ReaderPageCell: UICollectionViewCell {
             fit = isDouble ? .spread : .fitWidth
             openAtBottom = false
         }
+        fitIsStandard = true
         lastLaidOutBounds = .zero
+    }
+
+    /// A single page's resting fit for `bounds`: fit-width, or fit-height in portrait with Fit
+    /// Height (Portrait) on.
+    private func standardSingleFit(in bounds: CGSize) -> Fit {
+        let portrait = bounds.height > bounds.width
+        return portrait && settings?.portraitFitHeight == true ? .fitHeight : .fitWidth
+    }
+
+    /// Whether a fit-height page rests against the LEFT edge instead of centred: the portrait
+    /// fit-height of Fit Height (Portrait), where the page is wider than the screen and reading
+    /// starts at its left. A page narrower than the screen (an iPad) stays centred.
+    private func fitHeightLeadsLeft(in bounds: CGSize) -> Bool {
+        bounds.height > bounds.width && settings?.portraitFitHeight == true
     }
 
     /// The reader has taken the page over (a tap-scroll, a drag, a double tap), so where it was
@@ -410,9 +442,11 @@ final class ReaderPageCell: UICollectionViewCell {
         // deliberate double-tap zoom — never the rotation morph.
         let landscape = bounds.width > bounds.height
         let zoom = landscape ? CGFloat(settings?.doubleTapZoom ?? 1.0) : 1.0
+        if fitIsStandard, !isDouble { fit = standardSingleFit(in: bounds) }
         switch fit {
         case .fitWidth:  place([fitWidth(0, in: bounds, zoom: zoom)], in: bounds)
-        case .fitHeight: place([fitHeight(0, in: bounds)], in: bounds)
+        case .fitHeight: place([fitHeight(0, in: bounds)], in: bounds,
+                               leadingEdge: fitHeightLeadsLeft(in: bounds))
         case .spread:    place(spreadSizes(in: bounds), in: bounds)
         case .spreadHeight: place(spreadHeightSizes(in: bounds), in: bounds)
         case .focus(let column, let zoomed):
@@ -421,6 +455,11 @@ final class ReaderPageCell: UICollectionViewCell {
         }
         updateLiveTextEnabled(landscape: landscape)
         tapTargetY = nil          // the scroll position was just reset by the layout
+        let owns = ownsSidewaysNavigation
+        if owns != reportedSidewaysOwnership {
+            reportedSidewaysOwnership = owns
+            delegate?.pageCellDidChangeSidewaysOwnership(self)
+        }
     }
 
     /// Aspect (w/h) of page `i` as the LAYOUT should use it.
@@ -549,8 +588,10 @@ final class ReaderPageCell: UICollectionViewCell {
     ///
     /// Always centres, including a fit-width page narrowed by the fit-width zoom: Align to Screen
     /// Edges is about a spread's two halves, and a lone page has no facing page to hand the spare
-    /// width to. Spread focus goes through `placeFocus` instead.
-    private func place(_ sizes: [CGSize], in bounds: CGSize) {
+    /// width to. Spread focus goes through `placeFocus` instead. The one exception is
+    /// `leadingEdge`: a row wider than the slot then rests scrolled to its LEFT end rather than its
+    /// middle (the portrait fit-height of Fit Height (Portrait)); a narrower row still centres.
+    private func place(_ sizes: [CGSize], in bounds: CGSize, leadingEdge: Bool = false) {
         let gap = sizes.count > 1 ? pageGap : 0
         let rowWidth = sizes.reduce(0) { $0 + $1.width } + gap * CGFloat(max(sizes.count - 1, 0))
         let rowHeight = sizes.map(\.height).max() ?? bounds.height
@@ -570,7 +611,7 @@ final class ReaderPageCell: UICollectionViewCell {
 
         scrollView.contentInset = .zero
         scrollView.contentSize = CGSize(width: contentW, height: contentH)
-        scrollView.contentOffset = CGPoint(x: (contentW - bounds.width) / 2, y: 0)
+        scrollView.contentOffset = CGPoint(x: leadingEdge ? 0 : (contentW - bounds.width) / 2, y: 0)
     }
 
     /// Focus placement for a spread: each page at fit-width(*zoom), the focused page brought to
@@ -714,6 +755,7 @@ final class ReaderPageCell: UICollectionViewCell {
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
         guard !images.isEmpty else { return }
         readerTookOver()
+        fitIsStandard = false
         if isDouble {
             // Spread ⇄ zoom the tapped page (fit-width * zoom, centred), animated in place
             // (both pages stay laid out → smooth zoom, no black flash, pan to the other).
@@ -797,7 +839,21 @@ final class ReaderPageCell: UICollectionViewCell {
         if let focus = focusState, pageIndices.count > 1 {
             return focusTapScroll(forward: forward, focus: focus)
         }
+        if case .fitHeight = fit, scrollRow(forward: forward) { return true }
         return scrollColumn(forward: forward)
+    }
+
+    /// Steps across a fit-height page that is WIDER than the slot (portrait with Fit Height
+    /// (Portrait) on): forward to its right end, back to its left end, then false so the page
+    /// turns. One step each way, because the overflow is a fraction of a screen, not several.
+    private func scrollRow(forward: Bool) -> Bool {
+        let maxX = max(0, scrollView.contentSize.width - scrollView.bounds.width)
+        guard maxX > 1 else { return false }
+        let x = scrollView.contentOffset.x
+        let target: CGFloat = forward ? maxX : 0
+        guard abs(x - target) > 1 else { return false }
+        animateTapScroll(to: CGPoint(x: target, y: scrollView.contentOffset.y))
+        return true
     }
 
     /// How many taps carry the reader from a page's top to its bottom.
@@ -842,11 +898,15 @@ final class ReaderPageCell: UICollectionViewCell {
     /// turn. Restarting from the live offset (`.beginFromCurrentState` semantics of stopping
     /// the previous animator) means two fast taps chain straight through to the page end.
     private func animateTapScroll(toY y: CGFloat) {
+        animateTapScroll(to: CGPoint(x: scrollView.contentOffset.x, y: y))
+    }
+
+    private func animateTapScroll(to offset: CGPoint) {
         stopTapScroll()
         readerTookOver()
         let animator = UIViewPropertyAnimator(duration: settings?.tapScrollDuration ?? 0.25,
                                               curve: .easeInOut) { [weak self] in
-            self?.scrollView.contentOffset.y = y
+            self?.scrollView.contentOffset = offset
         }
         animator.startAnimation()
         tapScrollAnimator = animator
@@ -894,16 +954,33 @@ final class ReaderPageCell: UICollectionViewCell {
         return true
     }
 
-    /// True while a sideways swipe on this slot means "the facing page" rather than "the next
-    /// spread": it holds two pages and is zoomed into one of them.
+    /// True while a sideways swipe on this slot means something inside the slot rather than "the
+    /// next slot": it holds two pages and is zoomed into one of them, or it is a single page at
+    /// fit-height wider than the screen (see `pansAcrossPage`).
     ///
     /// The reader reads this to hand the collection view's paging over and take it back (see
     /// `ReaderCollectionController.syncSidewaysNavigation`). Without it a swipe from the LEFT half
     /// turns the whole spread and the right half is never seen — which, with Keep Zoom Across
     /// Pages on, is every right page in the comic.
     var ownsSidewaysNavigation: Bool {
-        guard pageIndices.count > 1, case .focus = fit else { return false }
-        return true
+        if pageIndices.count > 1, case .focus = fit { return true }
+        return pansAcrossPage
+    }
+
+    /// A fit-height page wider than the slot (portrait, Fit Height (Portrait)): the scroll view
+    /// pans across it natively, and the page turns only on a swipe that STARTS at the edge it
+    /// points past. Without owning the direction, the collection view's paging and the page's own
+    /// pan both claimed the same swipe, so a drag across the page could turn it halfway.
+    private var pansAcrossPage: Bool {
+        guard case .fitHeight = fit else { return false }
+        return scrollView.contentSize.width > scrollView.bounds.width + 1
+    }
+
+    /// Whether the page is already at the edge a sideways swipe in this direction points past, so
+    /// the swipe is a page turn rather than a pan. Dragging LEFT reads forward.
+    private func pageAtEdge(forward: Bool) -> Bool {
+        let maxX = max(0, scrollView.contentSize.width - scrollView.bounds.width)
+        return forward ? scrollView.contentOffset.x >= maxX - 1 : scrollView.contentOffset.x <= 1
     }
 
     /// A sideways swipe while this slot owns the direction: cross to the facing page, or, if the
@@ -912,18 +989,31 @@ final class ReaderPageCell: UICollectionViewCell {
     /// Deliberately not interactive. The page does not follow the finger and then settle; the
     /// gesture is read at its end and answered with the same animation the edge taps use, so
     /// tapping and swiping produce the same movement rather than two dialects of it.
+    ///
+    /// Answered the moment the drag has gone far enough rather than when the finger lifts, so the
+    /// turn doesn't wait out the rest of the gesture; a short flick is still read at its end, from
+    /// its velocity.
     @objc private func handleSidewaysPan(_ gesture: UIPanGestureRecognizer) {
-        guard gesture.state == .ended, let focus = focusState else { return }
         let dx = gesture.translation(in: self).x
-        let vx = gesture.velocity(in: self).x
         let far = abs(dx) > bounds.width * Self.swipeDistanceFraction
-        let fast = abs(vx) > Self.swipeVelocity
-        guard far || fast else { return }               // a nudge is not a page turn
-        // Dragging LEFT (negative) reads forward, the way the collection view pages.
-        let forward = (far ? dx : vx) < 0
-        if !crossGutter(forward: forward, focus: focus) {
-            delegate?.pageCell(self, didRequestTurn: forward)
+        switch gesture.state {
+        case .began:
+            sidewaysPanHandled = false
+        case .changed where far && !sidewaysPanHandled:
+            sidewaysPanHandled = true
+            answerSwipe(forward: dx < 0)            // dragging LEFT reads forward
+        case .ended where !sidewaysPanHandled:
+            let vx = gesture.velocity(in: self).x
+            guard abs(vx) > Self.swipeVelocity else { return }   // a nudge is not a page turn
+            answerSwipe(forward: vx < 0)
+        default:
+            break
         }
+    }
+
+    private func answerSwipe(forward: Bool) {
+        if let focus = focusState, crossGutter(forward: forward, focus: focus) { return }
+        delegate?.pageCell(self, didRequestTurn: forward)
     }
 
     // MARK: Pinch
@@ -995,6 +1085,7 @@ final class ReaderPageCell: UICollectionViewCell {
         default:
             return                      // already at the end of this ladder
         }
+        fitIsStandard = false
         readerTookOver()
         applyLayout(animated: true)
     }
@@ -1084,13 +1175,21 @@ extension ReaderPageCell: UIGestureRecognizerDelegate {
         guard gestureRecognizer === sidewaysPan else { return true }
         guard ownsSidewaysNavigation, let pan = sidewaysPan else { return false }
         let v = pan.velocity(in: self)
-        return abs(v.x) > abs(v.y)
+        guard abs(v.x) > abs(v.y) else { return false }
+        // Across a wide fit-height page the swipe is the scroll view's pan, until the page is at
+        // the edge it points past: only a swipe that begins there turns the page.
+        if pansAcrossPage { return pageAtEdge(forward: v.x < 0) }
+        return true
     }
 
     /// The pinch reads alongside the scroll view's own pan, so two fingers laid on a page that is
     /// already being dragged still register as a pinch. That pair only; nothing else composes.
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        gestureRecognizer === zoomPinch && other === scrollView.panGestureRecognizer
+        if gestureRecognizer === zoomPinch && other === scrollView.panGestureRecognizer { return true }
+        // At the edge of a wide fit-height page the scroll view's pan also begins (the page is
+        // scrollable, just not that way), and it must not swallow the turning swipe.
+        return gestureRecognizer === sidewaysPan && other === scrollView.panGestureRecognizer
+            && pansAcrossPage
     }
 }

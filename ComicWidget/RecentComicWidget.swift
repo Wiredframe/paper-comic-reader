@@ -32,11 +32,16 @@ struct RecentComicWidget: Widget {
         .containerBackgroundRemovable(false)
     }
 
-    /// Extra Large Portrait only exists from iOS 27; on 26 the widget is Small only.
+    /// Extra Large Portrait only exists from iOS 27; on 26 the widget is Small only. The compiler
+    /// check is for the SDK: the family doesn't exist before the iOS 27 SDK (Swift 6.4, Xcode 27),
+    /// and the GitHub release runner still builds with Xcode 26, whose sideload build then ships
+    /// the Small widget only.
     private static var families: [WidgetFamily] {
+        #if compiler(>=6.4)
         if #available(iOS 27.0, *) {
             return [.systemSmall, .systemExtraLargePortrait]
         }
+        #endif
         return [.systemSmall]
     }
 }

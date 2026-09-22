@@ -10,6 +10,7 @@ import SwiftData
 
 struct RecentsView: View {
     @Environment(\.modelContext) private var context
+    @Environment(FileOpenCoordinator.self) private var fileOpener
 
     @Query(filter: #Predicate<ComicBook> { $0.dateOpened != nil },
            sort: \ComicBook.dateOpened, order: .reverse)
@@ -54,6 +55,21 @@ struct RecentsView: View {
             ReaderView(book: target.book, initialPage: target.page)
                 .navigationTransition(.zoom(sourceID: target.book.id, in: readerZoom))
         }
+        // Both, because this view only exists while its tab is selected: a widget tap from another
+        // tab (or a cold launch) creates it with the request already waiting, one while it is on
+        // screen arrives as a change.
+        .onAppear(perform: openWidgetRequest)
+        .onChange(of: fileOpener.comicToken) { _, _ in openWidgetRequest() }
+    }
+
+    /// Opens the comic the Recent Comic widget was tapped for, at its resume page (a nil page
+    /// is exactly that, see `ReaderView.initialPage`).
+    private func openWidgetRequest() {
+        guard let id = fileOpener.consumeComicID(), target?.book.id != id else { return }
+        var descriptor = FetchDescriptor<ComicBook>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        guard let book = try? context.fetch(descriptor).first else { return }
+        target = ReaderTarget(book: book)
     }
 
     /// Clears the Recents list by forgetting every open date. Comics and their
@@ -61,6 +77,7 @@ struct RecentsView: View {
     private func clearRecents() {
         for book in books { book.dateOpened = nil }
         try? context.save()
+        RecentComicSync.refresh(in: context)
     }
 
     /// Drops one comic from Recents without touching the library, its bookmarks or its open
@@ -69,5 +86,6 @@ struct RecentsView: View {
     private func removeFromRecents(_ book: ComicBook) {
         book.dateOpened = nil
         try? context.save()
+        RecentComicSync.refresh(in: context)
     }
 }

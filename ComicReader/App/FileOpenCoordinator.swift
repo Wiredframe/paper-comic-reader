@@ -39,4 +39,23 @@ final class FileOpenCoordinator {
         defer { pendingURLs = [] }
         return pendingURLs
     }
+
+    // MARK: Widget
+
+    /// A comic the Recent Comic widget asked to open, waiting for Recents to present it. Not an
+    /// import, so it travels apart from `pendingURLs` and switches to Recents, not the Library.
+    private(set) var pendingComicID: UUID?
+
+    /// Bumped on every widget open, for the same reason as `token`.
+    private(set) var comicToken: Int = 0
+
+    func request(comicID: UUID) {
+        pendingComicID = comicID
+        comicToken &+= 1
+    }
+
+    func consumeComicID() -> UUID? {
+        defer { pendingComicID = nil }
+        return pendingComicID
+    }
 }

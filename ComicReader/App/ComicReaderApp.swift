@@ -45,6 +45,8 @@ struct ComicReaderApp: App {
     /// begun in a listing, watched in the reader, still running after either goes away.
     @State private var downloads = DownloadManager()
 
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         // Fold the old `library.listMode` Bool into the three-way view mode. Property
         // initializers run before this, but nothing reads @AppStorage until the WindowGroup
@@ -77,9 +79,15 @@ struct ComicReaderApp: App {
                     // Caches this device's name for the backup document, which names the library
                     // it came from. UIDevice is main-actor bound and the capture may not be.
                     BackupDevice.refreshName()
+                    RecentComicSync.refresh(in: modelContainer.mainContext)
                 }
         }
         .modelContainer(modelContainer)
+        // Leaving the foreground re-checks the widget, which catches what no view reports on its
+        // own: a deleted comic, a restored backup. A no-op when nothing it shows has changed.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { RecentComicSync.refresh(in: modelContainer.mainContext) }
+        }
     }
 
     /// Handles a comic opened from the Files app, another app's "Open With", or the
@@ -92,6 +100,10 @@ struct ComicReaderApp: App {
     /// comic ever appeared.
     @MainActor
     private func handleOpenURL(_ url: URL) {
+        if let bookID = RecentComicShared.bookID(from: url) {
+            fileOpener.request(comicID: bookID)
+            return
+        }
         fileOpener.request(url: url)
     }
 }

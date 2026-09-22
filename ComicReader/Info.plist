@@ -12,6 +12,20 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 
+	<!-- papercomic://open?book=<uuid>, the link the Recent Comic widget opens
+	     (see RecentComicShared). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>de.wiredframe.comicreader.widget-link</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>papercomic</string>
+			</array>
+		</dict>
+	</array>
+
 	<!-- The app uses only standard, exempt encryption (HTTPS). -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>

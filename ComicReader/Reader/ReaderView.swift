@@ -517,6 +517,7 @@ struct ReaderView: View {
         }
         book.dateOpened = .now
         try? context.save()
+        RecentComicSync.refresh(in: context)
     }
 
     // MARK: Resolve a missing source
@@ -541,6 +542,7 @@ struct ReaderView: View {
         guard book.lastReadPage != currentPage else { return }
         book.lastReadPage = currentPage
         try? context.save()
+        RecentComicSync.refresh(in: context)
     }
 
     /// Mark the comic read once the last page is reached. Never un-marks automatically —

@@ -2,8 +2,8 @@
 //  SettingsView.swift
 //  Comic Reader
 //
-//  The Settings tab: reader behaviour, the global paper effect, and a little
-//  library info — laid out like the reference app's grouped sections.
+//  The Settings tab: how pages look, how they turn, portrait and landscape reading, then the
+//  library (folder, backup, storage) and the app's info.
 //
 
 import SwiftUI
@@ -58,9 +58,15 @@ struct SettingsView: View {
         return NavigationStack {
             ScrollViewReader { proxy in
             Form {
-                // First, deliberately: the paper effect is the thing that decides what a comic
-                // LOOKS like here, so it leads rather than sitting below the reading mechanics.
-                Section("Paper Effect") {
+                // Grouped by what a reader thinks about rather than by how the code is split: how
+                // pages look, how they turn, then one section per way of holding the device, so
+                // someone who only ever reads in portrait never has to make sense of the rest.
+                Section {
+                    Picker("Theme", selection: $appearanceRaw) {
+                        ForEach(AppAppearance.allCases) { appearance in
+                            Text(appearance.label).tag(appearance.rawValue)
+                        }
+                    }
                     Toggle("Paper Effect", isOn: $paper.isEnabled)
                     NavigationLink {
                         PaperSettingsView(settings: paper)
@@ -68,45 +74,48 @@ struct SettingsView: View {
                         Label("Adjust…", systemImage: "slider.horizontal.3")
                     }
                     .disabled(!paper.isEnabled)
+                    Toggle("Page Shadow", isOn: $reader.pageShadow)
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("Paper Effect gives pages the warm tone and grain of printed paper. Page Shadow rests a page on the background with a soft shadow wherever it doesn't reach the screen edge.")
                 }
 
                 Section {
-                    Toggle("Double Page (Landscape)", isOn: $reader.doublePage)
+                    Toggle("Tap to Navigate", isOn: $reader.tapToNavigate)
+                    Toggle("Fast Animations", isOn: $reader.fastAnimations)
+                    Toggle("Live Text", isOn: $reader.liveText)
+                } header: {
+                    Text("Page Turning")
+                } footer: {
+                    Text("Tap to Navigate moves on when you tap the left or right edge of the screen; swiping always works too. Fast Animations makes page turns and zooms snappier. Live Text lets you select text on a page by pressing and holding.")
+                }
+
+                Section {
+                    Toggle("Continuous Scrolling", isOn: $reader.continuousScroll)
+                    Toggle("Open at Full Height", isOn: $reader.portraitFitHeight)
+                } header: {
+                    Text("Portrait")
+                } footer: {
+                    Text("In portrait the pages sit side by side in one strip; double-tap or pinch to switch between full height and screen width. Continuous Scrolling lets you scroll freely instead of page by page. Open at Full Height starts every comic at full height instead of screen width.")
+                }
+
+                Section {
+                    Toggle("Double Page", isOn: $reader.doublePage)
                     Toggle("Page Gap", isOn: $reader.pageGap)
                         .disabled(!reader.doublePage)
-                    Toggle("Page Shadow", isOn: $reader.pageShadow)
-                    Toggle("Portrait Strip", isOn: $reader.portraitStrip)
-                    Toggle("Tap to Navigate", isOn: $reader.tapToNavigate)
-                    Toggle("Live Text", isOn: $reader.liveText)
-                    Toggle("Fast Animations", isOn: $reader.fastAnimations)
-                } header: {
-                    Text("Reader")
-                } footer: {
-                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Page Gap leaves a thin line of the background between those two pages so they read as two sheets instead of one wide one; a page with no facing page is unaffected. Page Shadow rests the page on its background with a soft shadow, wherever the page doesn't reach the screen edge; without a gap a double page casts one shadow around the pair rather than down the middle, and with one each page casts its own. Portrait Strip lays the whole comic out as one continuous band, every page at the screen's full height, and you scroll through it freely instead of turning pages; a double tap or a pinch switches the whole band between full height and screen width, and the reader stays in portrait. Tap to Navigate lets you tap the left/right edges to move through the page half a screen at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
-                }
-
-                Section {
                     // Its own view so dragging the slider re-renders just this row, not the whole
                     // Settings Form (which holds the library @Query). Under @Observable only the
-                    // view that READS `doubleTapZoom` — the live "%" label here — is invalidated.
+                    // view that READS `doubleTapZoom` (the live "%" label here) is invalidated.
                     ZoomSettingRow(reader: reader)
-                    Toggle("Fit Height (Portrait)", isOn: $reader.portraitFitHeight)
-                        .disabled(reader.portraitStrip)   // the strip is always at full height
                     Toggle("Align to Screen Edges", isOn: $reader.alignToEdges)
+                        .disabled(!reader.doublePage)
                     Toggle("Keep Zoom Across Pages", isOn: $reader.keepZoom)
                         .disabled(!reader.doublePage)
                 } header: {
-                    Text("Zoom")
+                    Text("Landscape")
                 } footer: {
-                    Text("How wide a single page fills the screen, for the default view and the double-tap zoom. Lower it if fit-width feels too wide or too zoomed-in; the page then shows more of its height. Fit Height (Portrait) opens every single page in portrait at the screen's full height instead of its width, resting against the left edge; the rest of the page is a swipe or an edge tap away, and a double tap still switches to fit-width. Align to Screen Edges decides where the spare width goes when you zoom into one page of a double page: off, that page sits centred with an even gap either side; on, the left page rests against the left edge and the right page against the right, so the spare width shows more of the facing page instead. At 100% there is no spare width, so it changes nothing. Keep Zoom Across Pages carries that zoomed page over: turn the page and the next double page opens zoomed on its left page instead of dropping back to the whole spread (going back, on its right page at the bottom). Double-tap out and the zoom is put down again, so a comic still opens on the full spread.")
-                }
-
-                Section("Appearance") {
-                    Picker("Theme", selection: $appearanceRaw) {
-                        ForEach(AppAppearance.allCases) { appearance in
-                            Text(appearance.label).tag(appearance.rawValue)
-                        }
-                    }
+                    Text("Double Page shows two pages side by side (the cover alone, then pairs), and Page Gap leaves a thin line between them. Page Width When Zoomed sets how much of the screen's width a page fills; lower it to see more of the page's height. Align to Screen Edges rests a zoomed left page against the left edge and a right page against the right. Keep Zoom Across Pages stays zoomed into a page when you turn to the next double page.")
                 }
 
                 Section("Library") {
@@ -200,16 +209,13 @@ struct SettingsView: View {
                     Text("Export writes your whole library to a single file: every comic's details, reading progress, bookmarks, favorites and covers, plus the CBZ files of comics you imported by hand, since those have no other source. Comics that come from your comic folder travel as references and fetch themselves on the other device, so a large folder library still exports as a small file.\n\nImporting adds comics that are missing and overwrites the reading progress of ones already here with what the backup holds. Bookmarks are only ever added, never removed, so restoring an older backup can't cost you one.")
                 }
 
-                Section("Project") {
+                Section("About") {
                     Link(destination: repoURL) {
                         Label("View on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                     }
                     Link(destination: issuesURL) {
                         Label("Report an Issue", systemImage: "exclamationmark.bubble")
                     }
-                }
-
-                Section("About") {
                     NavigationLink {
                         LegalTextView(title: "Terms of Use", body_: Legal.terms)
                     } label: { Label("Terms of Use", systemImage: "doc.text") }
@@ -500,7 +506,7 @@ private struct ZoomSettingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Fit-Width Zoom")
+                Text("Page Width When Zoomed")
                 Spacer()
                 Text("\(Int((reader.doubleTapZoom * 100).rounded()))%")
                     .foregroundStyle(.secondary)

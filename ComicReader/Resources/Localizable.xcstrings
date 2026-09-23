@@ -963,6 +963,22 @@
         }
       }
     },
+    "Continuous Scrolling": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durchgehend scrollen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scorrimento continuo"
+          }
+        }
+      }
+    },
     "Copying…": {
       "localizations": {
         "de": {
@@ -1385,34 +1401,18 @@
         }
       }
     },
-    "Double Page (Landscape)": {
+    "Double Page shows two pages side by side (the cover alone, then pairs), and Page Gap leaves a thin line between them. Page Width When Zoomed sets how much of the screen's width a page fills; lower it to see more of the page's height. Align to Screen Edges rests a zoomed left page against the left edge and a right page against the right. Keep Zoom Across Pages stays zoomed into a page when you turn to the next double page.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Doppelseite (Querformat)"
+            "value": "Doppelseite zeigt zwei Seiten nebeneinander (das Cover allein, danach Paare), und Seitenabstand lässt eine schmale Linie zwischen ihnen frei. Seitenbreite beim Zoomen legt fest, wie viel der Bildschirmbreite eine Seite einnimmt; ein kleinerer Wert zeigt mehr von der Seitenhöhe. An Bildschirmränder ausrichten legt eine gezoomte linke Seite an den linken und eine rechte Seite an den rechten Rand. Zoom beim Blättern behalten bleibt in eine Seite hineingezoomt, wenn du zur nächsten Doppelseite blätterst."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Doppia pagina (orizzontale)"
-          }
-        }
-      }
-    },
-    "Double Page shows two pages side by side in landscape (cover alone, then pairs). Page Gap leaves a thin line of the background between those two pages so they read as two sheets instead of one wide one; a page with no facing page is unaffected. Page Shadow rests the page on its background with a soft shadow, wherever the page doesn't reach the screen edge; without a gap a double page casts one shadow around the pair rather than down the middle, and with one each page casts its own. Portrait Strip lays the whole comic out as one continuous band, every page at the screen's full height, and you scroll through it freely instead of turning pages; a double tap or a pinch switches the whole band between full height and screen width, and the reader stays in portrait. Tap to Navigate lets you tap the left/right edges to move through the page half a screen at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Doppelseite zeigt im Querformat zwei Seiten nebeneinander (das Cover allein, danach Paare). Seitenabstand lässt zwischen den beiden Seiten eine schmale Linie des Hintergrunds frei, sodass sie wie zwei Blätter wirken statt wie ein breites; eine Seite ohne Gegenseite bleibt unverändert. Seitenschatten legt die Seite mit einem weichen Schatten auf ihren Hintergrund, überall dort, wo sie nicht bis an den Bildschirmrand reicht; ohne Abstand wirft eine Doppelseite einen gemeinsamen Schatten um das Paar statt durch die Mitte, mit Abstand wirft jede Seite ihren eigenen. Seitenband legt den ganzen Comic als ein durchgehendes Band aus, jede Seite in voller Bildschirmhöhe, und du scrollst frei hindurch, statt umzublättern; Doppeltippen oder Zusammenziehen mit zwei Fingern schaltet das ganze Band zwischen voller Höhe und Bildschirmbreite um, und die Leseansicht bleibt im Hochformat. Tippen zum Blättern lässt dich an den linken und rechten Rand tippen, um dich jeweils einen halben Bildschirm weit durch die Seite zu bewegen und umzublättern; Wischen blättert weiterhin um. Live Text lässt dich Text auf einer Seite durch langes Drücken auswählen."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Doppia pagina mostra due pagine affiancate in orizzontale (la copertina da sola, poi a coppie). Spazio tra le pagine lascia una sottile linea di sfondo tra le due pagine, così sembrano due fogli invece di uno largo; una pagina senza pagina a fronte non cambia. Ombra della pagina appoggia la pagina sullo sfondo con un’ombra morbida, ovunque non arrivi al bordo dello schermo; senza spazio una doppia pagina proietta un’unica ombra intorno alla coppia invece che al centro, con lo spazio ogni pagina proietta la propria. Nastro continuo dispone l’intero fumetto in un’unica fascia, ogni pagina all’altezza piena dello schermo, e la scorri liberamente invece di voltare pagina; un doppio tocco o un pizzico alterna l’intera fascia tra altezza piena e larghezza dello schermo, e la lettura resta in verticale. Tocca per sfogliare ti permette di toccare i bordi sinistro e destro per scorrere la pagina di mezzo schermo alla volta e voltare pagina; puoi comunque voltare pagina con uno swipe. Testo live ti permette di selezionare il testo di una pagina tenendolo premuto."
+            "value": "Doppia pagina mostra due pagine affiancate (la copertina da sola, poi a coppie), e Spazio tra le pagine lascia una sottile linea tra di esse. Larghezza pagina con lo zoom stabilisce quanta larghezza dello schermo occupa una pagina; riducila per vedere più altezza della pagina. Allinea ai bordi dello schermo appoggia una pagina sinistra ingrandita al bordo sinistro e una destra al bordo destro. Mantieni lo zoom tra le pagine resta ingrandito su una pagina quando passi alla doppia pagina successiva."
           }
         }
       }
@@ -1594,38 +1594,6 @@
         }
       }
     },
-    "Fit Height (Portrait)": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Volle Höhe (Hochformat)"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Altezza piena (verticale)"
-          }
-        }
-      }
-    },
-    "Fit-Width Zoom": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zoom bei voller Breite"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zoom a tutta larghezza"
-          }
-        }
-      }
-    },
     "Folder": {
       "localizations": {
         "de": {
@@ -1702,22 +1670,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Grana"
-          }
-        }
-      }
-    },
-    "How wide a single page fills the screen, for the default view and the double-tap zoom. Lower it if fit-width feels too wide or too zoomed-in; the page then shows more of its height. Fit Height (Portrait) opens every single page in portrait at the screen's full height instead of its width, resting against the left edge; the rest of the page is a swipe or an edge tap away, and a double tap still switches to fit-width. Align to Screen Edges decides where the spare width goes when you zoom into one page of a double page: off, that page sits centred with an even gap either side; on, the left page rests against the left edge and the right page against the right, so the spare width shows more of the facing page instead. At 100% there is no spare width, so it changes nothing. Keep Zoom Across Pages carries that zoomed page over: turn the page and the next double page opens zoomed on its left page instead of dropping back to the whole spread (going back, on its right page at the bottom). Double-tap out and the zoom is put down again, so a comic still opens on the full spread.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wie breit eine einzelne Seite den Bildschirm füllt, in der Standardansicht und beim Doppeltipp-Zoom. Verringere den Wert, wenn volle Breite zu breit oder zu stark vergrößert wirkt; die Seite zeigt dann mehr von ihrer Höhe. Volle Höhe (Hochformat) öffnet im Hochformat jede Einzelseite in voller Bildschirmhöhe statt in voller Breite, am linken Rand ausgerichtet; den Rest der Seite erreichst du mit einem Wisch oder einem Tipp an den Rand, und ein Doppeltipp wechselt weiterhin zur vollen Breite. An Bildschirmränder ausrichten bestimmt, wohin die übrige Breite geht, wenn du in eine Seite einer Doppelseite zoomst: Ist die Option aus, sitzt die Seite mittig mit gleichem Abstand links und rechts; ist sie an, liegt die linke Seite am linken Rand und die rechte am rechten, sodass die übrige Breite mehr von der Gegenseite zeigt. Bei 100 Prozent gibt es keine übrige Breite, dann ändert sich nichts. Zoom beim Blättern behalten nimmt die gezoomte Seite mit: Blätterst du um, öffnet die nächste Doppelseite gezoomt auf ihrer linken Seite, statt auf die ganze Doppelseite zurückzuspringen (rückwärts auf ihrer rechten Seite, unten). Zoomst du per Doppeltipp wieder heraus, endet der Zoom, und ein Comic öffnet weiterhin auf der ganzen Doppelseite."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quanto una pagina singola riempie lo schermo in larghezza, nella vista predefinita e con lo zoom a doppio tocco. Riducilo se la larghezza piena sembra troppo larga o troppo ingrandita; la pagina mostrerà più della sua altezza. Altezza piena (verticale) apre in verticale ogni pagina singola all’altezza piena dello schermo invece che alla larghezza, allineata al bordo sinistro; il resto della pagina è a uno scorrimento o a un tocco sul bordo di distanza, e un doppio tocco passa comunque alla larghezza piena. Allinea ai bordi dello schermo decide dove va la larghezza in più quando ingrandisci una pagina di una doppia pagina: disattivato, la pagina resta centrata con lo stesso spazio ai lati; attivato, la pagina sinistra si appoggia al bordo sinistro e quella destra al bordo destro, così la larghezza in più mostra di più la pagina a fronte. Al 100 percento non c’è larghezza in più, quindi non cambia nulla. Mantieni lo zoom tra le pagine porta con sé la pagina ingrandita: volta pagina e la doppia pagina successiva si apre ingrandita sulla pagina sinistra invece di tornare all’intera doppia pagina (tornando indietro, sulla pagina destra in basso). Riduci lo zoom con un doppio tocco e lo zoom si disattiva, quindi un fumetto si apre comunque sull’intera doppia pagina."
           }
         }
       }
@@ -1850,6 +1802,22 @@
         }
       }
     },
+    "In portrait the pages sit side by side in one strip; double-tap or pinch to switch between full height and screen width. Continuous Scrolling lets you scroll freely instead of page by page. Open at Full Height starts every comic at full height instead of screen width.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Hochformat liegen die Seiten nebeneinander in einem Band; tippe doppelt oder ziehe mit zwei Fingern, um zwischen voller Höhe und Bildschirmbreite zu wechseln. Durchgehend scrollen lässt dich frei scrollen statt Seite für Seite. In voller Höhe öffnen startet jeden Comic in voller Höhe statt in Bildschirmbreite."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In verticale le pagine stanno una accanto all’altra in un’unica fascia; tocca due volte o pizzica per passare dall’altezza piena alla larghezza dello schermo. Scorrimento continuo ti permette di scorrere liberamente invece che pagina per pagina. Apri ad altezza piena avvia ogni fumetto ad altezza piena invece che alla larghezza dello schermo."
+          }
+        }
+      }
+    },
     "Inker": {
       "localizations": {
         "de": {
@@ -1878,6 +1846,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mantieni lo zoom tra le pagine"
+          }
+        }
+      }
+    },
+    "Landscape": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Querformat"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orizzontale"
           }
         }
       }
@@ -2444,6 +2428,22 @@
         }
       }
     },
+    "Open at Full Height": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In voller Höhe öffnen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apri ad altezza piena"
+          }
+        }
+      }
+    },
     "Open this comic": {
       "localizations": {
         "de": {
@@ -2588,6 +2588,38 @@
         }
       }
     },
+    "Page Turning": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blättern"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sfogliare"
+          }
+        }
+      }
+    },
+    "Page Width When Zoomed": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seitenbreite beim Zoomen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Larghezza pagina con lo zoom"
+          }
+        }
+      }
+    },
     "Page grid": {
       "localizations": {
         "de": {
@@ -2616,6 +2648,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Effetto carta"
+          }
+        }
+      }
+    },
+    "Paper Effect gives pages the warm tone and grain of printed paper. Page Shadow rests a page on the background with a soft shadow wherever it doesn't reach the screen edge.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Papiereffekt gibt den Seiten den warmen Ton und die Körnung von bedrucktem Papier. Seitenschatten legt eine Seite mit einem weichen Schatten auf den Hintergrund, überall dort, wo sie nicht bis an den Bildschirmrand reicht."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effetto carta dà alle pagine il tono caldo e la grana della carta stampata. Ombra della pagina appoggia la pagina sullo sfondo con un’ombra morbida, ovunque non arrivi al bordo dello schermo."
           }
         }
       }
@@ -2668,18 +2716,18 @@
         }
       }
     },
-    "Portrait Strip": {
+    "Portrait": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seitenband (Hochformat)"
+            "value": "Hochformat"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nastro continuo (verticale)"
+            "value": "Verticale"
           }
         }
       }
@@ -2712,22 +2760,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Privacy"
-          }
-        }
-      }
-    },
-    "Project": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Projekt"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Progetto"
           }
         }
       }
@@ -2824,22 +2856,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Leggi in orizzontale"
-          }
-        }
-      }
-    },
-    "Reader": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lesen"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lettore"
           }
         }
       }
@@ -3484,6 +3500,22 @@
         }
       }
     },
+    "Tap to Navigate moves on when you tap the left or right edge of the screen; swiping always works too. Fast Animations makes page turns and zooms snappier. Live Text lets you select text on a page by pressing and holding.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tippen zum Blättern geht weiter, wenn du auf den linken oder rechten Bildschirmrand tippst; Wischen funktioniert immer auch. Schnelle Animationen macht Seitenwechsel und Zoom flotter. Live Text lässt dich Text auf einer Seite durch langes Drücken auswählen."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tocca per sfogliare va avanti quando tocchi il bordo sinistro o destro dello schermo; anche lo swipe funziona sempre. Animazioni rapide rende più scattanti i cambi pagina e lo zoom. Testo live ti permette di selezionare il testo di una pagina tenendolo premuto."
+          }
+        }
+      }
+    },
     "Terms of Use": {
       "localizations": {
         "de": {
@@ -3864,22 +3896,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Impossibile raggiungere la cartella dei fumetti. Il server potrebbe essere offline o la cartella potrebbe essere stata spostata. Aggiorna il percorso della cartella, scegli direttamente questo file o riprova dalla rete giusta."
-          }
-        }
-      }
-    },
-    "Zoom": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zoom"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zoom"
           }
         }
       }

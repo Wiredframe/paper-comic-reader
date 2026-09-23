@@ -3,8 +3,8 @@
 //  Comic Reader
 //
 //  Bridges the UIKit reader into SwiftUI: reports the current page, forwards taps, applies
-//  reading-mode / paper changes, and jumps. The reader is the paging ReaderCollectionController,
-//  or the ReaderStripController when the portrait strip is on; both speak `ReaderControlling`.
+//  reading-mode / paper changes, and jumps. The reader is ReaderContainerController, which shows
+//  the strip in portrait and the paging reader in landscape; all three speak `ReaderControlling`.
 //
 
 import SwiftUI
@@ -16,6 +16,9 @@ protocol ReaderControlling: UIViewController {
     var onPageChanged: ((Int) -> Void)? { get set }
     var onReachedEnd: (() -> Void)? { get set }
     var onToggleChrome: (() -> Void)? { get set }
+    /// A pull down asked to close the comic (landscape, where the system's drag-down dismiss
+    /// is off; see ReaderView).
+    var onDismissRequest: (() -> Void)? { get set }
     func syncLayoutMode()
     func setBackground(_ color: UIColor)
     func reloadCurrent()
@@ -33,9 +36,6 @@ struct ReaderHost: UIViewControllerRepresentable {
     /// the reader's own Double-Page toggle re-renders the host and reaches `syncLayoutMode()`
     /// below — `settings` is no longer an `@ObservedObject`, so nothing else would trigger it.
     var doublePage: Bool
-    /// Read the whole comic as one continuous strip (see `ReaderStripController`). Decided once,
-    /// when the reader is built: the setting lives in Settings, out of reach while reading.
-    var portraitStrip: Bool
     let startIndex: Int
     @Binding var currentPage: Int
     var paperVersion: Int
@@ -43,16 +43,17 @@ struct ReaderHost: UIViewControllerRepresentable {
     var backgroundColor: UIColor
     var onToggleChrome: () -> Void
     var onReachedEnd: () -> Void
+    var onRequestClose: () -> Void
 
     func makeUIViewController(context: Context) -> UIViewController {
-        let controller: ReaderControlling = portraitStrip
-            ? ReaderStripController(store: store, settings: settings, startIndex: startIndex, backgroundColor: backgroundColor)
-            : ReaderCollectionController(store: store, settings: settings, startIndex: startIndex, backgroundColor: backgroundColor)
+        let controller = ReaderContainerController(store: store, settings: settings, startIndex: startIndex,
+                                                   backgroundColor: backgroundColor)
         controller.onPageChanged = { index in
             if currentPage != index { currentPage = index }
         }
         controller.onToggleChrome = onToggleChrome
         controller.onReachedEnd = onReachedEnd
+        controller.onDismissRequest = onRequestClose
         context.coordinator.controller = controller
         context.coordinator.lastPaperVersion = paperVersion
         return controller

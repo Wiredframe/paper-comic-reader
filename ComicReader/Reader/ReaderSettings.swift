@@ -41,24 +41,23 @@ final class ReaderSettings {
     /// next open rather than mid-read — there's no way to reach Settings from the reader anyway.
     var pageShadow: Bool { didSet { defaults.set(pageShadow, forKey: K.pageShadow) } }
 
-    /// How wide a single page fills the screen at fit-width (the default single-page look
-    /// and the double-tap zoom). 1.0 = full width; lower values (down to 0.7) show more of
-    /// the page height and read less zoomed-in.
+    /// How wide a single page fills the screen at fit-width in LANDSCAPE (the default single-page
+    /// look and a spread's double-tap zoom). 1.0 = full width; lower values (down to 0.7) show more
+    /// of the page height and read less zoomed-in. The portrait strip ignores it: there its
+    /// neighbours already frame the page.
     var doubleTapZoom: Double { didSet { defaults.set(doubleTapZoom, forKey: K.zoom) } }
 
-    /// Open single pages in PORTRAIT at fit-height instead of fit-width, resting against the left
-    /// edge so reading starts where a page does; the overflow on the right is a pan or an edge tap
-    /// away. Only the resting fit changes: double tap and pinch still reach fit-width, and
-    /// landscape is untouched. Off by default.
+    /// Open the portrait strip at full height instead of fit-width. Only where a comic opens:
+    /// double tap and pinch still switch between the two, and landscape is untouched. Off by
+    /// default.
     var portraitFitHeight: Bool { didSet { defaults.set(portraitFitHeight, forKey: K.portraitFitHeight) } }
 
-    /// Read in PORTRAIT as one continuous horizontal strip instead of turning pages: every page at
-    /// the screen's full height, side by side with a one-pixel seam, scrolled freely with no
-    /// snapping and no edge taps. A double tap or pinch switches the whole band to fit-width and
-    /// back, for that comic only. The page covering the middle of the screen is the current one
-    /// (counter, bookmark, progress). While it is on, the reader stays in portrait and offers no
-    /// landscape. Read when the reader opens. Off by default.
-    var portraitStrip: Bool { didSet { defaults.set(portraitStrip, forKey: K.portraitStrip) } }
+    /// How the portrait strip moves. Off, it reads page by page: every swipe or edge tap goes to
+    /// the next stop (a page's left edge, and for a page wider than the screen also its right
+    /// edge). On, it scrolls freely and only never comes to rest with a seam on screen. Stored
+    /// under the key of the old Portrait Strip switch, whose "on" meant exactly this. Off by
+    /// default.
+    var continuousScroll: Bool { didSet { defaults.set(continuousScroll, forKey: K.continuousScroll) } }
 
     /// Where a page that doesn't fill the width comes to rest. Off, it sits centred with an even
     /// gap either side. On, a zoomed double page rests its LEFT page against the screen's left edge
@@ -110,7 +109,7 @@ final class ReaderSettings {
         static let pageGap = "reader.pageGap"
         static let keepZoom = "reader.keepZoom"
         static let portraitFitHeight = "reader.portraitFitHeight"
-        static let portraitStrip = "reader.portraitStrip"
+        static let continuousScroll = "reader.portraitStrip"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -125,7 +124,7 @@ final class ReaderSettings {
         pageGap = defaults.object(forKey: K.pageGap) as? Bool ?? true
         keepZoom = defaults.object(forKey: K.keepZoom) as? Bool ?? true
         portraitFitHeight = defaults.object(forKey: K.portraitFitHeight) as? Bool ?? false
-        portraitStrip = defaults.object(forKey: K.portraitStrip) as? Bool ?? false
+        continuousScroll = defaults.object(forKey: K.continuousScroll) as? Bool ?? false
         // Legacy force-landscape preference from old builds. The reader now just follows the
         // device orientation, so drop any leftover value rather than let it linger.
         defaults.removeObject(forKey: "reader.forceLandscape")

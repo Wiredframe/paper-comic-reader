@@ -2,8 +2,9 @@
 //  ReaderView.swift
 //  Comic Reader
 //
-//  The reading experience: a full-bleed paged, zoomable view. Tap toggles the
-//  chrome (top: close + page counter; bottom: bookmark, page grid, bookmarks).
+//  The reading experience: the page strip in portrait, the paged spreads in landscape (see
+//  ReaderContainerController). Tap toggles the chrome (top: close + page counter; bottom:
+//  bookmark, page grid, landscape).
 //  Resumes on the last read page, saves progress, and records the open time so
 //  the book surfaces in Recents.
 //
@@ -141,14 +142,14 @@ struct ReaderView: View {
                            // @Observable tracking that read is what re-renders here and drives
                            // updateUIViewController → syncLayoutMode when the toggle flips.
                            doublePage: settings.doublePage,
-                           portraitStrip: settings.portraitStrip,
                            startIndex: clampedStart(store.pageCount),
                            currentPage: $currentPage,
                            paperVersion: paperVersion,
                            jumpTarget: $jumpTarget,
                            backgroundColor: readerBackgroundUIColor,
                            onToggleChrome: toggleChrome,
-                           onReachedEnd: markRead)
+                           onReachedEnd: markRead,
+                           onRequestClose: close)
                     .ignoresSafeArea()
             } else if store != nil {
                 // Archive couldn't be opened (missing / corrupt after import).
@@ -184,10 +185,11 @@ struct ReaderView: View {
         }
         .statusBarHidden(!chromeVisible)
         .preferredColorScheme(AppAppearance.from(appearanceRaw).colorScheme)
-        // No drag-down dismiss while sideways. The zoom would have to land back on a cover
+        // No SYSTEM drag-down dismiss while sideways. The zoom would have to land back on a cover
         // that only exists in portrait, and the rotation can't be got out of the way first the
-        // way the Close button does it (`close()`) — an interactive dismiss is already under
-        // way by the time anyone could ask. Close and the manual portrait toggle still work.
+        // way the Close button does it (`close()`): an interactive dismiss is already under way
+        // by the time anyone could ask. The landscape reader has its own pull down instead,
+        // which ends in `close()` and so rotates first (see ReaderCollectionController).
         .interactiveDismissDisabled(isLandscape)
         .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { nowLandscape in
             guard nowLandscape != isLandscape else { return }   // a real portrait/landscape flip
@@ -298,11 +300,8 @@ struct ReaderView: View {
             Toggle(isOn: $paper.isEnabled) {
                 Label("Paper Effect", systemImage: "doc.plaintext")
             }
-            // Landscape only, and the strip never leaves portrait.
-            if !settings.portraitStrip {
-                Toggle(isOn: $settings.doublePage) {
-                    Label("Double Page", systemImage: "book.pages")
-                }
+            Toggle(isOn: $settings.doublePage) {
+                Label("Double Page", systemImage: "book.pages")
             }
         } label: {
             Image(systemName: "slider.horizontal.3")
@@ -322,13 +321,10 @@ struct ReaderView: View {
                 toggleBookmark()
             }
             barButton("square.grid.2x2", label: "Page grid") { showGrid = true }
-            // The portrait strip stays portrait, so there is no landscape to offer.
-            if !settings.portraitStrip {
-                barButton("rectangle.landscape.rotate",
-                          label: holdsLandscape ? "Follow device orientation" : "Read in landscape",
-                          tint: holdsLandscape ? .accentColor : .primary) {
-                    toggleLandscapeHold()
-                }
+            barButton("rectangle.landscape.rotate",
+                      label: holdsLandscape ? "Follow device orientation" : "Read in landscape",
+                      tint: holdsLandscape ? .accentColor : .primary) {
+                toggleLandscapeHold()
             }
         }
         .padding(.horizontal, 24).padding(.vertical, 13)
@@ -416,8 +412,8 @@ struct ReaderView: View {
     /// Turns the reader sideways and keeps it there, or hands it back to the device.
     ///
     /// The reader is the only thing on screen when this runs, so the rotation is the system's
-    /// own animation over the page and the spread morph that already rides it (see
-    /// `ReaderCollectionController.viewWillTransition`). Nothing else in the app is visible to
+    /// own animation over the page and the hand-over that rides it (see
+    /// `ReaderContainerController.viewWillTransition`). Nothing else in the app is visible to
     /// rotate with it, which is the reason this lives here rather than being decided before the
     /// reader is presented.
     ///
@@ -440,7 +436,7 @@ struct ReaderView: View {
     /// bytes were cold — froze the whole app until it finished, and the loading state below could
     /// never even draw. Now the spinner shows and the app stays live while it opens.
     ///
-    /// Orientation is deliberately not touched here: the reader controller handles it in
+    /// Orientation is deliberately not touched here: the reader container handles it in
     /// viewWillAppear/viewWillDisappear (standard UIKit lifecycle) so the rotation rides the
     /// present/dismiss transition instead of flashing afterwards.
     private func setup() async {

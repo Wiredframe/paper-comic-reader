@@ -2,12 +2,12 @@
 //  ReaderCollectionController.swift
 //  Comic Reader
 //
-//  The reader's paging core: a horizontal, paging UICollectionView of page slots.
-//  In portrait (or with double-page off) a slot is one page; in landscape with
-//  double-page on a slot is a spread. The page↔slot pairing is FIXED — the cover
-//  (page 1) is always alone, then pages pair up (2·3, 4·5, …) — so a page that is
-//  the right half of a spread can never become the left half of another. That makes
-//  flipping between portrait and landscape any number of times fully consistent.
+//  The landscape reader: a horizontal, paging UICollectionView of page slots. With
+//  double-page off a slot is one page; with it on a slot is a spread. The page↔slot
+//  pairing is FIXED (the cover, page 1, is always alone, then pages pair up: 2·3, 4·5, …),
+//  so a page that is the right half of a spread can never become the left half of another,
+//  and a bookmark or resume page always lands on the same spread. Portrait is the strip
+//  (ReaderStripController); ReaderContainerController hands over between the two.
 //
 
 import UIKit
@@ -62,6 +62,7 @@ final class ReaderCollectionController: UIViewController,
                                         UICollectionViewDataSource,
                                         UICollectionViewDataSourcePrefetching,
                                         UICollectionViewDelegateFlowLayout,
+                                        UIGestureRecognizerDelegate,
                                         ReaderPageCellDelegate {
 
     private let store: PageImageStore
@@ -101,6 +102,16 @@ final class ReaderCollectionController: UIViewController,
     /// currentPage — a `currentPage == last` read check would never fire (see ReaderView.markRead).
     var onReachedEnd: (() -> Void)?
     var onToggleChrome: (() -> Void)?
+    var onDismissRequest: (() -> Void)?
+
+    /// Pull down to close. The system's drag-down dismiss is off in landscape (see ReaderView),
+    /// so the reader offers its own: the pages follow the finger down, and far or fast enough a
+    /// release asks to close, which rotates to portrait first and then zooms back to the cover.
+    private var dismissPan: UIPanGestureRecognizer!
+    private var isPullingDown = false
+    /// How far (share of the height) or how fast (points per second) a pull has to go to close.
+    private static let dismissDistance: CGFloat = 0.18
+    private static let dismissVelocity: CGFloat = 900
 
     private let layout = PagingFlowLayout()
     private var collectionView: UICollectionView!
@@ -128,21 +139,6 @@ final class ReaderCollectionController: UIViewController,
         backgroundUIColor = color
         viewIfLoaded?.backgroundColor = color
         collectionView?.backgroundColor = color
-    }
-
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        // Free rotation while reading — the reader follows the device. The rest of the app stays
-        // portrait (rolled back in viewWillDisappear below and on close). See OrientationGate.
-        OrientationGate.free()
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        // Roll back to portrait as part of the dismiss transition. The page-grid is a
-        // page sheet, which doesn't fire the presenter's viewWillDisappear, so this only
-        // runs when the reader itself is going away.
-        OrientationGate.lockPortrait()
     }
 
     override func viewDidLoad() {
@@ -178,6 +174,10 @@ final class ReaderCollectionController: UIViewController,
         collectionView.register(ReaderPageCell.self, forCellWithReuseIdentifier: ReaderPageCell.reuseID)
         view.addSubview(collectionView)
 
+        dismissPan = UIPanGestureRecognizer(target: self, action: #selector(handleDismissPan(_:)))
+        dismissPan.delegate = self
+        view.addGestureRecognizer(dismissPan)
+
         store.setActivePage(currentPage)   // before the first prefetch, so a resume deep in the comic isn't skipped
         prefetchNeighbours(of: currentPage)
     }
@@ -189,7 +189,7 @@ final class ReaderCollectionController: UIViewController,
         // during a tap page turn the collection view carries a transform (see
         // animatePageTurn) that a frame assignment would fight — so in both cases we leave
         // it alone and reconcile the frame when the animation completes.
-        if !isRotating && !isTurning { collectionView.frame = view.bounds }
+        if !isRotating && !isTurning && !isPullingDown { collectionView.frame = view.bounds }
         guard collectionView.bounds.width > 0, pageCount > 0 else { return }
         // Self-healing: paging being off is the one state a missed sync could strand the reader
         // in, so every settled layout re-derives it from the cell rather than trusting the last
@@ -207,95 +207,29 @@ final class ReaderCollectionController: UIViewController,
         }
     }
 
+    /// A size change that stays landscape (iPad multitasking): re-fit the slots to the new width
+    /// inside the transition's own animation. Crossing into portrait never reaches here; the
+    /// container swaps to the strip instead (see ReaderContainerController).
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        endActiveTurn()                 // settle any in-flight page turn before rotating
-        // The morph deliberately settles on the whole spread (see `ReaderPageCell.setRotationSpread`),
-        // so the carried fit-width look is put down here rather than fought with; the next
-        // double-tap zoom picks it up again.
+        endActiveTurn()                 // settle any in-flight page turn before resizing
         carriesFocus = false
         settle(onPage: currentPage)
         isRotating = true
-        let newDouble = wantsDouble(for: size)
-        let modeFlip = newDouble != isDouble
-
-        // The reader's page and where it sits in its spread pair (0 = left half, 1 = right
-        // half). The morph PIVOTS on this page: it's the one that fills the width on the
-        // portrait side and settles into — or grows out of — its half, so it always lands
-        // on the correct side of the spread. A lone page (the cover, or a last unpaired
-        // page) has no partner, so `.focus` and `.spread` both just fit the width — the
-        // morph then degrades to the plain single-page re-fit, exactly as before.
-        let doublePaging = ReaderPaging(pageCount: pageCount, double: true)
-        let doubleSlot = doublePaging.slot(forPage: currentPage)
-        let focusPos = doublePaging.pages(inSlot: doubleSlot).firstIndex(of: currentPage) ?? 0
-
-        if modeFlip && newDouble {
-            // PORTRAIT single → LANDSCAPE spread. Rebuild the slots as spreads NOW, at the
-            // current (~portrait) width, and lay the reader's slot out as `.focus`: the
-            // page fills the width with its partner waiting one screen-width off the
-            // adjoining edge — pixel-identical to the single page it replaces, so this swap
-            // is invisible. The `.spread` settle inside the turn (below) then slides the
-            // partner in and eases the page into its half. The page MORPHS into the spread;
-            // it doesn't cross-dissolve into it.
-            isDouble = true
-            collectionView.reloadData()
-            collectionView.layoutIfNeeded()
-            collectionView.contentOffset = CGPoint(x: CGFloat(doubleSlot) * collectionView.bounds.width, y: 0)
-            collectionView.layoutIfNeeded()          // realise the slot's cell at that offset
-            morphReaderCell(atSlot: doubleSlot, toSpread: false, focusPos: focusPos)
-        }
-
-        // Drive the resize AND the page re-fit ourselves, inside the coordinator's
-        // animation, so the whole turn is a single animation — smooth whether the chrome
-        // (and status bar) is shown or hidden. layoutIfNeeded forces the cells to re-fit
-        // to the new width right here, within the turn, instead of on a later, possibly
-        // un-synced layout pass; then we re-align the current page to the new width.
         coordinator.animate(alongsideTransition: { [weak self] _ in
             guard let self else { return }
             self.collectionView.frame = CGRect(origin: .zero, size: size)
             self.layout.invalidateLayout()
             self.collectionView.layoutIfNeeded()
-            let slot: Int
-            if modeFlip && newDouble {
-                // Settle focus → spread: the partner glides in, the page eases into its half.
-                self.morphReaderCell(atSlot: doubleSlot, toSpread: true, focusPos: focusPos)
-                slot = doubleSlot
-            } else if modeFlip {
-                // LANDSCAPE spread → PORTRAIT single: reverse it on the still-live spread
-                // cell (the page grows back to full width, the partner glides out); the
-                // completion reload then swaps in the single-page slots behind the now-
-                // identical, full-width frame. The structure stays double until then, so
-                // the partner is available to animate out.
-                self.morphReaderCell(atSlot: doubleSlot, toSpread: false, focusPos: focusPos)
-                slot = doubleSlot
-            } else {
-                slot = self.paging.slot(forPage: self.currentPage)
+            if let offset = self.offset(forSlot: self.paging.slot(forPage: self.currentPage)) {
+                self.collectionView.contentOffset = offset
             }
-            self.collectionView.contentOffset = CGPoint(x: CGFloat(slot) * size.width, y: 0)
         }, completion: { [weak self] _ in
             guard let self else { return }
-            if modeFlip && !newDouble {
-                // Settle the real single-page structure behind the morphed (full-width)
-                // page — invisible, because its partner is already off screen.
-                self.isDouble = false
-                let slot = self.paging.slot(forPage: self.currentPage)
-                self.collectionView.reloadData()
-                self.collectionView.layoutIfNeeded()
-                self.collectionView.contentOffset = CGPoint(x: CGFloat(slot) * self.collectionView.bounds.width, y: 0)
-            }
             self.isRotating = false
             self.collectionView.frame = self.view.bounds   // reconcile any drift
-            self.syncSidewaysNavigation()                  // the morph rebuilt every fit
+            self.syncSidewaysNavigation()
         })
-    }
-
-    /// Set a rotation-morph endpoint (`.focus` ⇄ `.spread`) on the cell that owns `slot`,
-    /// if it's on screen. Called inside the coordinator animation so the frame changes
-    /// tween; see `viewWillTransition` and `ReaderPageCell.setRotationSpread`.
-    private func morphReaderCell(atSlot slot: Int, toSpread: Bool, focusPos: Int) {
-        let indexPath = IndexPath(item: slot, section: 0)
-        (collectionView.cellForItem(at: indexPath) as? ReaderPageCell)?
-            .setRotationSpread(toSpread, focusPos: focusPos)
     }
 
     // MARK: Public
@@ -418,8 +352,8 @@ final class ReaderCollectionController: UIViewController,
         isProgrammaticScroll = false
     }
 
-    private func offset(forSlot slot: Int, width: CGFloat? = nil) -> CGPoint? {
-        let w = width ?? collectionView.bounds.width
+    private func offset(forSlot slot: Int) -> CGPoint? {
+        let w = collectionView.bounds.width
         guard w > 0 else { return nil }
         return CGPoint(x: CGFloat(slot) * w, y: 0)
     }
@@ -499,9 +433,9 @@ final class ReaderCollectionController: UIViewController,
     /// spread's right half so the *next* spread arrives with both pages ready —
     /// otherwise its right page would fade in on the swipe.
     private func prefetchNeighbours(of page: Int) {
-        store.prefetch(around: page, maxPixel: ReaderPageCell.displayMaxPixel)
+        store.prefetch(around: page)
         if isDouble, let right = paging.pages(inSlot: paging.slot(forPage: page)).last, right != page {
-            store.prefetch(around: right, maxPixel: ReaderPageCell.displayMaxPixel)
+            store.prefetch(around: right)
         }
     }
 
@@ -547,7 +481,7 @@ final class ReaderCollectionController: UIViewController,
     func collectionView(_ cv: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
         for indexPath in indexPaths {
             for page in paging.pages(inSlot: indexPath.item) {
-                store.prefetchImage(at: page, maxPixel: ReaderPageCell.displayMaxPixel)
+                store.prefetchImage(at: page)
             }
         }
     }
@@ -581,13 +515,10 @@ final class ReaderCollectionController: UIViewController,
         // every view (single, spread, focus) since all taps funnel through here.
         guard settings.tapToNavigate else { onToggleChrome?(); return }
         let slot = paging.slot(forPage: currentPage)
-        // Same nav zones as ReaderPageCell.isNavEdge via the shared navEdgeFraction, so
-        // where a single tap navigates here exactly matches where it fires instantly there.
-        let edge = ReaderPageCell.navEdgeFraction
-        if x < width * edge {
-            go(toSlot: slot - 1, animated: true)
-        } else if x > width * (1 - edge) {
-            go(toSlot: slot + 1, animated: true)
+        // The shared nav zones (ReaderMetrics), so where a single tap navigates here exactly
+        // matches where it fires instantly in the cell.
+        if ReaderMetrics.isNavEdge(x, width: width) {
+            go(toSlot: x < width / 2 ? slot - 1 : slot + 1, animated: true)
         } else {
             onToggleChrome?()
         }
@@ -644,4 +575,57 @@ final class ReaderCollectionController: UIViewController,
         collectionView.isScrollEnabled = !(cell?.ownsSidewaysNavigation ?? false)
     }
 
+
+    // MARK: Pull down to close
+
+    @objc private func handleDismissPan(_ gesture: UIPanGestureRecognizer) {
+        let height = max(view.bounds.height, 1)
+        let pull = max(gesture.translation(in: view).y, 0)
+        switch gesture.state {
+        case .began:
+            isPullingDown = true
+            // The pull owns the touch now: stop the collection view's own pan from nudging the
+            // band sideways with any drift in the finger (toggling it off cancels it).
+            collectionView.panGestureRecognizer.isEnabled = false
+            collectionView.panGestureRecognizer.isEnabled = true
+        case .changed:
+            // Follows the finger, easing off a little as it goes, like the system's own dismiss.
+            let scale = 1 - min(pull / height, 1) * 0.12
+            collectionView.transform = CGAffineTransform(translationX: 0, y: pull).scaledBy(x: scale, y: scale)
+        case .ended, .cancelled, .failed:
+            let closes = gesture.state == .ended
+                && (pull > height * Self.dismissDistance || gesture.velocity(in: view).y > Self.dismissVelocity)
+            UIView.animate(withDuration: settings.uiAnimationDuration, delay: 0,
+                           options: [.curveEaseOut, .beginFromCurrentState]) {
+                self.collectionView.transform = .identity
+            } completion: { _ in
+                self.isPullingDown = false
+                self.view.setNeedsLayout()
+            }
+            // The page settles back while the reader turns to portrait underneath, so what
+            // zooms back to the cover is the page as it was, not a half-dragged one.
+            if closes { onDismissRequest?() }
+        default:
+            break
+        }
+    }
+
+    /// Only a pull that starts clearly downward, on a slot already at the top of its page, and
+    /// with nothing else moving: everything else stays the page's or the collection view's.
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === dismissPan else { return true }
+        guard !isTurning, !isRotating, collectionView.isDragging == false else { return false }
+        let v = dismissPan.velocity(in: view)
+        guard v.y > 0, v.y > abs(v.x) * 1.5 else { return false }
+        let slot = paging.slot(forPage: currentPage)
+        let cell = collectionView.cellForItem(at: IndexPath(item: slot, section: 0)) as? ReaderPageCell
+        return cell?.isScrolledToTop ?? true
+    }
+
+    /// Alongside the page's own scroll view: at the top of a page it has nothing to do with a
+    /// pull down anyway (it never bounces), and it must not be the one to swallow it.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        gestureRecognizer === dismissPan && !(other is UIPinchGestureRecognizer)
+    }
 }

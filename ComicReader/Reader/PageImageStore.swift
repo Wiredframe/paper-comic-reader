@@ -83,12 +83,16 @@ final class PageImageStore: @unchecked Sendable {
 
     // MARK: Display images (paper applied)
 
+    /// The long edge every display image is decoded to. One size for every reader, which is also
+    /// why the cache is keyed by page alone.
+    static let displayMaxPixel: CGFloat = 2200
+
     func cachedImage(at index: Int) -> UIImage? {
         cache.object(forKey: NSNumber(value: index))
     }
 
     /// Returns the display image for `index`. Completion runs on the main queue.
-    func requestImage(at index: Int, maxPixel: CGFloat, completion: @escaping (Int, UIImage?) -> Void) {
+    func requestImage(at index: Int, completion: @escaping (Int, UIImage?) -> Void) {
         if let cached = cachedImage(at: index) {
             completion(index, cached)
             return
@@ -103,7 +107,7 @@ final class PageImageStore: @unchecked Sendable {
                 DispatchQueue.main.async { completion(index, cached) }
                 return
             }
-            let image = self.render(index: index, maxPixel: maxPixel)
+            let image = self.render(index: index)
             if let image { self.cache.setObject(image, forKey: NSNumber(value: index)) }
             DispatchQueue.main.async { completion(index, image) }
         }
@@ -124,11 +128,11 @@ final class PageImageStore: @unchecked Sendable {
         return abs(index - a) <= Self.prefetchSkipRadius
     }
 
-    func prefetch(around index: Int, maxPixel: CGFloat) {
+    func prefetch(around index: Int) {
         // Keep the neighbours ±2 decoded so page turns don't visibly fade in.
         for i in [index + 1, index - 1, index + 2, index - 2]
         where (0..<pageCount).contains(i) && cachedImage(at: i) == nil {
-            prefetchImage(at: i, maxPixel: maxPixel)
+            prefetchImage(at: i)
         }
     }
 
@@ -136,11 +140,11 @@ final class PageImageStore: @unchecked Sendable {
     /// on screen), a prefetch that has been overtaken skips its render: on the serial decode
     /// queue a stale prefetch would otherwise delay the page you're turning to, which is what
     /// makes fast scrolling with the paper effect lag.
-    func prefetchImage(at index: Int, maxPixel: CGFloat) {
+    func prefetchImage(at index: Int) {
         guard (0..<pageCount).contains(index), cachedImage(at: index) == nil else { return }
         work.async { [weak self] in
             guard let self, self.isNearActive(index), self.cachedImage(at: index) == nil else { return }
-            if let image = self.render(index: index, maxPixel: maxPixel) {
+            if let image = self.render(index: index) {
                 self.cache.setObject(image, forKey: NSNumber(value: index))
             }
         }
@@ -148,21 +152,35 @@ final class PageImageStore: @unchecked Sendable {
 
     // MARK: Page shapes (portrait strip)
 
-    /// Reads every page's shape from its image header (see `ComicArchive.pageAspect`), nearest
-    /// `start` first, and hands them over in small batches on the main queue. A page whose header
-    /// can't be read is left out; the strip shapes it from its decoded image instead.
+    /// Page shapes read so far, kept for the whole reader session: the strip is rebuilt on every
+    /// rotation back to portrait, and it should find them all known at once rather than scan the
+    /// archive again and re-lay itself out as they trickle back in.
+    private let aspectLock = NSLock()
+    private var aspectCache: [Int: CGFloat] = [:]
+
+    /// The page shapes already known, for a strip to lay itself out with from the start.
+    func knownAspects() -> [Int: CGFloat] {
+        aspectLock.lock(); defer { aspectLock.unlock() }
+        return aspectCache
+    }
+
+    /// Reads every page's shape not known yet from its image header (see
+    /// `ComicArchive.pageAspect`), nearest `start` first, and hands them over in small batches on
+    /// the main queue. A page whose header can't be read is left out; the strip shapes it from
+    /// its decoded image instead.
     ///
     /// Batched on the serial decode queue rather than done in one go, so a page the reader asks
     /// for meanwhile waits behind at most one batch, not behind the whole comic.
     func scanAspects(from start: Int, onBatch: @escaping @MainActor ([Int: CGFloat]) -> Void) {
         guard pageCount > 0 else { return }
+        let known = knownAspects()
         let first = min(max(start, 0), pageCount - 1)
         var order = [first]
-        for d in 1..<max(pageCount, 1) {
+        for d in 1..<pageCount {
             if first + d < pageCount { order.append(first + d) }
             if first - d >= 0 { order.append(first - d) }
         }
-        scanAspects(order[...], onBatch: onBatch)
+        scanAspects(order.filter { known[$0] == nil }[...], onBatch: onBatch)
     }
 
     private static let aspectBatch = 8
@@ -176,6 +194,9 @@ final class PageImageStore: @unchecked Sendable {
                 if let aspect = archive.pageAspect(at: page) { found[page] = aspect }
             }
             if !found.isEmpty {
+                self.aspectLock.lock()
+                self.aspectCache.merge(found) { old, _ in old }
+                self.aspectLock.unlock()
                 DispatchQueue.main.async { MainActor.assumeIsolated { onBatch(found) } }
             }
             self.scanAspects(remaining.dropFirst(Self.aspectBatch), onBatch: onBatch)
@@ -203,9 +224,9 @@ final class PageImageStore: @unchecked Sendable {
         }
     }
 
-    private func render(index: Int, maxPixel: CGFloat) -> UIImage? {
+    private func render(index: Int) -> UIImage? {
         guard let data = archive?.pageData(at: index) else { return nil }
-        guard var image = ImageDownsampler.downsample(data, maxPixel: maxPixel) ?? UIImage(data: data) else {
+        guard var image = ImageDownsampler.downsample(data, maxPixel: Self.displayMaxPixel) ?? UIImage(data: data) else {
             return nil
         }
         if paperEnabled {

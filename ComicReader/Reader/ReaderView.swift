@@ -141,6 +141,7 @@ struct ReaderView: View {
                            // @Observable tracking that read is what re-renders here and drives
                            // updateUIViewController → syncLayoutMode when the toggle flips.
                            doublePage: settings.doublePage,
+                           portraitStrip: settings.portraitStrip,
                            startIndex: clampedStart(store.pageCount),
                            currentPage: $currentPage,
                            paperVersion: paperVersion,
@@ -297,8 +298,11 @@ struct ReaderView: View {
             Toggle(isOn: $paper.isEnabled) {
                 Label("Paper Effect", systemImage: "doc.plaintext")
             }
-            Toggle(isOn: $settings.doublePage) {
-                Label("Double Page", systemImage: "book.pages")
+            // Landscape only, and the strip never leaves portrait.
+            if !settings.portraitStrip {
+                Toggle(isOn: $settings.doublePage) {
+                    Label("Double Page", systemImage: "book.pages")
+                }
             }
         } label: {
             Image(systemName: "slider.horizontal.3")
@@ -318,10 +322,13 @@ struct ReaderView: View {
                 toggleBookmark()
             }
             barButton("square.grid.2x2", label: "Page grid") { showGrid = true }
-            barButton("rectangle.landscape.rotate",
-                      label: holdsLandscape ? "Follow device orientation" : "Read in landscape",
-                      tint: holdsLandscape ? .accentColor : .primary) {
-                toggleLandscapeHold()
+            // The portrait strip stays portrait, so there is no landscape to offer.
+            if !settings.portraitStrip {
+                barButton("rectangle.landscape.rotate",
+                          label: holdsLandscape ? "Follow device orientation" : "Read in landscape",
+                          tint: holdsLandscape ? .accentColor : .primary) {
+                    toggleLandscapeHold()
+                }
             }
         }
         .padding(.horizontal, 24).padding(.vertical, 13)

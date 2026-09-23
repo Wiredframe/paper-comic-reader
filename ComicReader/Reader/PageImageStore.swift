@@ -146,6 +146,42 @@ final class PageImageStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Page shapes (portrait strip)
+
+    /// Reads every page's shape from its image header (see `ComicArchive.pageAspect`), nearest
+    /// `start` first, and hands them over in small batches on the main queue. A page whose header
+    /// can't be read is left out; the strip shapes it from its decoded image instead.
+    ///
+    /// Batched on the serial decode queue rather than done in one go, so a page the reader asks
+    /// for meanwhile waits behind at most one batch, not behind the whole comic.
+    func scanAspects(from start: Int, onBatch: @escaping @MainActor ([Int: CGFloat]) -> Void) {
+        guard pageCount > 0 else { return }
+        let first = min(max(start, 0), pageCount - 1)
+        var order = [first]
+        for d in 1..<max(pageCount, 1) {
+            if first + d < pageCount { order.append(first + d) }
+            if first - d >= 0 { order.append(first - d) }
+        }
+        scanAspects(order[...], onBatch: onBatch)
+    }
+
+    private static let aspectBatch = 8
+
+    private func scanAspects(_ remaining: ArraySlice<Int>, onBatch: @escaping @MainActor ([Int: CGFloat]) -> Void) {
+        guard !remaining.isEmpty else { return }
+        work.async { [weak self] in
+            guard let self, let archive = self.archive else { return }
+            var found: [Int: CGFloat] = [:]
+            for page in remaining.prefix(Self.aspectBatch) {
+                if let aspect = archive.pageAspect(at: page) { found[page] = aspect }
+            }
+            if !found.isEmpty {
+                DispatchQueue.main.async { MainActor.assumeIsolated { onBatch(found) } }
+            }
+            self.scanAspects(remaining.dropFirst(Self.aspectBatch), onBatch: onBatch)
+        }
+    }
+
     /// Rebuilds cached images with a new paper setting.
     func setPaper(enabled: Bool, params: PaperParams) {
         // Clear the display cache synchronously: the reload that follows (paperVersion →

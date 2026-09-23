@@ -1401,18 +1401,18 @@
         }
       }
     },
-    "Double Page shows two pages side by side in landscape (cover alone, then pairs). Page Gap leaves a thin line of the background between those two pages so they read as two sheets instead of one wide one; a page with no facing page is unaffected. Page Shadow rests the page on its background with a soft shadow, wherever the page doesn't reach the screen edge; without a gap a double page casts one shadow around the pair rather than down the middle, and with one each page casts its own. Tap to Navigate lets you tap the left/right edges to move through the page half a screen at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.": {
+    "Double Page shows two pages side by side in landscape (cover alone, then pairs). Page Gap leaves a thin line of the background between those two pages so they read as two sheets instead of one wide one; a page with no facing page is unaffected. Page Shadow rests the page on its background with a soft shadow, wherever the page doesn't reach the screen edge; without a gap a double page casts one shadow around the pair rather than down the middle, and with one each page casts its own. Portrait Strip lays the whole comic out as one continuous band, every page at the screen's full height, and you scroll through it freely instead of turning pages; a double tap or a pinch switches the whole band between full height and screen width, and the reader stays in portrait. Tap to Navigate lets you tap the left/right edges to move through the page half a screen at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Doppelseite zeigt im Querformat zwei Seiten nebeneinander (das Cover allein, danach Paare). Seitenabstand lässt zwischen den beiden Seiten eine schmale Linie des Hintergrunds frei, sodass sie wie zwei Blätter wirken statt wie ein breites; eine Seite ohne Gegenseite bleibt unverändert. Seitenschatten legt die Seite mit einem weichen Schatten auf ihren Hintergrund, überall dort, wo sie nicht bis an den Bildschirmrand reicht; ohne Abstand wirft eine Doppelseite einen gemeinsamen Schatten um das Paar statt durch die Mitte, mit Abstand wirft jede Seite ihren eigenen. Tippen zum Blättern lässt dich an den linken und rechten Rand tippen, um dich jeweils einen halben Bildschirm weit durch die Seite zu bewegen und umzublättern; Wischen blättert weiterhin um. Live Text lässt dich Text auf einer Seite durch langes Drücken auswählen."
+            "value": "Doppelseite zeigt im Querformat zwei Seiten nebeneinander (das Cover allein, danach Paare). Seitenabstand lässt zwischen den beiden Seiten eine schmale Linie des Hintergrunds frei, sodass sie wie zwei Blätter wirken statt wie ein breites; eine Seite ohne Gegenseite bleibt unverändert. Seitenschatten legt die Seite mit einem weichen Schatten auf ihren Hintergrund, überall dort, wo sie nicht bis an den Bildschirmrand reicht; ohne Abstand wirft eine Doppelseite einen gemeinsamen Schatten um das Paar statt durch die Mitte, mit Abstand wirft jede Seite ihren eigenen. Seitenband legt den ganzen Comic als ein durchgehendes Band aus, jede Seite in voller Bildschirmhöhe, und du scrollst frei hindurch, statt umzublättern; Doppeltippen oder Zusammenziehen mit zwei Fingern schaltet das ganze Band zwischen voller Höhe und Bildschirmbreite um, und die Leseansicht bleibt im Hochformat. Tippen zum Blättern lässt dich an den linken und rechten Rand tippen, um dich jeweils einen halben Bildschirm weit durch die Seite zu bewegen und umzublättern; Wischen blättert weiterhin um. Live Text lässt dich Text auf einer Seite durch langes Drücken auswählen."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Doppia pagina mostra due pagine affiancate in orizzontale (la copertina da sola, poi a coppie). Spazio tra le pagine lascia una sottile linea di sfondo tra le due pagine, così sembrano due fogli invece di uno largo; una pagina senza pagina a fronte non cambia. Ombra della pagina appoggia la pagina sullo sfondo con un’ombra morbida, ovunque non arrivi al bordo dello schermo; senza spazio una doppia pagina proietta un’unica ombra intorno alla coppia invece che al centro, con lo spazio ogni pagina proietta la propria. Tocca per sfogliare ti permette di toccare i bordi sinistro e destro per scorrere la pagina di mezzo schermo alla volta e voltare pagina; puoi comunque voltare pagina con uno swipe. Testo live ti permette di selezionare il testo di una pagina tenendolo premuto."
+            "value": "Doppia pagina mostra due pagine affiancate in orizzontale (la copertina da sola, poi a coppie). Spazio tra le pagine lascia una sottile linea di sfondo tra le due pagine, così sembrano due fogli invece di uno largo; una pagina senza pagina a fronte non cambia. Ombra della pagina appoggia la pagina sullo sfondo con un’ombra morbida, ovunque non arrivi al bordo dello schermo; senza spazio una doppia pagina proietta un’unica ombra intorno alla coppia invece che al centro, con lo spazio ogni pagina proietta la propria. Nastro continuo dispone l’intero fumetto in un’unica fascia, ogni pagina all’altezza piena dello schermo, e la scorri liberamente invece di voltare pagina; un doppio tocco o un pizzico alterna l’intera fascia tra altezza piena e larghezza dello schermo, e la lettura resta in verticale. Tocca per sfogliare ti permette di toccare i bordi sinistro e destro per scorrere la pagina di mezzo schermo alla volta e voltare pagina; puoi comunque voltare pagina con uno swipe. Testo live ti permette di selezionare il testo di una pagina tenendolo premuto."
           }
         }
       }
@@ -2664,6 +2664,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Popolari"
+          }
+        }
+      }
+    },
+    "Portrait Strip": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seitenband (Hochformat)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nastro continuo (verticale)"
           }
         }
       }

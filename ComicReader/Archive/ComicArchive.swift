@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import ImageIO
 import ZIPFoundation
 
 enum ComicArchiveError: Error {
@@ -69,6 +70,43 @@ final class ComicArchive {
     func pageData(at index: Int) -> Data? {
         guard pages.indices.contains(index) else { return nil }
         return data(of: pages[index])
+    }
+
+    /// A page's shape (width / height, as displayed) from its image HEADER only: the entry is
+    /// read a chunk at a time and abandoned as soon as ImageIO can name its size, which for every
+    /// format a comic uses is inside the first 16 KB chunk. Cheap enough to run across a whole
+    /// comic, so the portrait strip can lay out every page at its real width before any is decoded.
+    func pageAspect(at index: Int) -> CGFloat? {
+        guard pages.indices.contains(index) else { return nil }
+        var data = Data()
+        var aspect: CGFloat?
+        do {
+            _ = try archive.extract(pages[index], skipCRC32: true) { chunk in
+                data.append(chunk)
+                aspect = Self.headerAspect(data)
+                if aspect != nil || data.count >= Self.headerReadLimit { throw HeaderRead.done }
+            }
+        } catch {}
+        return aspect
+    }
+
+    /// How far into a page to look for its size before giving up on it (a header buried behind
+    /// a huge metadata block). The strip then shapes that page from its decoded image instead.
+    private static let headerReadLimit = 256 * 1024
+
+    private enum HeaderRead: Error { case done }
+
+    private static func headerAspect(_ data: Data) -> CGFloat? {
+        let source = CGImageSourceCreateIncremental(nil)
+        CGImageSourceUpdateData(source, data as CFData, false)
+        guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = props[kCGImagePropertyPixelWidth] as? Double,
+              let height = props[kCGImagePropertyPixelHeight] as? Double,
+              width > 0, height > 0 else { return nil }
+        // EXIF orientations 5 to 8 turn the page a quarter, and the decoder applies that transform
+        // (see ImageDownsampler), so the displayed shape is the stored one on its side.
+        let orientation = props[kCGImagePropertyOrientation] as? Int ?? 1
+        return CGFloat(orientation >= 5 ? height / width : width / height)
     }
 
     private func data(of entry: Entry) -> Data? {

@@ -52,6 +52,14 @@ final class ReaderSettings {
     /// landscape is untouched. Off by default.
     var portraitFitHeight: Bool { didSet { defaults.set(portraitFitHeight, forKey: K.portraitFitHeight) } }
 
+    /// Read in PORTRAIT as one continuous horizontal strip instead of turning pages: every page at
+    /// the screen's full height, side by side with a one-pixel seam, scrolled freely with no
+    /// snapping and no edge taps. A double tap or pinch switches the whole band to fit-width and
+    /// back, for that comic only. The page covering the middle of the screen is the current one
+    /// (counter, bookmark, progress). While it is on, the reader stays in portrait and offers no
+    /// landscape. Read when the reader opens. Off by default.
+    var portraitStrip: Bool { didSet { defaults.set(portraitStrip, forKey: K.portraitStrip) } }
+
     /// Where a page that doesn't fill the width comes to rest. Off, it sits centred with an even
     /// gap either side. On, a zoomed double page rests its LEFT page against the screen's left edge
     /// and its RIGHT page against the right, the way a printed spread's outer margins sit, so the
@@ -102,6 +110,7 @@ final class ReaderSettings {
         static let pageGap = "reader.pageGap"
         static let keepZoom = "reader.keepZoom"
         static let portraitFitHeight = "reader.portraitFitHeight"
+        static let portraitStrip = "reader.portraitStrip"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -116,6 +125,7 @@ final class ReaderSettings {
         pageGap = defaults.object(forKey: K.pageGap) as? Bool ?? true
         keepZoom = defaults.object(forKey: K.keepZoom) as? Bool ?? true
         portraitFitHeight = defaults.object(forKey: K.portraitFitHeight) as? Bool ?? false
+        portraitStrip = defaults.object(forKey: K.portraitStrip) as? Bool ?? false
         // Legacy force-landscape preference from old builds. The reader now just follows the
         // device orientation, so drop any leftover value rather than let it linger.
         defaults.removeObject(forKey: "reader.forceLandscape")

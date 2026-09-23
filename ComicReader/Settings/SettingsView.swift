@@ -75,13 +75,14 @@ struct SettingsView: View {
                     Toggle("Page Gap", isOn: $reader.pageGap)
                         .disabled(!reader.doublePage)
                     Toggle("Page Shadow", isOn: $reader.pageShadow)
+                    Toggle("Portrait Strip", isOn: $reader.portraitStrip)
                     Toggle("Tap to Navigate", isOn: $reader.tapToNavigate)
                     Toggle("Live Text", isOn: $reader.liveText)
                     Toggle("Fast Animations", isOn: $reader.fastAnimations)
                 } header: {
                     Text("Reader")
                 } footer: {
-                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Page Gap leaves a thin line of the background between those two pages so they read as two sheets instead of one wide one; a page with no facing page is unaffected. Page Shadow rests the page on its background with a soft shadow, wherever the page doesn't reach the screen edge; without a gap a double page casts one shadow around the pair rather than down the middle, and with one each page casts its own. Tap to Navigate lets you tap the left/right edges to move through the page half a screen at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
+                    Text("Double Page shows two pages side by side in landscape (cover alone, then pairs). Page Gap leaves a thin line of the background between those two pages so they read as two sheets instead of one wide one; a page with no facing page is unaffected. Page Shadow rests the page on its background with a soft shadow, wherever the page doesn't reach the screen edge; without a gap a double page casts one shadow around the pair rather than down the middle, and with one each page casts its own. Portrait Strip lays the whole comic out as one continuous band, every page at the screen's full height, and you scroll through it freely instead of turning pages; a double tap or a pinch switches the whole band between full height and screen width, and the reader stays in portrait. Tap to Navigate lets you tap the left/right edges to move through the page half a screen at a time and turn pages; you can still swipe to turn pages. Live Text lets you select text on a page by pressing and holding.")
                 }
 
                 Section {
@@ -90,6 +91,7 @@ struct SettingsView: View {
                     // view that READS `doubleTapZoom` — the live "%" label here — is invalidated.
                     ZoomSettingRow(reader: reader)
                     Toggle("Fit Height (Portrait)", isOn: $reader.portraitFitHeight)
+                        .disabled(reader.portraitStrip)   // the strip is always at full height
                     Toggle("Align to Screen Edges", isOn: $reader.alignToEdges)
                     Toggle("Keep Zoom Across Pages", isOn: $reader.keepZoom)
                         .disabled(!reader.doublePage)

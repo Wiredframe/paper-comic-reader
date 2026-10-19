@@ -754,6 +754,9 @@ final class ReaderPageCell: UICollectionViewCell {
     private func isNavEdge(_ x: CGFloat) -> Bool { ReaderMetrics.isNavEdge(x, width: bounds.width) }
 
     @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
+        // A tap that dismisses a Live Text selection is spent on that, not on a scroll, a page
+        // turn or the chrome, as in the strip.
+        if liveText.contains(where: { $0.hasActiveTextSelection }) { return }
         let x = gesture.location(in: self).x
         // Tap-to-navigate (opt-in): step down / up the page a half at a time. In a
         // zoomed spread it also steps left→right across the two pages before turning.

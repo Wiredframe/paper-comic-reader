@@ -739,7 +739,7 @@ struct ReaderView: View {
                 ImageDownsampler.writeJPEG(image, to: url)
             }.value
             guard written else { return }
-            // The page's shape, free — the carousel needs it to size an uncropped card, and
+            // The page's shape, free: the carousel needs it to size an uncropped card, and
             // the decoded image is right here. Older bookmarks get it backfilled from the
             // thumbnail's header instead.
             let aspect: Double? = image.size.height > 0

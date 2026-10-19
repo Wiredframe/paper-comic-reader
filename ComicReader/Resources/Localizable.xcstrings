@@ -3481,7 +3481,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wie Seite %1$lld und %2$lld"
+            "value": "Wie Seiten %1$lld und %2$lld"
           }
         },
         "it": {

@@ -1120,7 +1120,7 @@ final class ReaderPageCell: UICollectionViewCell {
             }
             let config = ImageAnalyzer.Configuration([.text])
             let analysis = try? await Self.analyzer.analyze(image, configuration: config)
-            // The cell may have been reused for another page while analysis ran — only
+            // The cell may have been reused for another page while analysis ran, so only
             // apply it if this is still that page's load (mirrors the image-load guard).
             guard !Task.isCancelled, self.loadToken == token, let analysis else { return }
             interaction.analysis = analysis

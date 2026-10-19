@@ -1369,6 +1369,22 @@
         }
       }
     },
+    "Don't Restore": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht wiederherstellen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non ripristinare"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "de": {
@@ -1910,6 +1926,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Backup della libreria"
+          }
+        }
+      }
+    },
+    "Library Reset": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bibliothek neu angelegt"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libreria ricreata"
+          }
+        }
+      }
+    },
+    "Library Unavailable": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bibliothek nicht verfügbar"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libreria non disponibile"
           }
         }
       }
@@ -3084,6 +3132,38 @@
         }
       }
     },
+    "Restore Library": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bibliothek wiederherstellen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ripristina libreria"
+          }
+        }
+      }
+    },
+    "Restore Your Library?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bibliothek wiederherstellen?"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ripristinare la libreria?"
+          }
+        }
+      }
+    },
     "Scan for New Comics": {
       "localizations": {
         "de": {
@@ -3896,6 +3976,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Impossibile raggiungere la cartella dei fumetti. Il server potrebbe essere offline o la cartella potrebbe essere stata spostata. Aggiorna il percorso della cartella, scegli direttamente questo file o riprova dalla rete giusta."
+          }
+        }
+      }
+    },
+    "Your library couldn't be opened right now. Nothing was deleted. Close the app and open it again, and if your device is almost full, free up some space first.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Bibliothek konnte gerade nicht geöffnet werden. Es wurde nichts gelöscht. Schließ die App und öffne sie erneut. Wenn dein Gerät fast voll ist, schaff vorher etwas Platz."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non è stato possibile aprire la libreria in questo momento. Non è stato eliminato nulla. Chiudi l’app e riaprila; se il dispositivo è quasi pieno, libera prima un po’ di spazio."
+          }
+        }
+      }
+    },
+    "Your library couldn't be opened, so the app started a new one. A safety copy from %@ can bring back your comics with their reading progress and bookmarks.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Bibliothek konnte nicht geöffnet werden, deshalb hat die App eine neue angelegt. Eine Sicherheitskopie vom %@ kann deine Comics mit Lesefortschritt und Lesezeichen zurückholen."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non è stato possibile aprire la libreria, quindi l’app ne ha creata una nuova. Una copia di sicurezza del %@ può riportare i tuoi fumetti con l’avanzamento della lettura e i segnalibri."
+          }
+        }
+      }
+    },
+    "Your library couldn't be opened, so the app started a new one. The old library was set aside, not deleted. If you have a backup, you can bring it back in Settings with Import Library.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Bibliothek konnte nicht geöffnet werden, deshalb hat die App eine neue angelegt. Die alte Bibliothek wurde beiseitegelegt, nicht gelöscht. Wenn du ein Backup hast, kannst du es in den Einstellungen mit „Bibliothek importieren“ zurückholen."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non è stato possibile aprire la libreria, quindi l’app ne ha creata una nuova. La vecchia libreria è stata messa da parte, non eliminata. Se hai un backup, puoi ripristinarlo nelle Impostazioni con «Importa libreria»."
           }
         }
       }

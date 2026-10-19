@@ -12,27 +12,10 @@ struct ComicReaderApp: App {
 
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    /// The SwiftData store for the library (books + bookmarks).
-    let modelContainer: ModelContainer = {
-        let schema = Schema([ComicBook.self, Bookmark.self])
-        let config = ModelConfiguration(schema: schema)
-        do {
-            return try ModelContainer(for: schema, configurations: config)
-        } catch {
-            // The store predates a schema change (e.g. the Collections/Folders feature
-            // was removed) and couldn't migrate automatically. Drop it and start fresh
-            // rather than crash on launch — the comic archives on disk are untouched and
-            // can be re-imported. Only fires when automatic migration can't reconcile.
-            for suffix in ["", "-wal", "-shm"] {
-                try? FileManager.default.removeItem(at: URL(fileURLWithPath: config.url.path + suffix))
-            }
-            do {
-                return try ModelContainer(for: schema, configurations: config)
-            } catch {
-                fatalError("Failed to create ModelContainer: \(error)")
-            }
-        }
-    }()
+    /// The SwiftData store for the library (books + bookmarks). A store that won't open is never
+    /// deleted: see `LibraryStore` for the retry, the move aside and the temporary fallback.
+    private let store = LibraryStore.open()
+    private var modelContainer: ModelContainer { store.container }
 
     /// Global settings shared by Settings and the reader.
     @State private var paper = PaperSettings()
@@ -65,12 +48,16 @@ struct ComicReaderApp: App {
                 .environment(fileOpener)
                 .environment(downloads)
                 .onOpenURL(perform: handleOpenURL)
+                .libraryRecoveryPrompt(isTemporary: store.isTemporary)
                 .task {
                     // Bin any half-finished download from a run that was killed mid-copy. First
                     // thing, while nothing can be downloading yet (see `clearPartialDownloads`).
                     Storage.clearPartialDownloads()
-                    // First launch into an empty library gets the bundled demo comics.
-                    SampleLibrary.seedIfNeeded(into: modelContainer.mainContext)
+                    // First launch into an empty library gets the bundled demo comics. Not into a
+                    // temporary one, which would use up the one-shot seed on a library that vanishes.
+                    if !store.isTemporary {
+                        SampleLibrary.seedIfNeeded(into: modelContainer.mainContext)
+                    }
                     #if DEBUG
                     // Screenshot scene-setup runs after, so it just steers tab/page on the
                     // already-seeded library (it no-ops on content when the library isn't empty).
@@ -85,8 +72,14 @@ struct ComicReaderApp: App {
         .modelContainer(modelContainer)
         // Leaving the foreground re-checks the widget, which catches what no view reports on its
         // own: a deleted comic, a restored backup. A no-op when nothing it shows has changed.
+        // It also rolls the safety snapshot, unless the library is only a temporary stand-in.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { RecentComicSync.refresh(in: modelContainer.mainContext) }
+            guard phase == .background else { return }
+            let context = modelContainer.mainContext
+            RecentComicSync.refresh(in: context)
+            if !store.isTemporary {
+                LibrarySnapshot.save((try? context.fetch(FetchDescriptor<ComicBook>())) ?? [])
+            }
         }
     }
 

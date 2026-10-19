@@ -53,7 +53,7 @@ enum Storage {
 
     // MARK: Helpers
 
-    private static var appSupport: URL {
+    static var appSupport: URL {
         let url = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? fm.createDirectory(at: url, withIntermediateDirectories: true)
         return url

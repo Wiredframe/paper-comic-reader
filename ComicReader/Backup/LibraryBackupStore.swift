@@ -138,6 +138,10 @@ enum LibraryBackupStore {
         for book in fetchBooks(in: context) {
             byKey[BackupComicKey.key(for: book), default: []].append(book)
         }
+        var inBackup: [BackupComicKey: Int] = [:]
+        for comic in unpacked.backup.comics {
+            inBackup[BackupComicKey.key(for: comic), default: 0] += 1
+        }
 
         for comic in unpacked.backup.comics {
             let key = BackupComicKey.key(for: comic)
@@ -145,8 +149,13 @@ enum LibraryBackupStore {
             // share a file name and page count can't be told apart by anything here, and writing
             // one comic's progress and bookmarks onto both would be a quiet, permanent mix-up —
             // much worse than those two not restoring until one is renamed.
+            //
+            // The same goes the other way round: two entries in the backup sharing a key are two
+            // genuine comics on the device it came from, and there is no telling which of them a
+            // single local match is.
             let matches = byKey[key] ?? []
             guard matches.count <= 1 else { continue }
+            guard matches.isEmpty || inBackup[key, default: 0] <= 1 else { continue }
 
             if let existing = matches.first {
                 let added = update(existing, from: comic, in: context)
@@ -156,8 +165,10 @@ enum LibraryBackupStore {
                     report.comicsWithoutArchive += 1
                 }
             } else {
+                // Not registered in `byKey`: only comics that were here before the restore are match
+                // candidates, so a second entry with the same key becomes a comic of its own
+                // instead of being merged into this one.
                 let book = create(comic, from: unpacked, in: context)
-                byKey[key] = [book]
                 report.comicsAdded += 1
                 report.bookmarksAdded += book.bookmarks.count
                 if !book.isFolderBacked && !book.hasLocalArchive {

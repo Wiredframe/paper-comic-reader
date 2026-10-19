@@ -279,6 +279,33 @@ final class LibraryBackupTests: XCTestCase {
         XCTAssertEqual(b.lastReadPage, 0)
     }
 
+    /// Two different owned comics that happen to share a title and page count are two comics on the
+    /// device the backup came from, so they restore as two, not one merged into the other.
+    func testSameKeyTwiceInABackupRestoresBoth() throws {
+        let source = try makeContext()
+        let first = insertOwned(source)
+        first.lastReadPage = 4
+        addBookmark(source, to: first, page: 2)
+        let second = insertOwned(source)
+        second.lastReadPage = 20
+        addBookmark(source, to: second, page: 9)
+
+        let unpacked = try roundTrip([first, second])
+        let target = try makeContext()
+        let report = LibraryBackupStore.restore(unpacked, into: target)
+        XCTAssertEqual(report.comicsAdded, 2)
+        XCTAssertEqual(report.comicsUpdated, 0)
+
+        let books = try target.fetch(FetchDescriptor<ComicBook>())
+        let restoredFirst = try XCTUnwrap(books.first { $0.fileName == first.fileName })
+        let restoredSecond = try XCTUnwrap(books.first { $0.fileName == second.fileName })
+        XCTAssertEqual(restoredFirst.lastReadPage, 4)
+        XCTAssertEqual(restoredFirst.bookmarks.map(\.pageIndex), [2])
+        XCTAssertEqual(restoredSecond.lastReadPage, 20)
+        XCTAssertEqual(restoredSecond.bookmarks.map(\.pageIndex), [9])
+        XCTAssertTrue(restoredSecond.hasLocalArchive)
+    }
+
     /// The backup can describe a LONGER copy of the same comic than this device has, and the page it
     /// remembers must be clamped to the pages that actually exist here.
     ///

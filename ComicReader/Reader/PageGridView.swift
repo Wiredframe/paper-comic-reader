@@ -73,6 +73,22 @@ struct PageThumb: View {
     let store: PageImageStore
     let index: Int
     @State private var image: UIImage?
+    /// The cell's height in points, once laid out. The decode size follows it, so a thumb is
+    /// sharp in the phone's narrow columns and on the iPad's wider ones alike.
+    @State private var cellHeight: CGFloat?
+    @Environment(\.displayScale) private var displayScale
+
+    private struct Request: Equatable {
+        let index: Int
+        let maxPixel: CGFloat
+    }
+
+    private var request: Request? {
+        cellHeight.map {
+            Request(index: index,
+                    maxPixel: PageImageStore.gridThumbPixel(forPointHeight: $0, scale: displayScale))
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -81,8 +97,10 @@ struct PageThumb: View {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
             }
         }
-        .task(id: index) {
-            image = await store.thumbnail(at: index)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cellHeight = $0 }
+        .task(id: request) {
+            guard let request else { return }
+            image = await store.thumbnail(at: request.index, maxPixel: request.maxPixel)
         }
     }
 }

@@ -62,4 +62,30 @@ final class PageImageStoreTests: XCTestCase {
         let thumb = await store.thumbnail(at: 1, maxPixel: 1000)
         XCTAssertTrue(thumb === PageImageStore.unreadablePage)
     }
+
+    func testGridThumbSizeCoversTheCell() {
+        // iPhone, three columns: a ~149pt cell at 3x needs ~447px.
+        XCTAssertEqual(PageImageStore.gridThumbPixel(forPointHeight: 149, scale: 3), 480)
+        // A small cell fits the lower rung.
+        XCTAssertEqual(PageImageStore.gridThumbPixel(forPointHeight: 100, scale: 3), 320)
+        // Anything bigger stays at the largest rung, which is still persisted.
+        XCTAssertEqual(PageImageStore.gridThumbPixel(forPointHeight: 400, scale: 3), 480)
+    }
+
+    func testGridThumbComesBackFromTheDiskCache() async throws {
+        let bookID = UUID()
+        defer { try? FileManager.default.removeItem(at: Storage.pageThumbs(for: bookID)) }
+        let first = await PageImageStore.open(bookID: bookID, url: archiveURL,
+                                              paperEnabled: false, paperParams: PaperParams())
+        let decoded = await first.thumbnail(at: 0, maxPixel: 480)
+        XCTAssertNotNil(decoded)
+
+        // A fresh store has an empty memory cache, so this one is read from disk.
+        let second = await PageImageStore.open(bookID: bookID, url: archiveURL,
+                                               paperEnabled: false, paperParams: PaperParams())
+        let reread = await second.thumbnail(at: 0, maxPixel: 480)
+        let fromDisk = try XCTUnwrap(reread)
+        XCTAssertFalse(fromDisk === decoded)
+        XCTAssertEqual(fromDisk.size, CGSize(width: 40, height: 60))
+    }
 }

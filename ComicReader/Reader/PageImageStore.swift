@@ -30,7 +30,7 @@ final class PageImageStore: @unchecked Sendable {
     private static let openQueue = DispatchQueue(label: "de.wiredframe.comicreader.archive-open",
                                                  qos: .userInitiated)
     private let cache = NSCache<NSNumber, UIImage>()
-    // Keyed by page index AND target size: the page grid asks for small (260px)
+    // Keyed by page index AND target size: the page grid asks for small (320/480px)
     // thumbnails, a bookmark for a full-size (1200px) shot. Keying by index alone let
     // a bookmark receive a previously-cached grid thumbnail — a blurry bookmark card.
     private let thumbCache = NSCache<NSString, UIImage>()
@@ -85,7 +85,7 @@ final class PageImageStore: @unchecked Sendable {
         self.paperParams = paperParams
         cache.countLimit = 10   // current page + double-page spread + ±2 prefetch fan-out
         // Bound the grid/bookmark thumbnails by decoded bytes so a long comic's page grid
-        // (a 260px thumb each) can't grow the cache without limit for the reader session.
+        // (a 320/480px thumb each) can't grow the cache without limit for the reader session.
         thumbCache.totalCostLimit = 32 * 1024 * 1024   // ~32 MB
     }
 
@@ -292,13 +292,13 @@ final class PageImageStore: @unchecked Sendable {
     /// Small thumbnails are persisted to `Storage.pageThumbs` so reopening the grid doesn't
     /// re-extract and re-downsample every page. Honours task cancellation, so fast grid
     /// scrolling doesn't backlog the decode queue with pages already scrolled past.
-    func thumbnail(at index: Int, maxPixel: CGFloat = 260) async -> UIImage? {
+    func thumbnail(at index: Int, maxPixel: CGFloat = PageImageStore.gridThumbPixelSizes[0]) async -> UIImage? {
         // Kept as a String (Sendable) so the decode closure below doesn't capture an NSString.
         let key = "\(index)#\(Int(maxPixel))"
         if let cached = thumbCache.object(forKey: key as NSString) { return cached }
         // Only the small, oft-revisited grid thumbnails are worth a disk cache; a bookmark's
         // one-off full-size shot isn't.
-        let persist = maxPixel <= 400
+        let persist = maxPixel <= Self.gridThumbPixelSizes.last!
         let flag = CancelFlag()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
@@ -328,9 +328,22 @@ final class PageImageStore: @unchecked Sendable {
         Storage.pageThumbs(for: bookID).appendingPathComponent("\(index)@\(Int(maxPixel)).jpg")
     }
 
+    /// Decoded here on the work queue (ImageIO with cache-immediately), not lazily on the main
+    /// thread at first draw, which `UIImage(data:)` would leave to a fast-flung grid.
     private func diskThumb(index: Int, maxPixel: CGFloat) -> UIImage? {
-        guard let data = try? Data(contentsOf: thumbDiskURL(index: index, maxPixel: maxPixel)) else { return nil }
-        return UIImage(data: data)
+        ImageDownsampler.downsample(url: thumbDiskURL(index: index, maxPixel: maxPixel), maxPixel: maxPixel)
+    }
+
+    /// The few sizes (device pixels, longest side) a page-grid thumbnail is decoded at. A fixed
+    /// ladder rather than the exact cell size keeps the on-disk cache keys stable across devices
+    /// and rotations.
+    static let gridThumbPixelSizes: [CGFloat] = [320, 480]
+
+    /// The smallest grid thumbnail size that covers a cell `pointHeight` tall at `scale`, or the
+    /// largest one for anything bigger.
+    static func gridThumbPixel(forPointHeight pointHeight: CGFloat, scale: CGFloat) -> CGFloat {
+        let needed = pointHeight * scale
+        return gridThumbPixelSizes.first { $0 >= needed } ?? gridThumbPixelSizes.last!
     }
 
     /// Approximate decoded size in bytes (4 per device pixel), for the thumbnail cost limit.

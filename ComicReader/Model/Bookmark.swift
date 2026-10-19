@@ -167,33 +167,6 @@ final class Bookmark {
         return book?.matches(searchQuery: trimmed, includingStories: false) ?? false
     }
 
-    // MARK: Story runs
-
-    /// Consecutive bookmarks that share a story (or share having none), for a per-comic list that
-    /// puts a header over each story.
-    struct StoryRun: Identifiable {
-        let title: String?
-        let marks: [Bookmark]
-        /// The first mark's id: stable while the run keeps its first page.
-        var id: UUID { marks[0].id }
-    }
-
-    /// Splits `marks`, already in page order, into runs of the same story label. A story that
-    /// comes back after another one starts a new run, so the runs follow the pages.
-    static func storyRuns(_ marks: [Bookmark]) -> [StoryRun] {
-        var runs: [StoryRun] = []
-        var current: [Bookmark] = []
-        for mark in marks {
-            if let first = current.first, first.storyLabel != mark.storyLabel {
-                runs.append(StoryRun(title: first.storyLabel, marks: current))
-                current = []
-            }
-            current.append(mark)
-        }
-        if let first = current.first { runs.append(StoryRun(title: first.storyLabel, marks: current)) }
-        return runs
-    }
-
     // MARK: Suggestion
 
     /// A story guessed from the neighbouring bookmarks. Stories run over consecutive pages, so a

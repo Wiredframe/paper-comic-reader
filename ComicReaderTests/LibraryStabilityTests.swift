@@ -476,19 +476,4 @@ final class LibraryStabilityTests: XCTestCase {
         // The comic-level search still reaches the index.
         XCTAssertTrue(book.matches(searchQuery: "gamma"))
     }
-
-    func testStoryRunsFollowThePages() throws {
-        let context = try makeContext()
-        let (_, marks) = makeStoryBook(in: context, pages: [1, 2, 3, 4, 5, 6])
-        marks[2]?.assignStory(at: 0)
-        marks[3]?.assignStory(at: 0)
-        marks[4]?.assignStory(at: 1)
-        marks[6]?.assignStory(at: 0)
-        let ordered = [1, 2, 3, 4, 5, 6].compactMap { marks[$0] }
-
-        let runs = Bookmark.storyRuns(ordered)
-        XCTAssertEqual(runs.map(\.title), [nil, "Alpha", "Beta", nil, "Alpha"])
-        XCTAssertEqual(runs.map { $0.marks.map(\.pageIndex) }, [[1], [2, 3], [4], [5], [6]])
-        XCTAssertTrue(Bookmark.storyRuns([]).isEmpty)
-    }
 }

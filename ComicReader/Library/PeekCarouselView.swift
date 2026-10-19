@@ -578,39 +578,19 @@ private struct CarouselDetailPage: View {
                     .lineLimit(1)
             }
 
-            // Once any page has a story, the pages are split into runs of the same story, each
-            // under a small header, so the cards don't have to name it. Computed inline: this
-            // only rebuilds when the debounced `settledID` lands, not on every swipe frame.
-            if marks.contains(where: \.hasStory) {
-                ForEach(Bookmark.storyRuns(marks)) { run in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Group {
-                            if let title = run.title { Text(verbatim: title) } else { Text("No Story") }
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(run.title == nil ? .secondary : .primary)
-                        .lineLimit(2)
-                        .accessibilityAddTraits(.isHeader)
-                        grid(book, marks: run.marks)
+            LazyVGrid(columns: Self.bookmarkColumns, spacing: LibraryGridMetrics.spacing) {
+                ForEach(marks) { mark in
+                    // Computing the reserve flag inline is fine here: `content(_:)` only rebuilds
+                    // when the debounced `settledID` lands, not on every swipe frame.
+                    BookmarkCard(bookmark: mark, showsTitle: false,
+                                 maxPixel: LibraryGridMetrics.coverMaxPixel(columns: 2),
+                                 reservesStoryLine: marks.contains { $0.hasStory }) {
+                        onOpen(book, mark.pageIndex)
+                    } onDelete: {
+                        delete(mark)
+                    } onAssignStory: {
+                        bookmarkForStory = mark
                     }
-                }
-            } else {
-                grid(book, marks: marks)
-            }
-        }
-    }
-
-    private func grid(_ book: ComicBook, marks: [Bookmark]) -> some View {
-        LazyVGrid(columns: Self.bookmarkColumns, spacing: LibraryGridMetrics.spacing) {
-            ForEach(marks) { mark in
-                BookmarkCard(bookmark: mark, showsTitle: false,
-                             maxPixel: LibraryGridMetrics.coverMaxPixel(columns: 2),
-                             showsStory: false) {
-                    onOpen(book, mark.pageIndex)
-                } onDelete: {
-                    delete(mark)
-                } onAssignStory: {
-                    bookmarkForStory = mark
                 }
             }
         }

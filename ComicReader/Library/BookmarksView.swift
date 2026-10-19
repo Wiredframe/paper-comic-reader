@@ -45,8 +45,8 @@ struct BookmarksView: View {
     /// card, so all three layouts share ONE sheet instead of presenting one per cell — the same way
     /// LibraryView owns `detailBook` for its grid.
     @State private var storyTarget: Bookmark?
-    /// Live search query — narrows to bookmarks whose comic matches on title / story title /
-    /// issue number (see `ComicBook.matches`).
+    /// Live search query: narrows to bookmarks whose own story, or whose comic's title or issue
+    /// number, matches (see `Bookmark.matches`).
     @State private var searchText = ""
     /// Bumped by the shuffle button in carousel mode — the deck glides to a random bookmark
     /// rather than opening one.
@@ -74,7 +74,7 @@ struct BookmarksView: View {
     private var anyHasStory: Bool { derived.anyHasStory }
 
     /// Bookmarks in the current sort order, then narrowed by the search query (a bookmark matches
-    /// when its comic does). Sorted in memory so the field/order can change live without a new
+    /// on its own story or its comic's names, see `Bookmark.matches`). Sorted in memory so the field/order can change live without a new
     /// @Query. Called only from `derived`, behind the signature cache.
     private func computeDisplayedBookmarks() -> [Bookmark] {
         let ascending: [Bookmark]
@@ -95,7 +95,7 @@ struct BookmarksView: View {
             ascending = validBookmarks.sorted { ($0.pageIndex, $0.dateAdded) < ($1.pageIndex, $1.dateAdded) }
         }
         var result = sortAscending ? ascending : ascending.reversed()
-        if !trimmedQuery.isEmpty { result = result.filter { $0.book?.matches(searchQuery: trimmedQuery) ?? false } }
+        if !trimmedQuery.isEmpty { result = result.filter { $0.matches(searchQuery: trimmedQuery) } }
         return result
     }
 
@@ -117,7 +117,7 @@ struct BookmarksView: View {
             hasher.combine(mark.id)
             hasher.combine(mark.pageIndex)
             hasher.combine(mark.dateAdded)
-            hasher.combine(mark.storyTitle)   // feeds `anyHasStory`, which the gallery reads
+            hasher.combine(mark.storyTitle)   // feeds `anyHasStory` and the search
             if readsComic { hasher.combine(mark.book?.displayTitle) }
             if searching { hasher.combine(mark.book?.characters) }   // matches() also reads these
         }

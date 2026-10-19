@@ -30,7 +30,7 @@ final class Bookmark {
     // Which story in the comic's index this page belongs to. ComicInfo puts NO page number and no
     // page range on a story (see ComicStory: number, kind, title, code, credits, and nothing
     // positional), so this can never be worked out — the reader says so by hand, from the
-    // bookmark's own menu. A comic without an index can still get
+    // bookmark's own menu or the reader's bookmark button. A comic without an index can still get
     // a story: a name typed in the picker (`assignCustomStory`), held in `storyTitle` alone.
     //
     // Three fields rather than one reference, because `ComicBook.stories` is a plain Codable
@@ -149,6 +149,49 @@ final class Bookmark {
         storyIndex = nil
         storyTitle = nil
         storyCode = nil
+    }
+
+    // MARK: Search
+
+    /// Whether this bookmark matches a Bookmarks search `query`. Its own story first, then its
+    /// comic's names, but NOT the comic's story index: a story title found there would match every
+    /// bookmark of the issue, when the reader looking for a story wants the pages that belong to
+    /// it. Same case- and diacritic-insensitive compare as `ComicBook.matches`.
+    func matches(searchQuery query: String) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        if let story = storyLabel,
+           story.range(of: trimmed, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
+            return true
+        }
+        return book?.matches(searchQuery: trimmed, includingStories: false) ?? false
+    }
+
+    // MARK: Story runs
+
+    /// Consecutive bookmarks that share a story (or share having none), for a per-comic list that
+    /// puts a header over each story.
+    struct StoryRun: Identifiable {
+        let title: String?
+        let marks: [Bookmark]
+        /// The first mark's id: stable while the run keeps its first page.
+        var id: UUID { marks[0].id }
+    }
+
+    /// Splits `marks`, already in page order, into runs of the same story label. A story that
+    /// comes back after another one starts a new run, so the runs follow the pages.
+    static func storyRuns(_ marks: [Bookmark]) -> [StoryRun] {
+        var runs: [StoryRun] = []
+        var current: [Bookmark] = []
+        for mark in marks {
+            if let first = current.first, first.storyLabel != mark.storyLabel {
+                runs.append(StoryRun(title: first.storyLabel, marks: current))
+                current = []
+            }
+            current.append(mark)
+        }
+        if let first = current.first { runs.append(StoryRun(title: first.storyLabel, marks: current)) }
+        return runs
     }
 
     // MARK: Suggestion

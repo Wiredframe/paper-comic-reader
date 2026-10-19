@@ -20,6 +20,9 @@ struct BookmarkCard: View {
     /// reason CoverCell always reserves its subtitle line. Off by default, so a library where no
     /// story has been assigned keeps the compact card.
     var reservesStoryLine: Bool = false
+    /// Off where a header above the card already names its story (the per-comic block on the
+    /// Discover detail page), so the card doesn't say it twice.
+    var showsStory: Bool = true
     let onOpen: () -> Void
     let onDelete: () -> Void
     /// Asks the caller to present the story picker for this bookmark. Optional because the SCREEN
@@ -52,14 +55,14 @@ struct BookmarkCard: View {
                     // it: a bookmark that names its story is FOR that story, and the issue it sits
                     // in is then context rather than identity. Both are capped at one line — a
                     // story title can be long, and a card that grew for it would break the grid.
-                    if showsTitle || bookmark.hasStory || reservesStoryLine {
+                    if showsTitle || showsStoryLine || reservesStoryLine {
                         Text(leadLabel)
                             .font(.subheadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                     }
-                    if showsTitle, bookmark.hasStory || reservesStoryLine {
-                        Text(bookmark.hasStory ? (bookmark.book?.displayTitle ?? "—") : " ")
+                    if showsTitle, showsStoryLine || reservesStoryLine {
+                        Text(showsStoryLine ? (bookmark.book?.displayTitle ?? "") : " ")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -80,9 +83,12 @@ struct BookmarkCard: View {
     /// A blank when there's neither but a neighbouring card has a story — the line is held open so
     /// the rows of the grid stay even, the same trick `CoverCell` uses for its subtitle.
     private var leadLabel: String {
-        if let story = bookmark.storyLabel { return story }
+        if showsStory, let story = bookmark.storyLabel { return story }
         return showsTitle ? (bookmark.book?.displayTitle ?? "—") : " "
     }
+
+    /// Whether the card shows its story itself.
+    private var showsStoryLine: Bool { showsStory && bookmark.hasStory }
 
     @ViewBuilder private var menu: some View {
         // Offered for every comic, index or not: the picker can also name a story by hand.

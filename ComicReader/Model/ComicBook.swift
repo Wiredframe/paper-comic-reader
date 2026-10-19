@@ -240,9 +240,9 @@ final class ComicBook {
     /// diacritic-insensitively (so "asterix" finds "Astérix", "topolino" finds "Topolino").
     /// Searches what a reader would name a comic by: its display title and file name, its series,
     /// issue number and issue title, the characters listed in it, and every story title in the
-    /// index. A blank query matches everything, so callers can bind it straight to a search field
-    /// without a guard.
-    func matches(searchQuery query: String) -> Bool {
+    /// index (unless `includingStories` is false, see `Bookmark.matches`). A blank query matches
+    /// everything, so callers can bind it straight to a search field without a guard.
+    func matches(searchQuery query: String, includingStories: Bool = true) -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
         func has(_ field: String?) -> Bool {
@@ -253,7 +253,7 @@ final class ComicBook {
             || has(issueTitle) || has(characters) {
             return true
         }
-        return stories.contains { has($0.title) }
+        return includingStories && stories.contains { has($0.title) }
     }
 
     /// Story names this comic's bookmarks carry that aren't rows of its index: the ones typed by

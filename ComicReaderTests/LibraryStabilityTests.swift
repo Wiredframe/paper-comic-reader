@@ -457,4 +457,38 @@ final class LibraryStabilityTests: XCTestCase {
         marks[3].assignCustomStory("   ")
         XCTAssertFalse(marks[3].hasStory)
     }
+
+    func testBookmarkSearchMatchesItsOwnStoryNotTheWholeIndex() throws {
+        let context = try makeContext()
+        let (book, marks) = makeStoryBook(in: context, pages: [1, 2])
+        book.series = "Topolino"
+        book.issueNumber = "1900"
+        marks[1]?.assignStory(at: 1)
+
+        XCTAssertTrue(marks[1]?.matches(searchQuery: "beta") ?? false, "its own story")
+        XCTAssertFalse(marks[2]?.matches(searchQuery: "beta") ?? true,
+                       "a story of the same issue that isn't this page's")
+        XCTAssertFalse(marks[1]?.matches(searchQuery: "gamma") ?? true, "only the index lists it")
+        XCTAssertTrue(marks[2]?.matches(searchQuery: "topolino") ?? false, "the comic's name")
+        XCTAssertTrue(marks[2]?.matches(searchQuery: "1900") ?? false, "the issue number")
+        XCTAssertTrue(marks[2]?.matches(searchQuery: "  ") ?? false, "a blank query matches all")
+
+        // The comic-level search still reaches the index.
+        XCTAssertTrue(book.matches(searchQuery: "gamma"))
+    }
+
+    func testStoryRunsFollowThePages() throws {
+        let context = try makeContext()
+        let (_, marks) = makeStoryBook(in: context, pages: [1, 2, 3, 4, 5, 6])
+        marks[2]?.assignStory(at: 0)
+        marks[3]?.assignStory(at: 0)
+        marks[4]?.assignStory(at: 1)
+        marks[6]?.assignStory(at: 0)
+        let ordered = [1, 2, 3, 4, 5, 6].compactMap { marks[$0] }
+
+        let runs = Bookmark.storyRuns(ordered)
+        XCTAssertEqual(runs.map(\.title), [nil, "Alpha", "Beta", nil, "Alpha"])
+        XCTAssertEqual(runs.map { $0.marks.map(\.pageIndex) }, [[1], [2, 3], [4], [5], [6]])
+        XCTAssertTrue(Bookmark.storyRuns([]).isEmpty)
+    }
 }

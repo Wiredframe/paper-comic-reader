@@ -123,7 +123,11 @@ struct LibraryView: View {
 
     private var viewMode: LibraryViewMode { .from(viewModeRaw) }
 
-    private var allSelected: Bool { !books.isEmpty && selection.count == books.count }
+    /// Measured against what's on screen, not the whole library: with a search or filter on,
+    /// "all" means the comics the reader can actually see.
+    private var allSelected: Bool {
+        !displayedBooks.isEmpty && displayedBooks.allSatisfy { selection.contains($0.id) }
+    }
 
     private var navTitle: String {
         guard selectionMode else { return String(localized: "Library") }
@@ -374,6 +378,13 @@ struct LibraryView: View {
         .onChange(of: viewModeRaw) { _, raw in
             if LibraryViewMode.from(raw) == .discover { exitSelection(); searchText = "" }
         }
+        // A selection only ever covers comics on screen. When a search or filter hides some, they
+        // drop out of it, so the count in the title and the delete dialog never includes a comic
+        // the reader can't see.
+        .onChange(of: displayedBooks.map(\.id)) { _, ids in
+            guard selectionMode else { return }
+            selection.formIntersection(Set(ids))
+        }
         #if DEBUG
         // Screenshot mode: once the seeded comic lands, present what was asked for. onChange
         // covers the seed arriving after this view; onAppear covers it already being there.
@@ -418,7 +429,7 @@ struct LibraryView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(allSelected ? String(localized: "Deselect All") : String(localized: "Select All")) {
                     if allSelected { selection.removeAll() }
-                    else { selection = Set(books.map(\.id)) }
+                    else { selection = Set(displayedBooks.map(\.id)) }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -596,12 +607,12 @@ struct LibraryView: View {
     }
 
     private func markSelected(read: Bool) {
-        for book in books where selection.contains(book.id) { book.isRead = read }
+        for book in displayedBooks where selection.contains(book.id) { book.isRead = read }
         try? context.save()
     }
 
     private func deleteSelected() {
-        for book in books where selection.contains(book.id) {
+        for book in displayedBooks where selection.contains(book.id) {
             Importer.delete(book, from: context)
         }
         exitSelection()

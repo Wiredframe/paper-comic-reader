@@ -413,9 +413,10 @@ enum Importer {
                         // Folder offline or file gone: fall back to any local copy below.
                     }
                 }
-                if let local = target.localURL {
-                    let info = (try? ComicArchive(url: local))?.metadataXML().flatMap(ComicInfoParser.parse)
-                    return (info, true)
+                // Only an archive that actually opened counts as read: one that won't is a failed
+                // read, and must not clear what the comic already knows.
+                if let local = target.localURL, let archive = try? ComicArchive(url: local) {
+                    return (archive.metadataXML().flatMap(ComicInfoParser.parse), true)
                 }
                 return (nil, false)
             }.value
@@ -434,16 +435,16 @@ enum Importer {
     }
 
     /// The library-folder copy's ComicInfo, read in place (no full download, only the archive's
-    /// central directory and the ComicInfo entry). Throws when the folder can't be reached or the
-    /// file isn't there, so the caller can fall back to a local copy; a successful read of an
-    /// untagged archive returns nil, which clears the fields.
+    /// central directory and the ComicInfo entry). Throws when the folder can't be reached, the
+    /// file isn't there or won't open (a share that drops mid-read), so the caller can fall back to
+    /// a local copy; a successful read of an untagged archive returns nil, which clears the fields.
     private static func readFolderMetadata(relativePath: String) throws -> ComicInfoData? {
         try LibrarySource.withFolderAccess { folder in
             let url = folder.appendingPathComponent(relativePath)
             guard Storage.fm.fileExists(atPath: url.path) else {
                 throw LibrarySource.SourceError.fileMissing
             }
-            return (try? ComicArchive(url: url))?.metadataXML().flatMap(ComicInfoParser.parse)
+            return try ComicArchive(url: url).metadataXML().flatMap(ComicInfoParser.parse)
         }
     }
 

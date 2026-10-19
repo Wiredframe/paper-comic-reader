@@ -10,6 +10,7 @@
 
 import XCTest
 import SwiftData
+import ZIPFoundation
 @testable import ComicReader
 
 @MainActor
@@ -232,5 +233,57 @@ final class LibraryStabilityTests: XCTestCase {
         XCTAssertTrue(kept.hasLocalArchive)
         XCTAssertFalse(gone.hasLocalArchive)
         XCTAssertEqual(gone.bookmarks.count, 1, "reconciling must never touch a bookmark")
+    }
+
+    // MARK: Re-reading metadata
+
+    /// An owned comic whose archive won't open (a damaged file) must keep the details it has:
+    /// a failed read is not an untagged comic, and only the latter clears the fields.
+    func testRefreshKeepsMetadataWhenTheArchiveWontOpen() async throws {
+        let context = try makeContext()
+        let book = ComicBook(id: UUID(), title: "Raw", fileName: "\(UUID().uuidString).cbz",
+                             pageCount: 3, coverName: nil)
+        book.series = "Topolino"
+        book.issueNumber = "1900"
+        context.insert(book)
+        try context.save()
+        FileManager.default.createFile(atPath: book.archiveURL.path, contents: Data("not a zip".utf8))
+        tempFiles.append(book.archiveURL)
+
+        let updated = await Importer.refreshMetadata(for: [book], into: context) { _, _ in }
+
+        XCTAssertEqual(updated, 0)
+        XCTAssertEqual(book.series, "Topolino")
+        XCTAssertEqual(book.issueNumber, "1900")
+    }
+
+    /// The other half of the split: an archive that opens and simply carries no ComicInfo.xml is
+    /// a real read, and does clear the fields.
+    func testRefreshClearsMetadataOfAnUntaggedArchive() async throws {
+        let context = try makeContext()
+        let book = ComicBook(id: UUID(), title: "Raw", fileName: "\(UUID().uuidString).cbz",
+                             pageCount: 1, coverName: nil)
+        book.series = "Topolino"
+        context.insert(book)
+        try context.save()
+        try writeArchive(to: book.archiveURL, entries: ["page1.jpg": Data("page".utf8)])
+
+        let updated = await Importer.refreshMetadata(for: [book], into: context) { _, _ in }
+
+        XCTAssertEqual(updated, 1)
+        XCTAssertNil(book.series)
+    }
+
+    /// A small CBZ with the given entries, removed in tearDown.
+    private func writeArchive(to url: URL, entries: [String: Data]) throws {
+        try? FileManager.default.removeItem(at: url)
+        let archive = try Archive(url: url, accessMode: .create)
+        for (name, data) in entries.sorted(by: { $0.key < $1.key }) {
+            try archive.addEntry(with: name, type: .file,
+                                 uncompressedSize: Int64(data.count)) { position, size in
+                data.subdata(in: Int(position)..<Int(position) + size)
+            }
+        }
+        tempFiles.append(url)
     }
 }

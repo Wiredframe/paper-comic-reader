@@ -68,6 +68,7 @@ struct PaperSettingsView: View {
 					.monospacedDigit()
 					.foregroundStyle(.secondary)
 			}
+			.accessibilityHidden(true)
 			// Step in 5-percentage-point notches. The readout normalises to the range's
 			// upper bound, so one 5% notch is upperBound / 20 in raw value (21 stops, 0…100%).
 			Slider(
@@ -76,6 +77,9 @@ struct PaperSettingsView: View {
 				in: range,
 				step: range.upperBound / 20
 			)
+			// Every range starts at 0, so the slider's own spoken percentage already matches
+			// the readout above; it only needs the name.
+			.accessibilityLabel(Text(title))
 		}
 	}
 }

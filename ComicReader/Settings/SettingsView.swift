@@ -593,15 +593,22 @@ private struct ZoomSettingRow: View {
     @Bindable var reader: ReaderSettings
 
     var body: some View {
+        let percent = Int((reader.doubleTapZoom * 100).rounded())
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("Page Width When Zoomed")
                 Spacer()
-                Text("\(Int((reader.doubleTapZoom * 100).rounded()))%")
+                Text("\(percent)%")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            Slider(value: $reader.doubleTapZoom, in: 0.7...1.0, step: 0.05)
+            .accessibilityHidden(true)
+            // The slider carries the name and the value for VoiceOver. Left to itself it would speak
+            // its position within 70...100%, so 90% would be read as 67%.
+            Slider(value: $reader.doubleTapZoom, in: 0.7...1.0, step: 0.05) {
+                Text("Page Width When Zoomed")
+            }
+            .accessibilityValue(Text("\(percent)%"))
         }
     }
 }

@@ -469,6 +469,7 @@ struct LibraryView: View {
                         Divider()
                     }
                     Button { showImporter = true } label: { Label("Import", systemImage: "square.and.arrow.down") }
+                        .disabled(importProgress != nil)
                     Button { enterSelection() } label: { Label("Select", systemImage: "checkmark.circle") }
                         // A carousel shows one comic at a time — batch selection has nothing to act on.
                         .disabled(books.isEmpty || viewMode == .discover)
@@ -537,6 +538,7 @@ struct LibraryView: View {
                 Label("Import", systemImage: "square.and.arrow.down")
             }
             .buttonStyle(.borderedProminent)
+            .disabled(importProgress != nil)
         }
     }
 
@@ -627,7 +629,13 @@ struct LibraryView: View {
     /// Picks up a comic handed over by the app after being opened from outside, and
     /// imports it on the same non-blocking path as the picker — importing it in
     /// `onOpenURL` instead froze the app until the watchdog killed it.
+    ///
+    /// One import at a time: a comic opened while a batch is still running stays with the
+    /// coordinator until that batch is done (see the end of `runImport`). Two at once would each
+    /// check for duplicates against a library missing the other's comics, and the first to finish
+    /// would take the progress overlay down from under the second.
     private func consumePendingOpen() {
+        guard importProgress == nil else { return }
         let urls = fileOpener.consumeURLs()
         guard !urls.isEmpty else { return }
         runImport(urls, from: .external)
@@ -716,6 +724,7 @@ struct LibraryView: View {
                 importProgress?.done += 1
             }
             importProgress = nil
+            defer { consumePendingOpen() }
 
             switch source {
             case .external:

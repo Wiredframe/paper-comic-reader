@@ -174,9 +174,15 @@ struct SettingsView: View {
                 Section {
                     if let backupProgress {
                         HStack(spacing: 10) {
-                            ProgressView(value: Double(backupProgress.done),
-                                         total: Double(max(backupProgress.total, 1)))
-                                .frame(maxWidth: 120)
+                            // An import has no count to show: unzipping and copying run as one
+                            // step each, so a determinate bar would sit at zero until the end.
+                            if backupProgress.kind == .import {
+                                ProgressView()
+                            } else {
+                                ProgressView(value: Double(backupProgress.done),
+                                             total: Double(max(backupProgress.total, 1)))
+                                    .frame(maxWidth: 120)
+                            }
                             Text(backupProgress.label)
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
@@ -479,8 +485,9 @@ private struct BackupFile: Identifiable {
     var id: String { url.path }
 }
 
-/// Determinate progress for an export or import. Determinate rather than a spinner because a
-/// backup carrying archives takes long enough that "is it stuck?" becomes a real question.
+/// Progress for an export or import. An export is determinate, because a backup carrying archives
+/// takes long enough that "is it stuck?" becomes a real question; an import only has a spinner,
+/// since it has no count it could honestly report.
 private struct BackupProgress {
     var done: Int
     var total: Int
@@ -491,7 +498,7 @@ private struct BackupProgress {
     var label: String {
         switch kind {
         case .export: return String(localized: "Exporting \(done) of \(total)…")
-        case .import: return String(localized: "Importing \(done) of \(total)…")
+        case .import: return String(localized: "Importing…")
         }
     }
 }

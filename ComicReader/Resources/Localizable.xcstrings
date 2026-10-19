@@ -1818,6 +1818,22 @@
         }
       }
     },
+    "Importing…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importiere …"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importazione…"
+          }
+        }
+      }
+    },
     "In portrait the pages sit side by side in one strip; double-tap or pinch to switch between full height and screen width. Continuous Scrolling lets you scroll freely instead of page by page. Open at Full Height starts every comic at full height instead of screen width.": {
       "localizations": {
         "de": {

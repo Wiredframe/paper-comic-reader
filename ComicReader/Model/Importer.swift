@@ -53,12 +53,19 @@ enum Importer {
         let fileName = "\(id.uuidString).\(ext)"
         let destURL = Storage.comicURL(fileName)
 
+        // Through a `.part` file, like a download: a copy that fails or is cut short by the app
+        // being killed never sits at the final name, where nothing would ever find and remove it.
+        // A leftover `.part` is swept at the next launch (see `Storage.clearPartialDownloads`).
+        let temp = destURL.appendingPathExtension("\(UUID().uuidString).part")
         do {
             if Storage.fm.fileExists(atPath: destURL.path) {
                 try Storage.fm.removeItem(at: destURL)
             }
-            try Storage.fm.copyItem(at: sourceURL, to: destURL)
+            try Storage.fm.copyItem(at: sourceURL, to: temp)
+            try Storage.fm.moveItem(at: temp, to: destURL)
         } catch {
+            try? Storage.fm.removeItem(at: temp)
+            try? Storage.fm.removeItem(at: destURL)
             throw ImportError.copyFailed
         }
 

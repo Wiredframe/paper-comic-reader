@@ -214,25 +214,34 @@ enum LibraryBackupArchive {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
+        // Looked into before anything is unpacked. Anything that isn't a zip, or is a zip with no
+        // document in it (most likely a CBZ, the other kind of zip this reader has to hand), is
+        // the wrong file rather than a corrupt backup, so say the useful thing, and say it before
+        // a CBZ of a few hundred megabytes has been unpacked for nothing.
+        let archive: Archive
+        do {
+            archive = try Archive(url: url, accessMode: .read)
+        } catch {
+            throw BackupError.notABackup
+        }
+        guard archive[documentName] != nil else { throw BackupError.notABackup }
         let root = Storage.fm.temporaryDirectory
             .appendingPathComponent("LibraryRestore-\(UUID().uuidString)", isDirectory: true)
+        // From here on it IS a backup, so a failure is never "the wrong file": telling someone
+        // that about their genuine backup could get it deleted.
+        let needed = archive.reduce(Int64(0)) { $0 + Int64(clamping: $1.uncompressedSize) }
+        if let free = freeSpace(at: Storage.fm.temporaryDirectory), free < needed + 10 * 1024 * 1024 {
+            throw BackupError.notEnoughSpace
+        }
         do {
             try Storage.fm.createDirectory(at: root, withIntermediateDirectories: true)
             try Storage.fm.unzipItem(at: url, to: root)
         } catch {
             try? Storage.fm.removeItem(at: root)
-            // Anything that isn't a zip lands here. Far more likely the wrong file was picked than
-            // that a real backup is corrupt, so say the useful thing.
-            throw BackupError.notABackup
+            throw isOutOfSpace(error) ? BackupError.notEnoughSpace : BackupError.unreadable
         }
 
         let documentURL = root.appendingPathComponent(documentName)
-        guard Storage.fm.fileExists(atPath: documentURL.path) else {
-            try? Storage.fm.removeItem(at: root)
-            // A valid zip with no document in it. Most likely a CBZ, since those are zips too and
-            // are the other kind of file this reader has to hand.
-            throw BackupError.notABackup
-        }
         guard let data = try? Data(contentsOf: documentURL),
               let backup = try? LibraryBackupCodec.decode(data) else {
             try? Storage.fm.removeItem(at: root)

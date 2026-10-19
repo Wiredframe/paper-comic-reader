@@ -251,7 +251,26 @@ enum LibraryBackupArchive {
             try? Storage.fm.removeItem(at: root)
             throw BackupError.fromNewerVersion
         }
+        guard backup.comics.allSatisfy(hasPlainFileNames) else {
+            try? Storage.fm.removeItem(at: root)
+            throw BackupError.unreadable
+        }
         return Unpacked(backup: backup, root: root)
+    }
+
+    /// The document's file names end up as paths in Storage, and deleting a comic later removes
+    /// whatever they point at. A name that reaches outside its folder ("../default.store") can
+    /// only come from a tampered file, so the whole backup is refused.
+    private static func hasPlainFileNames(_ comic: LibraryBackup.Comic) -> Bool {
+        let names = [comic.fileName, comic.coverName].compactMap { $0 }
+            + comic.bookmarks.compactMap(\.thumbName)
+        return names.allSatisfy(isPlainFileName)
+    }
+
+    static func isPlainFileName(_ name: String) -> Bool {
+        !name.isEmpty && name != "." && name != ".."
+            && !name.contains("/") && !name.contains("\0")
+            && (name as NSString).lastPathComponent == name
     }
 }
 

@@ -340,6 +340,25 @@ final class LibraryBackupTests: XCTestCase {
         }
     }
 
+    /// A tampered file name would later let "delete comic" remove whatever it points at.
+    func testAFileNameReachingOutsideStorageIsRefused() throws {
+        let source = try makeContext()
+        var backup = LibraryBackupStore.capture(from: [insertOwned(source)])
+        // Not a real file, so the export below has nothing to pack for it.
+        backup.comics[0].coverName = "../\(UUID().uuidString).store"
+        backup.comics[0].archiveIncluded = false
+        let file = try LibraryBackupArchive.write(backup) { _, _ in }
+        written.append(file.deletingLastPathComponent())
+
+        XCTAssertThrowsError(try LibraryBackupArchive.read(at: file)) { error in
+            XCTAssertEqual(error as? LibraryBackupArchive.BackupError, .unreadable)
+        }
+        XCTAssertTrue(LibraryBackupArchive.isPlainFileName("\(UUID().uuidString).jpg"))
+        XCTAssertFalse(LibraryBackupArchive.isPlainFileName(".."))
+        XCTAssertFalse(LibraryBackupArchive.isPlainFileName("covers/x.jpg"))
+        XCTAssertFalse(LibraryBackupArchive.isPlainFileName(""))
+    }
+
     func testAFutureVersionIsRefused() throws {
         let source = try makeContext()
         var backup = LibraryBackupStore.capture(from: [insertOwned(source)])

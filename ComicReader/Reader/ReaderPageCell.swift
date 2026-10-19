@@ -341,8 +341,8 @@ final class ReaderPageCell: UICollectionViewCell {
     /// so they can't be set apart from each other.
     ///
     /// `.page` continues a deliberate double-tap zoom, so it honours the chosen zoom level. A slot
-    /// holding a single page (the cover, an unpaired last page) takes it too: `.focus` is fit-width
-    /// there just like `.spread`, but unlike `.spread` it honours the chosen zoom level.
+    /// holding a single page (the cover, an unpaired last page) takes it too: `.focus` and `.spread`
+    /// are the same fit-width at the chosen zoom there (see `spreadSizes`).
     private func apply(_ opening: Opening) {
         switch opening {
         case .page(let column, let atEnd) where isDouble && !pageIndices.isEmpty:
@@ -493,18 +493,20 @@ final class ReaderPageCell: UICollectionViewCell {
 
     /// Both pages sharing one height so together they fill the width exactly (→ no
     /// horizontal scroll; only vertical if the spread is taller than the screen).
+    ///
+    /// A slot holding a single page (the cover, an unpaired last page) is a plain fit-width page at
+    /// the chosen zoom instead, the size it has in single-page mode and in `.focus`. At the full
+    /// width it was BIGGER than its own `.focus`, so zooming in on it made it smaller.
     private func spreadSizes(in bounds: CGSize) -> [CGSize] {
-        let two = pageIndices.count > 1
+        guard pageIndices.count > 1 else { return [fitWidth(0, in: bounds, zoom: fitWidthZoom)] }
         let rL = aspect(0)
-        let rR = two ? aspect(1) : 0
+        let rR = aspect(1)
         let total = rL + rR
         // The gutter comes out of the width the two pages share, so the pair PLUS the gap still
         // fills the slot exactly and the spread stays free of horizontal scroll.
         let available = max(1, bounds.width - pageGap)
         let h = total > 0 ? available / total : bounds.height
-        var sizes = [CGSize(width: h * rL, height: h)]
-        if two { sizes.append(CGSize(width: h * rR, height: h)) }
-        return sizes
+        return [CGSize(width: h * rL, height: h), CGSize(width: h * rR, height: h)]
     }
 
     /// Both pages sharing the slot's full HEIGHT, so the whole spread is on screen at once. The

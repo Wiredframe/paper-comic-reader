@@ -126,7 +126,12 @@ final class ReaderPageCell: UICollectionViewCell {
     private let pageShadow = UIView()
     private let pageViews = [UIImageView(), UIImageView()]       // [left, right]
     private let liveText = [ImageAnalysisInteraction(), ImageAnalysisInteraction()]
-    private let analyzer = ImageAnalyzer()
+    /// One analyzer for every cell, as in the strip.
+    private static let analyzer = ImageAnalyzer()
+    /// How long a page has to stay before its text is analysed for Live Text (the strip's value).
+    private static let liveTextDelay: Duration = .milliseconds(500)
+    /// The pending or running Live Text analysis per position, cancelled when the slot moves on.
+    private var liveTextTasks: [Task<Void, Never>?] = [nil, nil]
     private var tapScrollAnimator: UIViewPropertyAnimator?       // render-server tap-scroll step
 
     private var singleTap: UITapGestureRecognizer?
@@ -270,6 +275,7 @@ final class ReaderPageCell: UICollectionViewCell {
             view.removeInteraction(liveText[i])
             liveText[i].analysis = nil   // don't carry the old page's text into the reused cell
         }
+        cancelLiveTextAnalysis()
         scrollView.contentInset = .zero
         scrollView.contentOffset = .zero
     }
@@ -1019,6 +1025,8 @@ final class ReaderPageCell: UICollectionViewCell {
 
     // MARK: Live Text
 
+    /// Hangs the Live Text interaction on the page. The text itself is analysed later, and only
+    /// where it can be selected, see `updateLiveTextEnabled`.
     private func setupLiveText(_ pos: Int, _ image: UIImage) {
         guard settings?.liveText == true, ImageAnalyzer.isSupported, pos < liveText.count else { return }
         let interaction = liveText[pos]
@@ -1027,21 +1035,15 @@ final class ReaderPageCell: UICollectionViewCell {
         }
         interaction.setSupplementaryInterfaceHidden(true, animated: false)
         updateLiveTextEnabled()
-        let token = loadToken
-        Task { [weak self] in
-            guard let self else { return }
-            let config = ImageAnalyzer.Configuration([.text])
-            let analysis = try? await self.analyzer.analyze(image, configuration: config)
-            // The cell may have been reused for another page while analysis ran — only
-            // apply it if this is still that page's load (mirrors the image-load guard).
-            guard self.loadToken == token, let analysis else { return }
-            interaction.analysis = analysis
-        }
     }
 
     /// Live Text press-and-hold selection is only offered where a page is shown at a
     /// comfortable reading size (fit-width, a spread's zoomed page), so it never competes with
     /// the whole-page and spread overviews, where the text is too small to select anyway.
+    ///
+    /// The analysis follows the same rule: a page's text is only read once selection is on for
+    /// it, so a spread overview, a slot built ahead of time or a page swiped past costs nothing.
+    /// Runs on every layout, which is how a zoom into one half of a spread starts it.
     private func updateLiveTextEnabled() {
         let enabled: Bool
         switch fit {
@@ -1051,6 +1053,40 @@ final class ReaderPageCell: UICollectionViewCell {
         for interaction in liveText {
             interaction.preferredInteractionTypes = enabled ? .textSelection : []
         }
+        guard enabled else { return }
+        for pos in images.indices { scheduleLiveTextAnalysis(pos) }
+    }
+
+    /// Queues the text analysis for one page, once: after `liveTextDelay`, and only if the cell
+    /// is still on that page and on screen by then. Never applied on the layout's own pass, so a
+    /// zoom animation doesn't wait on it.
+    private func scheduleLiveTextAnalysis(_ pos: Int) {
+        guard pos < liveText.count, pos < images.count, let image = images[pos],
+              liveTextTasks[pos] == nil, liveText[pos].analysis == nil,
+              pageViews[pos].interactions.contains(where: { $0 === liveText[pos] }) else { return }
+        let interaction = liveText[pos]
+        let token = loadToken
+        liveTextTasks[pos] = Task { [weak self] in
+            // `catch`, not `try?`: a cancelled sleep must end here rather than analyse anyway.
+            do { try await Task.sleep(for: Self.liveTextDelay) } catch { return }
+            guard let self, self.loadToken == token else { return }
+            guard self.window != nil else {
+                // Built ahead of time and not shown yet: try again when it is laid out on screen.
+                self.liveTextTasks[pos] = nil
+                return
+            }
+            let config = ImageAnalyzer.Configuration([.text])
+            let analysis = try? await Self.analyzer.analyze(image, configuration: config)
+            // The cell may have been reused for another page while analysis ran — only
+            // apply it if this is still that page's load (mirrors the image-load guard).
+            guard !Task.isCancelled, self.loadToken == token, let analysis else { return }
+            interaction.analysis = analysis
+        }
+    }
+
+    private func cancelLiveTextAnalysis() {
+        for task in liveTextTasks { task?.cancel() }
+        liveTextTasks = [nil, nil]
     }
 }
 

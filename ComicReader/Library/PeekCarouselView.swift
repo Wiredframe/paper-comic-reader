@@ -112,6 +112,9 @@ struct PeekCarouselView: View {
     let onOpen: (ComicBook, Int?) -> Void
 
     @Environment(\.modelContext) private var context
+    /// Only touched by the delete action, never read in `body`, so it adds nothing to what the
+    /// container re-renders on.
+    @Environment(DownloadManager.self) private var downloads
     @AppStorage("library.discoveryMode") private var filterRaw = DiscoveryFilter.discover.rawValue
 
     /// The centred comic. A reference type on purpose — see the file header. `body` never reads
@@ -296,6 +299,7 @@ struct PeekCarouselView: View {
                 center.id = i + 1 < ids.count ? ids[i + 1] : (i > 0 ? ids[i - 1] : nil)
             }
         }
+        downloads.cancel(book.id)
         Importer.delete(book, from: context)
     }
 

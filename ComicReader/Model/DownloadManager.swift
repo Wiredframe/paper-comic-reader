@@ -76,9 +76,9 @@ final class DownloadManager {
                     // Called off-main, roughly once per megabyte.
                     Task { @MainActor in ticket.progress = value }
                 }
-                self?.finish(id, ticket: ticket, book: book, context: context, error: nil)
+                self?.finish(id, ticket: ticket, book: book, dest: dest, context: context, error: nil)
             } catch {
-                self?.finish(id, ticket: ticket, book: book, context: context, error: error)
+                self?.finish(id, ticket: ticket, book: book, dest: dest, context: context, error: error)
                 throw error
             }
         }
@@ -120,13 +120,20 @@ final class DownloadManager {
 
     /// Book-keeping for a finished download, success or not. Flipping `hasLocalArchive` is what
     /// makes the indicator disappear everywhere at once.
-    private func finish(_ id: UUID, ticket: Ticket, book: ComicBook,
+    private func finish(_ id: UUID, ticket: Ticket, book: ComicBook, dest: URL,
                         context: ModelContext, error: Error?) {
         // A cancelled download can still finish its last chunk after a replacement has been
         // started, so only the run that still owns the slot may free it.
         if tickets[id] === ticket {
             tickets[id] = nil
             tasks[id] = nil
+        }
+        // The comic was deleted while its bytes were coming in. Deleting cancels the download,
+        // but the final move into place isn't a cancellation point, so the file can still land:
+        // nothing references it any more, so it goes, and the gone model is left alone.
+        if book.isDeleted || book.modelContext == nil {
+            if error == nil { try? Storage.fm.removeItem(at: dest) }
+            return
         }
         switch error {
         case nil:

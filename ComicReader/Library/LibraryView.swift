@@ -48,6 +48,8 @@ enum LibraryViewMode: String, CaseIterable, Identifiable {
 struct LibraryView: View {
     @Environment(\.modelContext) private var context
     @Environment(FileOpenCoordinator.self) private var fileOpener
+    /// Deleting a comic stops its download first, so the bytes can't land after the entry is gone.
+    @Environment(DownloadManager.self) private var downloads
     /// Drives how many trailing toolbar buttons we ask for; see `toolbar`.
     ///
     /// On iPhone the tab bar sits at the bottom, so the navigation bar owns the whole top row.
@@ -321,7 +323,10 @@ struct LibraryView: View {
                                 isPresented: Binding(get: { bookPendingDelete != nil },
                                                      set: { if !$0 { bookPendingDelete = nil } }),
                                 titleVisibility: .visible, presenting: bookPendingDelete) { book in
-                Button("Delete", role: .destructive) { Importer.delete(book, from: context) }
+                Button("Delete", role: .destructive) {
+                    downloads.cancel(book.id)
+                    Importer.delete(book, from: context)
+                }
                 Button("Cancel", role: .cancel) {}
             } message: { book in
                 Text(book.isFolderBacked
@@ -613,6 +618,7 @@ struct LibraryView: View {
 
     private func deleteSelected() {
         for book in displayedBooks where selection.contains(book.id) {
+            downloads.cancel(book.id)
             Importer.delete(book, from: context)
         }
         exitSelection()

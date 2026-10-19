@@ -117,8 +117,9 @@ final class ReaderStripController: UIViewController,
 
     /// Each page's shape (width / height) once known, nil until then.
     private var aspects: [CGFloat?]
-    /// The height the current widths were worked out for. Zero until the first layout.
-    private var laidOutHeight: CGFloat = 0
+    /// The size the current widths were worked out for. Zero until the first layout. The whole
+    /// size, not just the height: at fit-width the band's height comes from the screen's WIDTH.
+    private var laidOutSize: CGSize = .zero
     /// Open on `currentPage` at the first real layout, left edge at the screen's left edge.
     private var pendingInitialScroll = true
     /// The band is at fit-width rather than full height. Starts from Fit Height (Portrait) and is
@@ -229,14 +230,14 @@ final class ReaderStripController: UIViewController,
         super.viewDidLayoutSubviews()
         guard !isRefitting else { return }   // the switch restores the frame when it lands
         collectionView.frame = view.bounds
-        let height = collectionView.bounds.height
-        guard height > 0, pageCount > 0 else { return }
+        let size = collectionView.bounds.size
+        guard size.height > 0, pageCount > 0 else { return }
         if pendingInitialScroll {
             pendingInitialScroll = false
             applyWidths()
             show(page: currentPage)
             notifyPageChange()
-        } else if height != laidOutHeight {
+        } else if size != laidOutSize {
             relayoutKeepingPosition()   // iPad multitasking, a size change the strip must follow
         }
     }
@@ -289,7 +290,7 @@ final class ReaderStripController: UIViewController,
             aspects[page] = aspect
             changed = true
         }
-        guard changed, laidOutHeight > 0 else { return }
+        guard changed, laidOutSize.height > 0 else { return }
         if isRefitting { needsRelayout = true } else { relayoutKeepingPosition() }
     }
 
@@ -305,20 +306,20 @@ final class ReaderStripController: UIViewController,
     /// the estimate to the pixel, and those must not disturb a scroll or a snap under way.
     @discardableResult
     private func applyWidths() -> Bool {
-        let height = collectionView.bounds.height
+        let size = collectionView.bounds.size
         let scale = max(traitCollection.displayScale, 1)
         let estimate = estimatedAspect
         let band = bandHeight(screen: view.bounds.size, estimate: estimate, scale: scale)
         // Whole device pixels, so every seam is exactly one pixel and never smears across two.
         let widths = aspects.map { (band * ($0 ?? estimate) * scale).rounded() / scale }
-        guard widths != layout.widths || band != layout.bandHeight || height != laidOutHeight else {
+        guard widths != layout.widths || band != layout.bandHeight || size != laidOutSize else {
             return false
         }
         layout.widths = widths
         layout.gap = 1 / scale
         layout.bandHeight = band
         layout.invalidateLayout()
-        laidOutHeight = height
+        laidOutSize = size
         collectionView.layoutIfNeeded()
         layoutBandShadow()
         return true
@@ -418,7 +419,7 @@ final class ReaderStripController: UIViewController,
     /// smaller, the collection view is first widened past both screen edges so the neighbouring
     /// pages that come into view already have cells to be scaled in with.
     private func toggleFit(at point: CGPoint) {
-        guard !isRefitting, laidOutHeight > 0 else { return }
+        guard !isRefitting, laidOutSize.height > 0 else { return }
         let bounds = view.bounds
         let contentX = collectionView.contentOffset.x + point.x
         let anchor = layout.page(atX: contentX) ?? currentPage
@@ -534,7 +535,7 @@ final class ReaderStripController: UIViewController,
     /// too narrow to ever reach the middle, so the first and last pages can always be current.
     private func trackCurrentPage() {
         let width = collectionView.bounds.width
-        guard !isRefitting, width > 0, laidOutHeight > 0, pageCount > 0 else { return }
+        guard !isRefitting, width > 0, laidOutSize.height > 0, pageCount > 0 else { return }
         let x = collectionView.contentOffset.x
         let maxX = layout.collectionViewContentSize.width - width
         let page: Int

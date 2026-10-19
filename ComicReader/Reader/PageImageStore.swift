@@ -92,13 +92,21 @@ final class PageImageStore: @unchecked Sendable {
     }
 
     /// Returns the display image for `index`. Completion runs on the main queue.
-    func requestImage(at index: Int, completion: @escaping (Int, UIImage?) -> Void) {
+    ///
+    /// Hands back a flag for a request that had to be queued (nil for a cache hit, answered on the
+    /// spot). The cell cancels it when it is reused for another page: a fling along the strip
+    /// requests every page it passes, and on the serial queue the page it lands on would otherwise
+    /// wait behind renders whose results nobody shows any more. A cancelled request never calls
+    /// back.
+    @discardableResult
+    func requestImage(at index: Int, completion: @escaping (Int, UIImage?) -> Void) -> CancelFlag? {
         if let cached = cachedImage(at: index) {
             completion(index, cached)
-            return
+            return nil
         }
+        let flag = CancelFlag()
         work.async { [weak self] in
-            guard let self else { return }
+            guard let self, !flag.isCancelled else { return }
             // Re-check the cache now that we're on the decode queue: a page turn issues two
             // requests for the same uncached page (prefetchItemsAt + the cell's own configure)
             // back to back, and the first has cached it by the time the second runs on this
@@ -111,6 +119,7 @@ final class PageImageStore: @unchecked Sendable {
             if let image { self.cache.setObject(image, forKey: NSNumber(value: index)) }
             DispatchQueue.main.async { completion(index, image) }
         }
+        return flag
     }
 
     /// The controller reports the page the reader is on, so a superseded prefetch can bail
@@ -287,10 +296,10 @@ final class PageImageStore: @unchecked Sendable {
     }
 }
 
-/// Thread-safe cancellation flag: set from a task-cancellation handler, read on the decode
-/// queue so a superseded thumbnail request skips its decode. Unchecked because the lock is
-/// the synchronisation.
-private final class CancelFlag: @unchecked Sendable {
+/// Thread-safe cancellation flag: set from a task-cancellation handler or a reused cell, read on
+/// the decode queue so a superseded request skips its decode. Unchecked because the lock is the
+/// synchronisation.
+final class CancelFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
     var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }

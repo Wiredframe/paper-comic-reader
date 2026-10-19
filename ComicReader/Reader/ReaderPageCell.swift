@@ -157,6 +157,8 @@ final class ReaderPageCell: UICollectionViewCell {
     private var pageIndices: [Int] = []          // 1 or 2 global page indices
     private var images: [UIImage?] = []
     private var loadToken = 0
+    /// The image requests still queued for this slot, cancelled when the cell moves on.
+    private var imageRequests: [CancelFlag] = []
     private var fit: Fit = .fitWidth
     /// The slot was opened at the bottom of its focused page (`Opening.page(atEnd: true)`, a
     /// backward page change), so `placeFocus` rests it there instead of at the top. Deliberately
@@ -261,6 +263,7 @@ final class ReaderPageCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         loadToken += 1
+        cancelImageRequests()
         stopTapScroll()
         images = []
         pageIndices = []
@@ -298,10 +301,11 @@ final class ReaderPageCell: UICollectionViewCell {
         pageViews[1].isHidden = pageIndices.count < 2
 
         loadToken += 1
+        cancelImageRequests()
         let token = loadToken
         for pos in pageIndices.indices {
             let page = pageIndices[pos]
-            store.requestImage(at: page) { [weak self] index, image in
+            let request = store.requestImage(at: page) { [weak self] index, image in
                 guard let self, self.loadToken == token, index == page,
                       pos < self.images.count, let image else { return }
                 self.images[pos] = image
@@ -312,7 +316,13 @@ final class ReaderPageCell: UICollectionViewCell {
                 self.setNeedsLayout()
                 self.layoutIfNeeded()
             }
+            if let request { imageRequests.append(request) }
         }
+    }
+
+    private func cancelImageRequests() {
+        for request in imageRequests { request.cancel() }
+        imageRequests = []
     }
 
     /// Back to the slot's default fit, called when it scrolls off screen, so a stuck fit-height

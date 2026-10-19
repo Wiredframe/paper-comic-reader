@@ -736,6 +736,8 @@ final class StripPageCell: UICollectionViewCell {
     /// How long a page has to stay before its text is analysed for Live Text.
     private static let liveTextDelay: Duration = .milliseconds(500)
     private var loadToken = 0
+    /// The image request still queued for this cell, cancelled when it moves on to another page.
+    private var imageRequest: CancelFlag?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -754,6 +756,8 @@ final class StripPageCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         loadToken += 1
+        imageRequest?.cancel()
+        imageRequest = nil
         imageView.image = nil
         imageView.removeInteraction(liveText)
         liveText.analysis = nil   // don't carry the old page's text into the reused cell
@@ -762,8 +766,9 @@ final class StripPageCell: UICollectionViewCell {
     func configure(page: Int, store: PageImageStore, settings: ReaderSettings,
                    onShape: @escaping (Int, CGFloat) -> Void) {
         loadToken += 1
+        imageRequest?.cancel()
         let token = loadToken
-        store.requestImage(at: page) { [weak self] index, image in
+        imageRequest = store.requestImage(at: page) { [weak self] index, image in
             guard let self, self.loadToken == token, index == page, let image else { return }
             self.imageView.image = image
             if image.size.height > 0 { onShape(page, image.size.width / image.size.height) }

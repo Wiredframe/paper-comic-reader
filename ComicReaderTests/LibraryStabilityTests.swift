@@ -286,4 +286,23 @@ final class LibraryStabilityTests: XCTestCase {
         }
         tempFiles.append(url)
     }
+    /// A bare "&" in <Summary> stops the XML parser there. The fields that closed before it are
+    /// complete and must survive instead of the whole comic reading as untagged.
+    func testMalformedComicInfoKeepsTheFieldsBeforeTheError() throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <ComicInfo>
+          <Series>Topolino</Series>
+          <Number>1900</Number>
+          <Summary>Paperino & Paperoga</Summary>
+          <Year>1992</Year>
+        </ComicInfo>
+        """
+        let info = try XCTUnwrap(ComicInfoParser.parse(Data(xml.utf8)))
+        XCTAssertEqual(info.series, "Topolino")
+        XCTAssertEqual(info.number, "1900")
+        XCTAssertNil(info.summary, "the field the error sits in is incomplete and dropped")
+
+        XCTAssertNil(ComicInfoParser.parse(Data("&not xml at all".utf8)))
+    }
 }

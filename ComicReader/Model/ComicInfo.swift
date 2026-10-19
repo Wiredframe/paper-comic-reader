@@ -85,7 +85,10 @@ enum ComicInfoParser {
         let delegate = Delegate()
         let parser = XMLParser(data: data)
         parser.delegate = delegate
-        guard parser.parse() else { return nil }
+        // A malformed document (a bare "&" in a hand-edited <Summary>) stops the parser where the
+        // error is, but every field closed before that point is whole: keep those rather than
+        // treating the comic as untagged. Only a document that yielded nothing at all is nil.
+        if !parser.parse(), delegate.fields.isEmpty { return nil }
 
         var info = ComicInfoData()
         let fields = delegate.fields

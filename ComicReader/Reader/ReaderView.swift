@@ -44,6 +44,9 @@ struct ReaderView: View {
     // any presented sheets in the chosen theme.
     @AppStorage(AppAppearance.storageKey) private var appearanceRaw = AppAppearance.system.rawValue
     @Environment(\.colorScheme) private var systemScheme
+    /// With VoiceOver on the chrome stays up (no auto-hide) and the page gets an element of its
+    /// own to turn pages with, see `voiceOverPage`.
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
 
     /// Effective dark/light for the reader. Named colors (assets) don't resolve reliably
     /// inside a fullScreenCover, so the background is computed from this directly.
@@ -104,6 +107,8 @@ struct ReaderView: View {
     /// not a preference, so the next comic starts on the device orientation again. Held through
     /// a trip to another app and back, which is what `OrientationGate.holdLandscape` is for.
     @State private var holdsLandscape = false
+    /// Reaches the live reader for a VoiceOver page step.
+    @State private var readerHandle = ReaderHandle()
 
     // MARK: Folder-backed fetch (only used when this comic's bytes aren't local)
     //
@@ -149,8 +154,10 @@ struct ReaderView: View {
                            backgroundColor: readerBackgroundUIColor,
                            onToggleChrome: toggleChrome,
                            onReachedEnd: markRead,
-                           onRequestClose: close)
+                           onRequestClose: close,
+                           handle: readerHandle)
                     .ignoresSafeArea()
+                if voiceOverEnabled { voiceOverPage(count: store.pageCount) }
             } else if store != nil {
                 // Archive couldn't be opened (missing / corrupt after import). A folder comic's
                 // bytes can simply be fetched again, so it gets the way out a hand import can't.
@@ -183,6 +190,7 @@ struct ReaderView: View {
             // each small glass layer against a cached backdrop instead.
             chrome
                 .allowsHitTesting(chromeVisible)
+                .accessibilityHidden(!chromeVisible)   // faded out is gone for VoiceOver too
         }
         .statusBarHidden(!chromeVisible)
         .preferredColorScheme(AppAppearance.from(appearanceRaw).colorScheme)
@@ -228,6 +236,9 @@ struct ReaderView: View {
         }
         .onChange(of: paper.isEnabled) { reloadPaper() }
         .onChange(of: paper.params) { reloadPaper() }
+        .onChange(of: voiceOverEnabled) { _, isOn in
+            if isOn { cancelAutoHide() } else if chromeVisible { armAutoHide() }
+        }
         .onChange(of: showGrid) { _, isOpen in
             // Pause the auto-hide while the page grid is up; resume it when the grid closes.
             if isOpen { cancelAutoHide() } else if chromeVisible { armAutoHide() }
@@ -355,6 +366,30 @@ struct ReaderView: View {
         .accessibilityLabel(label)
     }
 
+    /// VoiceOver only. The pages are bare images with nothing to read out or adjust, so one
+    /// element over the whole reader stands in for them: it says which page this is, swiping up
+    /// or down on it turns the page (the reader's own step, so spreads and the strip behave as
+    /// they do for an edge tap), a double tap shows or hides the controls, and the escape gesture
+    /// closes the comic. Not there at all without VoiceOver, so touches and gestures are untouched.
+    private func voiceOverPage(count: Int) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .ignoresSafeArea()
+            .accessibilityElement()
+            .accessibilityLabel(book.displayTitle)
+            .accessibilityValue(Text("Page \(currentPage + 1) of \(count)"))
+            .accessibilityHint(Text("Swipe up or down to turn the page."))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: readerHandle.controller?.accessibilityStep(forward: true)
+                case .decrement: readerHandle.controller?.accessibilityStep(forward: false)
+                @unknown default: break
+                }
+            }
+            .accessibilityAction { toggleChrome() }
+            .accessibilityAction(.escape) { close() }
+    }
+
     // MARK: Chrome visibility
 
     /// Reveal the chrome, then auto-hide it after a short idle (matching the system reading
@@ -376,9 +411,10 @@ struct ReaderView: View {
     /// Schedule the chrome to fade away after a 2-second idle. Re-arming (another tap) restarts
     /// the clock; an open sheet holds it off until the sheet closes. Uses a cancellable Task so
     /// the fade rides Core Animation on the render server, never a main-thread timer loop.
+    /// Never under VoiceOver: the controls would vanish while they are being read out.
     private func armAutoHide() {
         cancelAutoHide()
-        guard !showGrid else { return }
+        guard !showGrid, !voiceOverEnabled else { return }
         autoHideTask = Task {
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }

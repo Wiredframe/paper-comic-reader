@@ -270,6 +270,16 @@ final class ReaderStripController: UIViewController,
         if currentPage == target, target != previous { notifyPageChange() }
     }
 
+    /// VoiceOver's page step: on to the next stop that way, the same stops an edge tap uses,
+    /// but moved there at once rather than scrolled.
+    func accessibilityStep(forward: Bool) {
+        guard !isRefitting else { return }
+        let x = headingTo ?? collectionView.contentOffset.x
+        guard let target = stop(from: x, forward: forward) else { return }
+        setOffset(target)
+        trackCurrentPage()
+    }
+
     // MARK: Widths
 
     /// Takes in newly known page shapes, and re-lays the band if any of them changes a width.

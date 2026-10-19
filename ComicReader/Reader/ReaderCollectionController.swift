@@ -278,6 +278,12 @@ final class ReaderCollectionController: UIViewController,
         prefetchNeighbours(of: target)
     }
 
+    /// VoiceOver's page step: the next or previous slot, landed without the turn animation.
+    func accessibilityStep(forward: Bool) {
+        let slot = paging.slot(forPage: currentPage)
+        go(toSlot: forward ? slot + 1 : slot - 1, animated: false)
+    }
+
     // MARK: Navigation
 
     private func go(toSlot slot: Int, animated: Bool, swiped: Bool = false) {

@@ -3812,6 +3812,22 @@
         }
       }
     },
+    "Swipe up or down to turn the page.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Umblättern nach oben oder unten wischen."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scorri in alto o in basso per girare pagina."
+          }
+        }
+      }
+    },
     "System": {
       "localizations": {
         "de": {

@@ -23,6 +23,16 @@ protocol ReaderControlling: UIViewController {
     func setBackground(_ color: UIColor)
     func reloadCurrent()
     func jump(to page: Int)
+    /// VoiceOver's page step (swipe up / down on the page): one page or spread on, at once and
+    /// without the turn animation, so the counter is already right when VoiceOver reads it out.
+    func accessibilityStep(forward: Bool)
+}
+
+/// The live reader, for the one thing that can't wait for the next SwiftUI update: a VoiceOver
+/// page step has to have landed before VoiceOver reads the new page out (see ReaderView).
+@MainActor
+final class ReaderHandle {
+    weak var controller: ReaderControlling?
 }
 
 extension ReaderCollectionController: ReaderControlling {}
@@ -44,6 +54,7 @@ struct ReaderHost: UIViewControllerRepresentable {
     var onToggleChrome: () -> Void
     var onReachedEnd: () -> Void
     var onRequestClose: () -> Void
+    var handle: ReaderHandle? = nil
 
     func makeUIViewController(context: Context) -> UIViewController {
         let controller = ReaderContainerController(store: store, settings: settings, startIndex: startIndex,
@@ -55,6 +66,7 @@ struct ReaderHost: UIViewControllerRepresentable {
         controller.onReachedEnd = onReachedEnd
         controller.onDismissRequest = onRequestClose
         context.coordinator.controller = controller
+        handle?.controller = controller
         context.coordinator.lastPaperVersion = paperVersion
         return controller
     }

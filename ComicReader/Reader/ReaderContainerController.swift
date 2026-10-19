@@ -130,6 +130,8 @@ final class ReaderContainerController: UIViewController, ReaderControlling {
 
     func jump(to page: Int) { child?.jump(to: page) }
 
+    func accessibilityStep(forward: Bool) { child?.accessibilityStep(forward: forward) }
+
     // MARK: Children
 
     private static func isLandscape(_ size: CGSize) -> Bool { size.width > size.height }

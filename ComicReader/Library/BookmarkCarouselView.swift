@@ -135,7 +135,7 @@ struct BookmarkCarouselView: View {
                 }
 
                 Menu {
-                    if let onAssignStory, let book = mark.book, !book.stories.isEmpty {
+                    if let onAssignStory, mark.book != nil {
                         Button { onAssignStory(mark) } label: {
                             Label(mark.hasStory ? String(localized: "Change Story…") : String(localized: "Assign to Story…"),
                                   systemImage: "text.book.closed")

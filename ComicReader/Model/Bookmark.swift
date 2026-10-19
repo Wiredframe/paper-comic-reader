@@ -30,7 +30,8 @@ final class Bookmark {
     // Which story in the comic's index this page belongs to. ComicInfo puts NO page number and no
     // page range on a story (see ComicStory: number, kind, title, code, credits, and nothing
     // positional), so this can never be worked out — the reader says so by hand, from the
-    // bookmark's own menu.
+    // bookmark's own menu. A comic without an index can still get
+    // a story: a name typed in the picker (`assignCustomStory`), held in `storyTitle` alone.
     //
     // Three fields rather than one reference, because `ComicBook.stories` is a plain Codable
     // attribute that `ComicBook.apply(_:)` REPLACES wholesale on every metadata read: import,
@@ -121,9 +122,88 @@ final class Bookmark {
         storyCode = stories[index].code?.nonEmpty
     }
 
+    /// Names this page's story by hand, for a comic whose index doesn't list it (or that has no
+    /// index at all, like most collected editions). Only the display value is set: there is no row
+    /// to point at, and `resolvedStoryIndex()` already treats a title it can't find as an
+    /// assignment that simply has no row. A blank name clears instead.
+    func assignCustomStory(_ title: String) {
+        guard let title = title.nonEmpty else {
+            clearStory()
+            return
+        }
+        storyIndex = nil
+        storyTitle = title
+        storyCode = nil
+    }
+
+    /// Takes over a suggestion: the index row when it still resolves to one, the bare name otherwise.
+    func assign(_ suggestion: StorySuggestion) {
+        if let index = suggestion.storyIndex {
+            assignStory(at: index)
+        } else {
+            assignCustomStory(suggestion.title)
+        }
+    }
+
     func clearStory() {
         storyIndex = nil
         storyTitle = nil
         storyCode = nil
+    }
+
+    // MARK: Suggestion
+
+    /// A story guessed from the neighbouring bookmarks. Stories run over consecutive pages, so a
+    /// page that sits between two marks of the same story almost certainly belongs to it, and one
+    /// after a mark most likely continues that mark's story.
+    struct StorySuggestion: Equatable {
+        let title: String
+        /// The row in the comic's index, when the neighbour's assignment resolves to one. Nil for a
+        /// name given by hand.
+        let storyIndex: Int?
+        /// The 0-based page of the mark the suggestion was taken from.
+        let page: Int
+        /// The 0-based page of the mark on the far side, when both neighbours agree.
+        let otherPage: Int?
+
+        /// Whether the marks on both sides of the page name this story.
+        var isStrong: Bool { otherPage != nil }
+    }
+
+    /// The story this page most likely belongs to, judged by the other bookmarks of its comic. Nil
+    /// when none of them has a story, or when the guess is already this page's story.
+    func suggestedStory() -> StorySuggestion? {
+        guard let book else { return nil }
+        let others = book.bookmarks.filter { $0.id != id }
+        guard let suggestion = Self.suggestedStory(forPage: pageIndex, among: others),
+              suggestion.title != storyLabel else { return nil }
+        return suggestion
+    }
+
+    /// The suggestion rule on its own, so it can be tested without a picker:
+    ///  1. the nearest marks below and above that carry a story both name the same one: that one,
+    ///     as a strong suggestion;
+    ///  2. otherwise the nearest one below (the story that was running when this page came up);
+    ///  3. otherwise the nearest one above, for a page before the first assigned mark.
+    /// Two marks name the same story when both resolve to the same index row, or, when either has
+    /// no row (a name given by hand), when their titles match.
+    static func suggestedStory(forPage page: Int, among marks: [Bookmark]) -> StorySuggestion? {
+        let assigned: [(page: Int, title: String, index: Int?)] = marks.compactMap { mark in
+            guard mark.pageIndex != page, let title = mark.storyLabel else { return nil }
+            return (mark.pageIndex, title, mark.resolvedStoryIndex())
+        }
+        let lower = assigned.filter { $0.page < page }.max { $0.page < $1.page }
+        let higher = assigned.filter { $0.page > page }.min { $0.page < $1.page }
+        if let lower, let higher {
+            let same: Bool
+            if let a = lower.index, let b = higher.index { same = a == b } else { same = lower.title == higher.title }
+            if same {
+                return StorySuggestion(title: lower.title, storyIndex: lower.index,
+                                       page: lower.page, otherPage: higher.page)
+            }
+        }
+        guard let nearest = lower ?? higher else { return nil }
+        return StorySuggestion(title: nearest.title, storyIndex: nearest.index,
+                               page: nearest.page, otherPage: nil)
     }
 }

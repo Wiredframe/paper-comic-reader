@@ -364,4 +364,97 @@ final class LibraryStabilityTests: XCTestCase {
         XCTAssertEqual(back.sourceRelativePath, path)
         XCTAssertTrue(back.hasLocalArchive, "the hand import brought its bytes along")
     }
+
+    // MARK: Bookmark stories: the picker's suggestion and hand-named stories
+
+    /// A comic with an index of three stories and a bookmark on each of `pages`.
+    private func makeStoryBook(in context: ModelContext, pages: [Int]) -> (ComicBook, [Int: Bookmark]) {
+        let book = ComicBook(id: UUID(), title: "Topolino", fileName: "t.cbz", pageCount: 100, coverName: nil)
+        book.stories = ["Alpha", "Beta", "Gamma"].enumerated().map {
+            ComicStory(number: $0.offset + 1, kind: "Storia", title: $0.element, code: nil, credits: [])
+        }
+        context.insert(book)
+        var marks: [Int: Bookmark] = [:]
+        for page in pages {
+            let mark = Bookmark(pageIndex: page, thumbName: "\(UUID().uuidString).jpg", book: book)
+            context.insert(mark)
+            marks[page] = mark
+        }
+        return (book, marks)
+    }
+
+    func testSuggestionIsStrongWhenBothNeighboursAgree() throws {
+        let context = try makeContext()
+        let (_, marks) = makeStoryBook(in: context, pages: [2, 5, 9, 20])
+        marks[2]?.assignStory(at: 1)
+        marks[9]?.assignStory(at: 1)
+        marks[20]?.assignStory(at: 2)
+
+        let suggestion = try XCTUnwrap(marks[5]?.suggestedStory())
+        XCTAssertEqual(suggestion.title, "Beta")
+        XCTAssertEqual(suggestion.storyIndex, 1)
+        XCTAssertEqual(suggestion.page, 2)
+        XCTAssertEqual(suggestion.otherPage, 9)
+        XCTAssertTrue(suggestion.isStrong)
+    }
+
+    func testSuggestionFallsBackToTheNearestMarkBelowThenAbove() throws {
+        let context = try makeContext()
+        let (_, marks) = makeStoryBook(in: context, pages: [1, 4, 8, 12, 30])
+        marks[4]?.assignStory(at: 0)
+        marks[12]?.assignStory(at: 2)
+
+        // Between two different stories: the one that was running.
+        let between = try XCTUnwrap(marks[8]?.suggestedStory())
+        XCTAssertEqual(between.title, "Alpha")
+        XCTAssertEqual(between.page, 4)
+        XCTAssertFalse(between.isStrong)
+
+        // Before the first assigned mark: the nearest one above.
+        XCTAssertEqual(marks[1]?.suggestedStory()?.title, "Alpha")
+        // After the last one: still the nearest below, however far.
+        XCTAssertEqual(marks[30]?.suggestedStory()?.title, "Gamma")
+    }
+
+    func testNoSuggestionWithoutAssignedNeighboursOrWhenAlreadyAssigned() throws {
+        let context = try makeContext()
+        let (_, marks) = makeStoryBook(in: context, pages: [3, 6, 9])
+        XCTAssertNil(marks[6]?.suggestedStory(), "nobody has a story yet")
+
+        marks[3]?.assignStory(at: 0)
+        marks[9]?.assignStory(at: 0)
+        marks[6]?.assignStory(at: 0)
+        XCTAssertNil(marks[6]?.suggestedStory(), "the guess is already this page's story")
+    }
+
+    func testCustomStoriesAreSuggestedByTitleAndListedOnce() throws {
+        let context = try makeContext()
+        let book = ComicBook(id: UUID(), title: "Collected", fileName: "c.cbz", pageCount: 200, coverName: nil)
+        context.insert(book)
+        let marks = [10, 15, 40, 60].map { page in
+            let mark = Bookmark(pageIndex: page, thumbName: "\(UUID().uuidString).jpg", book: book)
+            context.insert(mark)
+            return mark
+        }
+        marks[0].assignCustomStory("  Chapter One ")
+        marks[2].assignCustomStory("Chapter One")
+        marks[3].assignCustomStory("Chapter Two")
+
+        XCTAssertEqual(marks[0].storyLabel, "Chapter One", "trimmed")
+        XCTAssertNil(marks[0].storyIndex)
+        XCTAssertNil(marks[0].resolvedStoryIndex(), "no index to resolve against")
+
+        let suggestion = try XCTUnwrap(marks[1].suggestedStory())
+        XCTAssertEqual(suggestion.title, "Chapter One")
+        XCTAssertNil(suggestion.storyIndex)
+        XCTAssertTrue(suggestion.isStrong, "both sides carry the same hand-typed name")
+
+        marks[1].assign(suggestion)
+        XCTAssertEqual(marks[1].storyLabel, "Chapter One")
+        XCTAssertEqual(book.customStoryTitles, ["Chapter One", "Chapter Two"])
+
+        // A blank name clears rather than storing whitespace.
+        marks[3].assignCustomStory("   ")
+        XCTAssertFalse(marks[3].hasStory)
+    }
 }

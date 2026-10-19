@@ -330,8 +330,8 @@ private struct BookmarkRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            // Same shape as BookmarkCard's menu: hidden when the comic has no story index.
-            if let onAssignStory, !(bookmark.book?.stories.isEmpty ?? true) {
+            // Same shape as BookmarkCard's menu.
+            if let onAssignStory {
                 Button(action: onAssignStory) {
                     Label(bookmark.hasStory ? String(localized: "Change Story…") : String(localized: "Assign to Story…"),
                           systemImage: "text.book.closed")

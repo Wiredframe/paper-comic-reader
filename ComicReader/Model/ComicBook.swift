@@ -208,8 +208,10 @@ final class ComicBook {
             : date.formatted(.dateTime.day().month(.wide).year())
     }
 
-    /// "6 stories" — how many entries the index holds, ignoring covers and other non-story
-    /// pieces where the tagger labelled them. Nil when there's no index.
+    /// "6 stories": how many entries the index holds, covers and text pieces included. The kind
+    /// is the tagger's own word in the tagger's language (see `ComicStory.kind`), so there is no
+    /// reliable way to tell a cover from a story, and the count matches the rows listed under it.
+    /// Nil when there's no index.
     var storyCountLabel: String? {
         guard !stories.isEmpty else { return nil }
         let n = stories.count
@@ -252,6 +254,19 @@ final class ComicBook {
             return true
         }
         return stories.contains { has($0.title) }
+    }
+
+    /// Story names this comic's bookmarks carry that aren't rows of its index: the ones typed by
+    /// hand in the story picker, in page order and each once, so the picker can offer them again.
+    var customStoryTitles: [String] {
+        var seen: Set<String> = []
+        return bookmarks
+            .sorted { $0.pageIndex < $1.pageIndex }
+            .compactMap { mark -> String? in
+                guard let title = mark.storyLabel, mark.resolvedStoryIndex() == nil,
+                      seen.insert(title).inserted else { return nil }
+                return title
+            }
     }
 
     /// 0…1 read progress for the cover pie.

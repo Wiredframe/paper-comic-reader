@@ -27,9 +27,13 @@ extension String {
 }
 
 /// One entry from the index in `<Summary>` — a story, a cover, a text piece.
-struct ComicStory: Codable, Hashable, Identifiable, Sendable {
-    /// Position in the index (1-based, as printed). Unique within an issue, so it doubles
-    /// as the `ForEach` identity.
+///
+/// Deliberately not `Identifiable`: nothing about an entry is unique. `number` is parsed free text
+/// that a tagger can repeat, and two entries can share a title, so every list identifies rows by
+/// their offset in the index instead.
+struct ComicStory: Codable, Hashable, Sendable {
+    /// Position in the index (1-based, as printed). Usually unique within an issue, but not
+    /// guaranteed: restarted numbering and repeated numbers occur.
     let number: Int
     /// Whatever the tagger called it — "Storia", "Copertina", "Story", "Cover". Shown
     /// verbatim as a badge rather than mapped to an enum: the label is localised by the
@@ -39,8 +43,6 @@ struct ComicStory: Codable, Hashable, Identifiable, Sendable {
     /// The INDUCKS-style story code, e.g. "I TL 1900-A".
     let code: String?
     let credits: [Credit]
-
-    var id: Int { number }
 
     struct Credit: Codable, Hashable, Sendable {
         let role: String    // "Disegni", "Sceneggiatura", "Script", …

@@ -85,10 +85,8 @@ struct BookmarkCard: View {
     }
 
     @ViewBuilder private var menu: some View {
-        // Hidden, not disabled, when the comic carries no story index: there is nothing to assign,
-        // and this app hides controls that can't act (the Series sort, "Only Downloaded", the
-        // carousel's "more below" button) rather than greying them out.
-        if let onAssignStory, !(bookmark.book?.stories.isEmpty ?? true) {
+        // Offered for every comic, index or not: the picker can also name a story by hand.
+        if let onAssignStory {
             Button(action: onAssignStory) {
                 Label(bookmark.hasStory ? String(localized: "Change Story…") : String(localized: "Assign to Story…"),
                       systemImage: "text.book.closed")

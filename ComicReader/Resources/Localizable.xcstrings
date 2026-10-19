@@ -2419,6 +2419,22 @@
         }
       }
     },
+    "New Story…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Geschichte …"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuova storia…"
+          }
+        }
+      }
+    },
     "Newsprint": {
       "localizations": {
         "de": {
@@ -3444,6 +3460,54 @@
         }
       }
     },
+    "Same as page %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wie Seite %lld"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Come pagina %lld"
+          }
+        }
+      }
+    },
+    "Same as pages %lld and %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wie Seite %1$lld und %2$lld"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Come le pagine %1$lld e %2$lld"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sichern"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salva"
+          }
+        }
+      }
+    },
     "Scan for New Comics": {
       "localizations": {
         "de": {
@@ -3792,6 +3856,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Storie"
+          }
+        }
+      }
+    },
+    "Story Name": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name der Geschichte"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nome della storia"
+          }
+        }
+      }
+    },
+    "Suggested": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorschlag"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggerimento"
           }
         }
       }

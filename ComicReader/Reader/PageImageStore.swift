@@ -48,6 +48,10 @@ final class PageImageStore: @unchecked Sendable {
     /// because it is written on the main actor and read on `work`.
     private let activePageLock = NSLock()
     private var activePage = 0
+    /// Pages that wouldn't decode this session (a truncated or corrupt image in the archive). They
+    /// get `unreadablePage` from then on instead of a fresh attempt on every request. Read and
+    /// written on `work`, behind the same lock as `activePage`.
+    private var failedPages: Set<Int> = []
 
     /// Opens `url` off the main thread and hands back the ready store.
     ///
@@ -239,15 +243,47 @@ final class PageImageStore: @unchecked Sendable {
     }
 
     private func render(index: Int) -> UIImage? {
-        guard let data = archive?.pageData(at: index) else { return nil }
-        guard var image = ImageDownsampler.downsample(data, maxPixel: Self.displayMaxPixel) ?? UIImage(data: data) else {
-            return nil
+        guard archive != nil else { return nil }
+        activePageLock.lock(); let failed = failedPages.contains(index); activePageLock.unlock()
+        if failed { return Self.unreadablePage }
+        guard let data = archive?.pageData(at: index),
+              var image = ImageDownsampler.downsample(data, maxPixel: Self.displayMaxPixel) ?? UIImage(data: data) else {
+            activePageLock.lock(); failedPages.insert(index); activePageLock.unlock()
+            return Self.unreadablePage
         }
         if paperEnabled {
             image = PaperFilter.shared.apply(to: image, params: paperParams) ?? image
         }
         return image
     }
+
+    /// Stands in for a page that can't be decoded, so the reader shows a page saying so rather than
+    /// an empty slot: a plain sheet in the shape of a typical comic page with a warning sign and
+    /// a line of text. Drawn once, on first use.
+    static let unreadablePage: UIImage = {
+        let size = CGSize(width: 1000, height: 1500)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(white: 0.88, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            let ink = UIColor(white: 0.42, alpha: 1)
+            let symbolConfig = UIImage.SymbolConfiguration(pointSize: 180, weight: .regular)
+            if let symbol = UIImage(systemName: "exclamationmark.triangle", withConfiguration: symbolConfig)?
+                .withTintColor(ink, renderingMode: .alwaysOriginal) {
+                symbol.draw(at: CGPoint(x: (size.width - symbol.size.width) / 2,
+                                        y: size.height / 2 - symbol.size.height - 40))
+            }
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            let text = String(localized: "This page can't be displayed.")
+            (text as NSString).draw(in: CGRect(x: 80, y: size.height / 2 + 10, width: size.width - 160, height: 200),
+                                    withAttributes: [.font: UIFont.systemFont(ofSize: 52, weight: .semibold),
+                                                     .foregroundColor: ink,
+                                                     .paragraphStyle: paragraph])
+        }
+    }()
 
     // MARK: Thumbnails (no paper — for the page grid / bookmarks)
 
@@ -278,7 +314,9 @@ final class PageImageStore: @unchecked Sendable {
                         self.thumbCache.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
                         if persist { ImageDownsampler.writeJPEG(image, to: self.thumbDiskURL(index: index, maxPixel: maxPixel)) }
                     }
-                    continuation.resume(returning: image)
+                    // A page that won't decode still gets a picture (never cached or written to
+                    // disk), so the page grid shows the gap and a bookmark on it still saves.
+                    continuation.resume(returning: image ?? (self.archive != nil ? Self.unreadablePage : nil))
                 }
             }
         } onCancel: {

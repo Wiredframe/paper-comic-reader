@@ -4100,6 +4100,22 @@
         }
       }
     },
+    "This page can't be displayed.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Seite kann nicht angezeigt werden."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile mostrare questa pagina."
+          }
+        }
+      }
+    },
     "This removes the comic and its bookmarks from your library.": {
       "localizations": {
         "de": {

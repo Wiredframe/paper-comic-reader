@@ -27,7 +27,7 @@ struct LibraryGrid: View {
     /// cell — the same way `onOpen` hands the reader up.
     var onShowDetail: (ComicBook) -> Void = { _ in }
     /// Asks the caller to confirm deleting a comic — owned by the caller so there's one
-    /// confirmation dialog per screen, not one per cover. Only the gallery cells offer it.
+    /// confirmation dialog per screen, not one per cover. Both layouts offer it.
     var onDelete: (ComicBook) -> Void = { _ in }
     let onOpen: (ComicBook) -> Void
 
@@ -38,7 +38,8 @@ struct LibraryGrid: View {
                     LibraryRow(book: book, selectionMode: selectionMode,
                                isSelected: selectedIDs.contains(book.id),
                                isHighlighted: book.id == focusedID,
-                               onShowDetail: { onShowDetail(book) }) { tap(book) }
+                               onShowDetail: { onShowDetail(book) },
+                               onDelete: onDelete) { tap(book) }
                         .id(book.id)
                     Divider().padding(.leading, 76)
                 }
@@ -133,9 +134,9 @@ private struct LibraryRow: View {
     var isSelected: Bool = false
     var isHighlighted: Bool = false
     var onShowDetail: () -> Void = {}
+    var onDelete: (ComicBook) -> Void = { _ in }
     let onOpen: () -> Void
 
-    @Environment(\.modelContext) private var context
     @Environment(DownloadManager.self) private var downloads
 
     var body: some View {
@@ -184,24 +185,7 @@ private struct LibraryRow: View {
         // the cover cell.
         .contextMenu {
             if !selectionMode {
-                Button(action: onOpen) { Label("Read", systemImage: "book") }
-                Button(action: onShowDetail) { Label("Details", systemImage: "info.circle") }
-                Button {
-                    book.isFavorite.toggle()
-                    try? context.save()
-                } label: {
-                    Label(book.isFavorite ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
-                          systemImage: book.isFavorite ? "heart.slash" : "heart")
-                }
-                if book.openCount > 0 {
-                    Button {
-                        book.resetOpenCount()
-                        try? context.save()
-                    } label: {
-                        Label("Reset Open Count", systemImage: "arrow.counterclockwise")
-                    }
-                }
-                DownloadMenuItems(book: book)
+                ComicContextMenu(book: book, onOpen: onOpen, onShowDetail: onShowDetail, onDelete: onDelete)
             }
         }
     }

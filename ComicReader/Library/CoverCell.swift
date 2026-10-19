@@ -24,7 +24,6 @@ struct CoverCell: View {
     var onDelete: (ComicBook) -> Void = { _ in }
     let onOpen: () -> Void
 
-    @Environment(\.modelContext) private var context
     @Environment(DownloadManager.self) private var downloads
 
     var body: some View {
@@ -120,7 +119,23 @@ struct CoverCell: View {
         }
     }
 
-    @ViewBuilder private var menu: some View {
+    private var menu: some View {
+        ComicContextMenu(book: book, onOpen: onOpen, onShowDetail: onShowDetail, onDelete: onDelete)
+    }
+}
+
+/// A comic's long-press menu, shared by the gallery cell and the list row so the two layouts
+/// offer the same actions: read, details, favourite, read state, open count, download, delete.
+struct ComicContextMenu: View {
+    let book: ComicBook
+    let onOpen: () -> Void
+    let onShowDetail: () -> Void
+    /// Asks the caller to confirm the delete; see `CoverCell.onDelete`.
+    let onDelete: (ComicBook) -> Void
+
+    @Environment(\.modelContext) private var context
+
+    var body: some View {
         Button(action: onOpen) { Label("Read", systemImage: "book") }
         Button(action: onShowDetail) { Label("Details", systemImage: "info.circle") }
         Button {

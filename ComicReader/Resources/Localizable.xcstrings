@@ -181,6 +181,122 @@
         }
       }
     },
+    "%lld comics couldn't be reached.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld comic couldn't be reached."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld comics couldn't be reached."
+                }
+              }
+            }
+          }
+        },
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Comic war nicht erreichbar."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Comics waren nicht erreichbar."
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Impossibile raggiungere %lld fumetto."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Impossibile raggiungere %lld fumetti."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld files couldn't be read.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file couldn't be read."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files couldn't be read."
+                }
+              }
+            }
+          }
+        },
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Datei ließ sich nicht lesen."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Dateien ließen sich nicht lesen."
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Impossibile leggere %lld file."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Impossibile leggere %lld file."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld of those comics were already in your library from your comic folder. They're now downloaded.": {
       "localizations": {
         "en": {
@@ -483,6 +599,64 @@
         }
       }
     },
+    "Added %lld comics.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Added %lld comic."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Added %lld comics."
+                }
+              }
+            }
+          }
+        },
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Comic hinzugefügt."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Comics hinzugefügt."
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Aggiunto %lld fumetto."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Aggiunti %lld fumetti."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Adjust": {
       "localizations": {
         "de": {
@@ -687,6 +861,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "Segnalibri"
+          }
+        }
+      }
+    },
+    "Bring Back %lld Removed Comics": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Bring Back %lld Removed Comic"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Bring Back %lld Removed Comics"
+                }
+              }
+            }
+          }
+        },
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld entfernten Comic zurückholen"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld entfernte Comics zurückholen"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Recupera %lld fumetto rimosso"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Recupera %lld fumetti rimossi"
+                }
+              }
+            }
           }
         }
       }
@@ -2348,6 +2580,22 @@
         }
       }
     },
+    "No new comics found.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine neuen Comics gefunden."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nessun nuovo fumetto trovato."
+          }
+        }
+      }
+    },
     "No recent comics": {
       "localizations": {
         "de": {
@@ -3676,6 +3924,22 @@
         }
       }
     },
+    "That folder couldn't be used. Choose it again, or pick another one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Ordner lässt sich nicht verwenden. Wähle ihn noch einmal oder nimm einen anderen."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile usare questa cartella. Sceglila di nuovo o selezionane un’altra."
+          }
+        }
+      }
+    },
     "The backup couldn't be read. It may be incomplete.": {
       "localizations": {
         "de": {
@@ -3932,6 +4196,64 @@
         }
       }
     },
+    "Updated details for %lld comics.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Updated details for %lld comic."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Updated details for %lld comics."
+                }
+              }
+            }
+          }
+        },
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Details für %lld Comic aktualisiert."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Details für %lld Comics aktualisiert."
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Dettagli aggiornati per %lld fumetto."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Dettagli aggiornati per %lld fumetti."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "View": {
       "localizations": {
         "de": {
@@ -4008,6 +4330,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hai già aperto tutti i fumetti della tua libreria."
+          }
+        }
+      }
+    },
+    "Your comic folder couldn't be reached. Check that you're on the right network, then scan again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Comic-Ordner ist nicht erreichbar. Prüfe, ob du im richtigen Netzwerk bist, und suche dann noch einmal."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile raggiungere la cartella dei fumetti. Controlla di essere sulla rete giusta, poi cerca di nuovo."
           }
         }
       }

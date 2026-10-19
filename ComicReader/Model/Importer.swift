@@ -314,29 +314,38 @@ enum Importer {
 
     // MARK: Folder scan
 
+    /// What a folder scan did, for the line Settings shows under the scan button.
+    struct ScanResult: Equatable {
+        /// New entries created.
+        var added = 0
+        /// New files that wouldn't read (offline mid-scan, not a real archive).
+        var skipped = 0
+    }
+
     /// Scans the configured library folder and imports every comic not already an entry (matched
     /// by relative path), creating a folder-backed entry — cover + metadata, no archive copy — for
     /// each. Reports "done of total" as it goes; comics appear in the grid as each one lands.
     ///
     /// `existing` is the set of relative paths already imported, snapshotted on the main actor
-    /// (SwiftData models can't leave it). The walk and each per-file read run off-main, each inside
-    /// its own `withFolderAccess` so the folder's security scope is never held across an actor hop;
-    /// the inserts hop back here. A file that won't read (offline mid-scan, not a real archive) is
-    /// skipped, not fatal. Returns how many entries were added.
+    /// (SwiftData models can't leave it); `excluded` are entries the reader deleted, which stay out
+    /// (see `LibrarySource.excludedPaths`). The walk and each per-file read run off-main, each
+    /// inside its own `withFolderAccess` so the folder's security scope is never held across an
+    /// actor hop; the inserts hop back here. A file that won't read is skipped and counted, not
+    /// fatal. Throws when the folder itself can't be reached.
     @MainActor @discardableResult
-    static func scanFolder(existing: Set<String>, into context: ModelContext,
-                           onProgress: @MainActor (_ done: Int, _ total: Int) -> Void) async throws -> Int {
+    static func scanFolder(existing: Set<String>, excluded: Set<String> = [], into context: ModelContext,
+                           onProgress: @MainActor (_ done: Int, _ total: Int) -> Void) async throws -> ScanResult {
         let paths: [String] = try await Task.detached(priority: .userInitiated) {
             try LibrarySource.withFolderAccess { folder in
                 LibrarySource.comicFiles(in: folder).map(\.relativePath)
             }
         }.value
 
-        let newPaths = paths.filter { !existing.contains($0) }
+        let newPaths = paths.filter { !existing.contains($0) && !excluded.contains($0) }
         onProgress(0, newPaths.count)
-        guard !newPaths.isEmpty else { return 0 }
+        var result = ScanResult()
+        guard !newPaths.isEmpty else { return result }
 
-        var added = 0
         for (index, relativePath) in newPaths.enumerated() {
             let prepared = try? await Task.detached(priority: .userInitiated) {
                 try LibrarySource.withFolderAccess { folder in
@@ -346,11 +355,45 @@ enum Importer {
             }.value
             if let prepared {
                 commit(prepared, into: context)
-                added += 1
+                result.added += 1
+            } else {
+                result.skipped += 1
             }
             onProgress(index + 1, newPaths.count)
         }
-        return added
+        return result
+    }
+
+    /// The path of `sourceURL` inside the library folder when it is one of the entries the reader
+    /// deleted (see `LibrarySource.excludedPaths`), else nil. Importing such a file by hand means
+    /// they want it back. Off-main: resolving the folder can touch the network.
+    static func removedFolderPath(of sourceURL: URL) -> String? {
+        let excluded = LibrarySource.excludedPaths
+        guard !excluded.isEmpty, LibrarySource.isConfigured,
+              let folder = try? LibrarySource.resolveFolder() else { return nil }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        let picked = sourceURL.startAccessingSecurityScopedResource()
+        defer { if picked { sourceURL.stopAccessingSecurityScopedResource() } }
+        guard LibrarySource.contains(sourceURL, in: folder) else { return nil }
+        let relative = LibrarySource.relativePath(of: sourceURL, in: folder)
+        return excluded.contains(relative) ? relative : nil
+    }
+
+    /// Commits a hand import of a file the reader had removed from the library folder's entries.
+    /// It comes back as the folder entry it was, already downloaded (the import just copied it), so
+    /// the next scan sees its path taken instead of adding the same comic a second time.
+    @MainActor @discardableResult
+    static func commitReturning(_ prepared: Prepared, relativePath: String,
+                                into context: ModelContext) -> ComicBook {
+        var prepared = prepared
+        prepared.sourceRelativePath = relativePath
+        let book = commit(prepared, into: context)
+        book.hasLocalArchive = true
+        Storage.excludeFromDeviceBackup(book.archiveURL)
+        try? context.save()
+        LibrarySource.include(relativePath)
+        return book
     }
 
     // MARK: Metadata backfill
@@ -655,8 +698,10 @@ enum Importer {
         try? context.save()
     }
 
-    /// Removes a book and its on-disk files.
+    /// Removes a book and its on-disk files. A folder comic's path is noted as removed, so the
+    /// next scan of the folder doesn't bring the entry straight back.
     @MainActor static func delete(_ book: ComicBook, from context: ModelContext) {
+        if let relativePath = book.sourceRelativePath { LibrarySource.exclude(relativePath) }
         try? Storage.fm.removeItem(at: book.archiveURL)
         if let cover = book.coverURL { try? Storage.fm.removeItem(at: cover) }
         for bookmark in book.bookmarks {

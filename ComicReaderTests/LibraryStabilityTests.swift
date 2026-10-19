@@ -19,9 +19,19 @@ final class LibraryStabilityTests: XCTestCase {
     /// Temp files written into the app's Storage during a test, removed in tearDown.
     private var tempFiles: [URL] = []
 
+    /// The removed-entries list lives in the app's defaults, which deleting a folder comic writes.
+    /// Put back as it was, so a test run leaves the simulator's library as it found it.
+    private var savedExcludedPaths: Set<String> = []
+
+    override func setUpWithError() throws {
+        savedExcludedPaths = LibrarySource.excludedPaths
+    }
+
     override func tearDownWithError() throws {
         for url in tempFiles { try? FileManager.default.removeItem(at: url) }
         tempFiles = []
+        LibrarySource.includeAll()
+        for path in savedExcludedPaths { LibrarySource.exclude(path) }
     }
 
     /// A fresh in-memory store per test — no disk, no bleed between tests.
@@ -326,5 +336,32 @@ final class LibraryStabilityTests: XCTestCase {
         FileManager.default.createFile(atPath: garbage.path, contents: Data("not a zip".utf8))
         tempFiles.append(garbage)
         XCTAssertThrowsError(try Importer.relink(from: garbage, into: dest))
+    }
+    // MARK: Removed folder entries
+
+    /// Deleting a folder comic notes its path, so a rescan doesn't bring the entry straight back,
+    /// and a hand import of that file lets it in again. An owned copy has no path to note.
+    func testDeletingAFolderEntryKeepsItOutOfTheScan() throws {
+        let context = try makeContext()
+        let (book, _) = try makeDownloadedFolderBook(in: context, bookmarks: 0)
+        let path = try XCTUnwrap(book.sourceRelativePath)
+        LibrarySource.include(path)
+
+        Importer.delete(book, from: context)
+        XCTAssertTrue(LibrarySource.excludedPaths.contains(path))
+
+        let before = LibrarySource.excludedPaths
+        let owned = ComicBook(id: UUID(), title: "Owned", fileName: "\(UUID().uuidString).cbz",
+                              pageCount: 1, coverName: nil)
+        context.insert(owned)
+        Importer.delete(owned, from: context)
+        XCTAssertEqual(LibrarySource.excludedPaths, before)
+
+        let prepared = Importer.Prepared(id: UUID(), title: "Test", fileName: "\(UUID().uuidString).cbz",
+                                         pageCount: 20, coverName: nil, coverAspect: nil, info: nil)
+        let back = Importer.commitReturning(prepared, relativePath: path, into: context)
+        XCTAssertFalse(LibrarySource.excludedPaths.contains(path))
+        XCTAssertEqual(back.sourceRelativePath, path)
+        XCTAssertTrue(back.hasLocalArchive, "the hand import brought its bytes along")
     }
 }

@@ -693,6 +693,12 @@ struct LibraryView: View {
                             firstWasDuplicate = true
                         }
                     } else {
+                        // A file from the library folder whose entry was deleted: importing it by
+                        // hand brings that entry back rather than adding an unrelated copy.
+                        let returning = LibrarySource.excludedPaths.isEmpty ? nil
+                            : await Task.detached(priority: .userInitiated) {
+                                Importer.removedFolderPath(of: url)
+                            }.value
                         let prepared = try await Task.detached(priority: .userInitiated) {
                             try Importer.prepare(from: url)
                         }.value
@@ -712,7 +718,9 @@ struct LibraryView: View {
                                 firstWasAdopted = true
                             }
                         } else {
-                            let book = Importer.commit(prepared, into: context)
+                            let book = returning.map {
+                                Importer.commitReturning(prepared, relativePath: $0, into: context)
+                            } ?? Importer.commit(prepared, into: context)
                             existing.append(Importer.ExistingArchive(book: book))
                             if firstBook == nil { firstBook = book }
                         }

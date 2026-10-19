@@ -38,6 +38,12 @@ struct SettingsView: View {
     @State private var isPickerPresented = false
     @State private var scan: (done: Int, total: Int)?
     @State private var refresh: (done: Int, total: Int)?
+    /// One line on what the last folder action did (scan, re-read, choosing the folder), shown
+    /// under the folder's buttons. Inline rather than an alert: a scan is routine, and its result
+    /// only needs saying, not acknowledging.
+    @State private var folderStatus: String?
+    /// How many deleted folder entries the scan leaves out; see `LibrarySource.excludedPaths`.
+    @State private var removedCount = LibrarySource.excludedPaths.count
     @State private var showRemoveFolderConfirm = false
 
     // Library backup. `backupFile` holds a finished export until it's shared; `backupProgress` is
@@ -152,6 +158,12 @@ struct SettingsView: View {
                             Button { startMetadataRefresh() } label: {
                                 Label("Re-read Metadata", systemImage: "arrow.triangle.2.circlepath")
                             }
+                            // Deleted entries stay out of every scan; this is the way to have them back.
+                            if removedCount > 0 {
+                                Button { includeRemoved() } label: {
+                                    Label("Bring Back \(removedCount) Removed Comics", systemImage: "arrow.uturn.backward")
+                                }
+                            }
                             Button { present(.comicFolder) } label: {
                                 Label("Change Folder…", systemImage: "folder")
                             }
@@ -159,9 +171,19 @@ struct SettingsView: View {
                                 Label("Remove Folder", systemImage: "folder.badge.minus")
                             }
                         }
+                        if let folderStatus, scan == nil, refresh == nil {
+                            Text(folderStatus)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     } else {
                         Button { present(.comicFolder) } label: {
                             Label("Choose Comic Folder…", systemImage: "folder.badge.plus")
+                        }
+                        if let folderStatus {
+                            Text(folderStatus)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 } header: {
@@ -255,6 +277,8 @@ struct SettingsView: View {
             .onAppear { applyScreenshotScene(proxy) }
             #endif
             .task { storageText = storageDescription }
+            // Comics are deleted in the library tab, so the count is picked up on the way back here.
+            .onAppear { removedCount = LibrarySource.excludedPaths.count }
             .fileImporter(isPresented: $isPickerPresented,
                           allowedContentTypes: pickerTarget.contentTypes) { result in
                 switch pickerTarget {
@@ -309,7 +333,17 @@ struct SettingsView: View {
 
     private func handleFolderChosen(_ result: Result<URL, Error>) {
         guard case .success(let url) = result else { return }
-        do { try LibrarySource.setFolder(url) } catch { return }
+        let previousPath = LibrarySource.chosenPath
+        do { try LibrarySource.setFolder(url) } catch {
+            folderStatus = String(localized: "That folder couldn't be used. Choose it again, or pick another one.")
+            return
+        }
+        // A different folder's paths name different files, so what was removed from the old one
+        // says nothing about it. The same folder picked again keeps them out.
+        if previousPath != LibrarySource.chosenPath {
+            LibrarySource.includeAll()
+            removedCount = 0
+        }
         folderName = LibrarySource.displayName
         startScan()
     }
@@ -317,6 +351,14 @@ struct SettingsView: View {
     private func removeFolder() {
         LibrarySource.clear()
         folderName = nil
+        folderStatus = nil
+    }
+
+    /// Lets every deleted folder entry back in and scans, so they reappear straight away.
+    private func includeRemoved() {
+        LibrarySource.includeAll()
+        removedCount = 0
+        startScan()
     }
 
     /// Scans the folder for comics not yet imported. Existing entries are matched by relative path,
@@ -325,14 +367,33 @@ struct SettingsView: View {
     private func startScan() {
         guard scan == nil, refresh == nil else { return }
         let existing = Set(books.compactMap { $0.sourceRelativePath })
+        let excluded = LibrarySource.excludedPaths
+        removedCount = excluded.count
         scan = (0, 0)
+        folderStatus = nil
         Task {
-            _ = try? await Importer.scanFolder(existing: existing, into: context) { done, total in
-                scan = (done, total)
+            do {
+                let result = try await Importer.scanFolder(existing: existing, excluded: excluded,
+                                                           into: context) { done, total in
+                    scan = (done, total)
+                }
+                folderStatus = describe(result)
+            } catch {
+                folderStatus = String(localized: "Your comic folder couldn't be reached. Check that you're on the right network, then scan again.")
             }
             scan = nil
             storageText = storageDescription
         }
+    }
+
+    private func describe(_ result: Importer.ScanResult) -> String {
+        guard result.added > 0 || result.skipped > 0 else {
+            return String(localized: "No new comics found.")
+        }
+        var sentences: [String] = []
+        if result.added > 0 { sentences.append(String(localized: "Added \(result.added) comics.")) }
+        if result.skipped > 0 { sentences.append(String(localized: "\(result.skipped) files couldn't be read.")) }
+        return sentences.joined(separator: " ")
     }
 
     /// Re-reads ComicInfo metadata for every comic, refreshing titles and details in place.
@@ -341,11 +402,18 @@ struct SettingsView: View {
     /// `Importer.refreshMetadata`.
     private func startMetadataRefresh() {
         guard scan == nil, refresh == nil else { return }
+        let total = books.count
         refresh = (0, 0)
+        folderStatus = nil
         Task {
-            _ = await Importer.refreshMetadata(for: books, into: context) { done, total in
+            let updated = await Importer.refreshMetadata(for: books, into: context) { done, total in
                 refresh = (done, total)
             }
+            var sentences = [String(localized: "Updated details for \(updated) comics.")]
+            if total > updated {
+                sentences.append(String(localized: "\(total - updated) comics couldn't be reached."))
+            }
+            folderStatus = sentences.joined(separator: " ")
             refresh = nil
         }
     }

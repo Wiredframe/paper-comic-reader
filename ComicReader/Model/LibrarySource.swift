@@ -19,6 +19,8 @@ enum LibrarySource {
 
     private static let bookmarkKey = "library.sourceFolderBookmark"
     private static let displayKey  = "library.sourceFolderName"
+    private static let pathKey     = "library.sourceFolderPath"
+    private static let excludedKey = "library.excludedSourcePaths"
 
     enum SourceError: Error {
         case notConfigured      // no folder has been chosen
@@ -54,15 +56,55 @@ enum LibrarySource {
         let defaults = UserDefaults.standard
         defaults.set(data, forKey: bookmarkKey)
         defaults.set(url.lastPathComponent, forKey: displayKey)
+        defaults.set(url.standardizedFileURL.path, forKey: pathKey)
+    }
+
+    /// Where the folder was when it was last chosen, as a plain path, for telling a different
+    /// folder from the same one picked again. Nil when no folder was chosen since this was added.
+    static var chosenPath: String? {
+        UserDefaults.standard.string(forKey: pathKey)
     }
 
     /// Forgets the folder. Existing folder-backed comics are left in place: they simply fail to
     /// resolve when next opened, which surfaces the reader's "update path / pick a file" prompt —
     /// the deliberately implicit "source missing" path, never a background sweep.
+    ///
+    /// The chosen path stays, and with it the removed entries below: choosing the same folder
+    /// again later must not bring back comics the reader deleted.
     static func clear() {
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: bookmarkKey)
         defaults.removeObject(forKey: displayKey)
+    }
+
+    // MARK: Removed entries
+    //
+    // Deleting a folder comic removes its entry, never the file, so without a note of it the next
+    // scan would find the file and bring the entry straight back. These are the relative paths of
+    // entries the reader deleted, which the scan leaves out until they are included again.
+
+    /// Relative paths the folder scan skips.
+    static var excludedPaths: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: excludedKey) ?? [])
+    }
+
+    static func exclude(_ relativePath: String) {
+        var paths = excludedPaths
+        guard paths.insert(relativePath).inserted else { return }
+        UserDefaults.standard.set(paths.sorted(), forKey: excludedKey)
+    }
+
+    /// Lets one removed path back in, for a file the reader imports again by hand.
+    static func include(_ relativePath: String) {
+        var paths = excludedPaths
+        guard paths.remove(relativePath) != nil else { return }
+        UserDefaults.standard.set(paths.sorted(), forKey: excludedKey)
+    }
+
+    /// Lets every removed path back in: the reader asked for them, or the folder is a different one
+    /// and its paths mean other files.
+    static func includeAll() {
+        UserDefaults.standard.removeObject(forKey: excludedKey)
     }
 
     // MARK: Resolution + scoped access (call OFF the main actor — may block on the network)

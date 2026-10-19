@@ -689,7 +689,13 @@ struct ReaderView: View {
                 defer { bookmarkingPages.remove(page) }
                 guard let image = await store?.thumbnail(at: page, maxPixel: ImageDownsampler.libraryCardPixel) else { return }
                 let name = "\(UUID().uuidString).jpg"
-                ImageDownsampler.writeJPEG(image, to: Storage.bookmarkThumbURL(name))
+                // Encode and write off the main actor: a full-size JPEG encode is a dropped frame
+                // or two right as the bookmark button animates.
+                let url = Storage.bookmarkThumbURL(name)
+                let written = await Task.detached(priority: .userInitiated) {
+                    ImageDownsampler.writeJPEG(image, to: url)
+                }.value
+                guard written else { return }
                 // The page's shape, free — the carousel needs it to size an uncropped card, and
                 // the decoded image is right here. Older bookmarks get it backfilled from the
                 // thumbnail's header instead.

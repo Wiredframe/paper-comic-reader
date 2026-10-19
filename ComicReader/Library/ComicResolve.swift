@@ -21,6 +21,7 @@
 
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 /// A comic whose source needs sorting out, and why.
 struct ComicResolveRequest: Identifiable {
@@ -50,8 +51,11 @@ private struct ComicResolveModifier: ViewModifier {
     /// Whether the dialog is on screen right now. Separate from `request` on purpose: it goes
     /// down while a picker is up and comes back if that picker returns empty-handed.
     @State private var isAsking = false
-    @State private var showFolderPicker = false
-    @State private var showFilePicker = false
+    /// ONE file importer, aimed by `pickTarget`, for the same reason Settings has only one: with
+    /// two `.fileImporter`s on the same view only one of them presents, and which one depends on
+    /// modifier order. See `present(_:)`.
+    @State private var pickTarget = PickTarget.folder
+    @State private var isPicking = false
     @State private var isCopying = false
 
     func body(content: Content) -> some View {
@@ -60,8 +64,8 @@ private struct ComicResolveModifier: ViewModifier {
             .confirmationDialog("Couldn’t load this comic",
                                 isPresented: $isAsking,
                                 titleVisibility: .visible) {
-                Button("Update Folder Path…") { showFolderPicker = true }
-                Button("Choose Another File…") { showFilePicker = true }
+                Button("Update Folder Path…") { present(.folder) }
+                Button("Choose Another File…") { present(.file) }
                 Button("Cancel", role: .cancel) {
                     request = nil
                     onCancel()
@@ -69,14 +73,24 @@ private struct ComicResolveModifier: ViewModifier {
             } message: {
                 Text(message)
             }
-            .fileImporter(isPresented: $showFolderPicker,
-                          allowedContentTypes: [.folder], onCompletion: folderPicked)
-            .fileImporter(isPresented: $showFilePicker,
-                          allowedContentTypes: ComicUTType.all, onCompletion: replacementPicked)
+            .fileImporter(isPresented: $isPicking,
+                          allowedContentTypes: pickTarget.contentTypes) { result in
+                switch pickTarget {
+                case .folder: folderPicked(result)
+                case .file:   replacementPicked(result)
+                }
+            }
             // A new failure raises the dialog. A repeat of one that is still unresolved doesn't
             // need to: it is already being asked about, or was deliberately dismissed.
             .onChange(of: request?.id) { _, id in isAsking = id != nil }
             .onAppear { isAsking = request != nil }
+    }
+
+    /// Aims the importer, then presents it a runloop turn later, so the importer is rebuilt with
+    /// the new target's content types before it shows (the same two steps as `SettingsView.present`).
+    private func present(_ target: PickTarget) {
+        pickTarget = target
+        DispatchQueue.main.async { isPicking = true }
     }
 
     private var message: String {
@@ -146,5 +160,19 @@ private struct ComicResolveModifier: ViewModifier {
     private func askAgain() {
         guard request != nil else { return }
         isAsking = true
+    }
+}
+
+/// What the resolve dialog's one file importer is picking: the moved library folder, or a
+/// replacement file for just this comic.
+private enum PickTarget {
+    case folder
+    case file
+
+    var contentTypes: [UTType] {
+        switch self {
+        case .folder: return [.folder]
+        case .file:   return ComicUTType.all
+        }
     }
 }

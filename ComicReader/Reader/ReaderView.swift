@@ -119,6 +119,8 @@ struct ReaderView: View {
     @State private var paperVersion = 0
     @State private var jumpTarget: Int?
     @State private var showGrid = false
+    /// The reader settings popover is open, which holds off the auto-hide like the page grid.
+    @State private var showSettings = false
     @State private var bookmarkTick = 0   // nudges the view when bookmarks change
     @State private var bookmarkingPages: Set<Int> = []   // pages with an add in flight — guards double-taps
     /// One open = one count. @State is per-presentation, which is exactly the semantics
@@ -275,6 +277,10 @@ struct ReaderView: View {
             // Pause the auto-hide while the page grid is up; resume it when the grid closes.
             if isOpen { cancelAutoHide() } else if chromeVisible { armAutoHide() }
         }
+        .onChange(of: showSettings) { _, isOpen in
+            // Same for the settings popover: the chrome it hangs off must not fade under it.
+            if isOpen { cancelAutoHide() } else if chromeVisible { armAutoHide() }
+        }
         .sheet(isPresented: $showGrid) {
             if let store {
                 PageGridView(store: store, pageCount: store.pageCount, current: currentPage) { page in
@@ -338,17 +344,14 @@ struct ReaderView: View {
 
     /// Top-right overlay: the GLOBAL reader toggles (paper effect + double page),
     /// changed right here with the page as a live preview.
+    ///
+    /// A popover rather than a menu, because a menu can't tell anyone it is open: the chrome
+    /// faded away underneath it after the usual 2 seconds. The popover's flag pauses the
+    /// auto-hide like the page grid's does, and it stays up while both toggles are tried.
     private var settingsMenu: some View {
         @Bindable var paper = paper
         @Bindable var settings = settings
-        return Menu {
-            Toggle(isOn: $paper.isEnabled) {
-                Label("Paper Effect", systemImage: "doc.plaintext")
-            }
-            Toggle(isOn: $settings.doublePage) {
-                Label("Double Page", systemImage: "book.pages")
-            }
-        } label: {
+        return Button { showSettings = true } label: {
             Image(systemName: "slider.horizontal.3")
                 .font(.headline)
                 .frame(width: 44, height: 44)   // ≥ 44pt touch target
@@ -356,6 +359,19 @@ struct ReaderView: View {
                 .opacity(chromeVisible ? 1 : 0)   // per-island fade — see `chrome`
         }
         .accessibilityLabel("Reader settings")
+        .popover(isPresented: $showSettings) {
+            VStack(spacing: 16) {
+                Toggle(isOn: $paper.isEnabled) {
+                    Label("Paper Effect", systemImage: "doc.plaintext")
+                }
+                Toggle(isOn: $settings.doublePage) {
+                    Label("Double Page", systemImage: "book.pages")
+                }
+            }
+            .padding(20)
+            .frame(width: 280)
+            .presentationCompactAdaptation(.popover)   // a popover on iPhone too, not a sheet
+        }
     }
 
     private var bottomBar: some View {
@@ -447,7 +463,7 @@ struct ReaderView: View {
     /// Never under VoiceOver: the controls would vanish while they are being read out.
     private func armAutoHide() {
         cancelAutoHide()
-        guard !showGrid, !voiceOverEnabled else { return }
+        guard !showGrid, !showSettings, !voiceOverEnabled else { return }
         autoHideTask = Task {
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }

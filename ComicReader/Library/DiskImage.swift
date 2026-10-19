@@ -62,8 +62,10 @@ struct DiskImage: View {
             if let maxPixel { return ImageDownsampler.downsample(url: url, maxPixel: maxPixel) }
             return UIImage(contentsOfFile: url.path)
         }.value
-        guard !Task.isCancelled else { return }
+        // Cache before bailing out: the detached decode ran to the end even if this cell was
+        // cancelled (scrolled past), so keep the result for its return rather than decode it again.
         if let loaded { ImageCache.set(loaded, forKey: key) }
+        guard !Task.isCancelled else { return }
         withAnimation(.easeOut(duration: 0.15)) { image = loaded }
     }
 }

@@ -15,9 +15,12 @@ enum Storage {
 
     // MARK: Permanent (Application Support)
 
-    static var comics: URL { supportDir("Comics") }
-    static var covers: URL { supportDir("Covers") }
-    static var bookmarkThumbs: URL { supportDir("Bookmarks") }
+    // Created once, on first use, rather than on every call: these back every cover and archive
+    // URL in the app, from grid cells on up, and the app never deletes them. The cache directory
+    // below stays per call, because `clearCaches` does remove it.
+    static let comics: URL = supportDir("Comics")
+    static let covers: URL = supportDir("Covers")
+    static let bookmarkThumbs: URL = supportDir("Bookmarks")
 
     // MARK: Regenerable (Caches)
 
@@ -64,11 +67,8 @@ enum Storage {
 
     // MARK: Helpers
 
-    static var appSupport: URL {
-        let url = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? fm.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
+    static let appSupport: URL =
+        ensured(fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
 
     private static func supportDir(_ name: String) -> URL {
         ensured(appSupport.appendingPathComponent(name, isDirectory: true))

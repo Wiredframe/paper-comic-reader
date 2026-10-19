@@ -55,8 +55,24 @@ enum Storage {
 
     /// Deletes regenerable caches (page-grid thumbnails). Safe — they rebuild on demand.
     static func clearCaches() {
-        let base = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        try? fm.removeItem(at: base.appendingPathComponent("PageThumbs", isDirectory: true))
+        try? fm.removeItem(at: pageThumbsRoot)
+    }
+
+    /// Bytes the regenerable caches take, which is what `clearCaches` frees. Walks one folder
+    /// per comic, so call it off the main actor.
+    static func cacheSize() -> Int64 {
+        guard let walker = fm.enumerator(at: pageThumbsRoot,
+                                         includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        var total: Int64 = 0
+        for case let url as URL in walker {
+            total += Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        return total
+    }
+
+    private static var pageThumbsRoot: URL {
+        fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PageThumbs", isDirectory: true)
     }
 
     // MARK: Convenience

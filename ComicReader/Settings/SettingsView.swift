@@ -22,6 +22,9 @@ struct SettingsView: View {
     // @Query republishes (every per-page-turn save while reading), and the size is a disk
     // walk over three folders — no need to repeat it on every render.
     @State private var storageText = "—"
+    /// Size of the page-grid cache, shown beside Clear Cache so the tap visibly does something
+    /// (the Storage figure above doesn't count caches). Nil until measured.
+    @State private var cacheBytes: Int64?
 
     // The optional library folder (see LibrarySource). `folderName` mirrors the stored display
     // name so the row updates the moment a folder is chosen or removed; `scan` is non-nil while a
@@ -127,10 +130,17 @@ struct SettingsView: View {
                 Section("Library") {
                     LabeledContent("Comics", value: "\(books.count)")
                     LabeledContent("Storage", value: storageText)
-                    Button("Clear Cache") {
-                        Storage.clearCaches()
-                        ImageCache.clear()
-                        storageText = storageDescription
+                    LabeledContent {
+                        Text(cacheBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "")
+                            .monospacedDigit()
+                    } label: {
+                        Button("Clear Cache") {
+                            Storage.clearCaches()
+                            ImageCache.clear()
+                            storageText = storageDescription
+                            cacheBytes = 0
+                        }
+                        .disabled(cacheBytes == 0)
                     }
                 }
 
@@ -277,8 +287,12 @@ struct SettingsView: View {
             .onAppear { applyScreenshotScene(proxy) }
             #endif
             .task { storageText = storageDescription }
-            // Comics are deleted in the library tab, so the count is picked up on the way back here.
-            .onAppear { removedCount = LibrarySource.excludedPaths.count }
+            // Comics are deleted and read in the other tabs, so the removed count and the cache size
+            // are picked up again on every way back here.
+            .onAppear {
+                removedCount = LibrarySource.excludedPaths.count
+                Task { cacheBytes = await Task.detached(priority: .utility) { Storage.cacheSize() }.value }
+            }
             .fileImporter(isPresented: $isPickerPresented,
                           allowedContentTypes: pickerTarget.contentTypes) { result in
                 switch pickerTarget {

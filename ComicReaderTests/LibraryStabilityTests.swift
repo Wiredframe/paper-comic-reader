@@ -219,4 +219,18 @@ final class LibraryStabilityTests: XCTestCase {
 
         XCTAssertFalse(book.matches(searchQuery: "obelix"), "nothing in this comic says that")
     }
+    /// After a device restore the downloads (left out of the backup) are gone while the entries
+    /// still claim them. The launch reconcile clears the flag for those, and only for those.
+    func testReconcileClearsDownloadsThatAreGone() async throws {
+        let context = try makeContext()
+        let (kept, _) = try makeDownloadedFolderBook(in: context, bookmarks: 1)
+        let (gone, _) = try makeDownloadedFolderBook(in: context, bookmarks: 1)
+        try FileManager.default.removeItem(at: gone.archiveURL)
+
+        await Importer.reconcileDownloads(in: context)
+
+        XCTAssertTrue(kept.hasLocalArchive)
+        XCTAssertFalse(gone.hasLocalArchive)
+        XCTAssertEqual(gone.bookmarks.count, 1, "reconciling must never touch a bookmark")
+    }
 }

@@ -39,6 +39,17 @@ enum Storage {
         }
     }
 
+    /// Leaves a downloaded folder comic out of iCloud and computer backups. Its bytes can be fetched
+    /// again from the comic folder, and a library of downloads would otherwise fill the reader's
+    /// iCloud storage with copies of files they already have. Owned copies are NOT excluded: they
+    /// have no other source. Best effort; a file that keeps the flag unset is merely backed up.
+    static func excludeFromDeviceBackup(_ url: URL) {
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var url = url
+        try? url.setResourceValues(values)
+    }
+
     /// Deletes regenerable caches (page-grid thumbnails). Safe — they rebuild on demand.
     static func clearCaches() {
         let base = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]

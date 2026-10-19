@@ -67,6 +67,7 @@ struct ComicReaderApp: App {
                     // it came from. UIDevice is main-actor bound and the capture may not be.
                     BackupDevice.refreshName()
                     RecentComicSync.refresh(in: modelContainer.mainContext)
+                    await Importer.reconcileDownloads(in: modelContainer.mainContext)
                 }
         }
         .modelContainer(modelContainer)

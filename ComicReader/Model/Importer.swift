@@ -204,6 +204,7 @@ enum Importer {
             try? Storage.fm.removeItem(at: temp)
             throw LibrarySource.SourceError.copyFailed
         }
+        Storage.excludeFromDeviceBackup(dest)
     }
 
     /// Chunked file copy that reports progress and honours task cancellation — `FileManager`'s own
@@ -555,6 +556,7 @@ enum Importer {
                 try Storage.fm.removeItem(at: destination)
             }
             try Storage.fm.moveItem(at: staged, to: destination)
+            Storage.excludeFromDeviceBackup(destination)
             book.hasLocalArchive = true
             try? context.save()
         } catch {
@@ -598,6 +600,27 @@ enum Importer {
             .resolvingSymlinksInPath().path
         guard url.resolvingSymlinksInPath().path.hasPrefix(inbox) else { return }
         try? Storage.fm.removeItem(at: url)
+    }
+
+    /// Clears `hasLocalArchive` on folder comics whose download is gone. Downloads are left out of
+    /// the device backup (see `Storage.excludeFromDeviceBackup`), so after restoring a device from
+    /// one, every folder comic still claims bytes it no longer has, and the download indicators and
+    /// the "downloaded only" filter would say so until each one was opened. The file checks run off
+    /// the main actor; a library of a few thousand comics is a few thousand stats.
+    @MainActor static func reconcileDownloads(in context: ModelContext) async {
+        let descriptor = FetchDescriptor<ComicBook>(
+            predicate: #Predicate { $0.sourceRelativePath != nil && $0.hasLocalArchive })
+        let books = (try? context.fetch(descriptor)) ?? []
+        guard !books.isEmpty else { return }
+        let names = books.map(\.fileName)
+        let missing = await Task.detached(priority: .utility) {
+            Set(names.filter { !Storage.fm.fileExists(atPath: Storage.comicURL($0).path) })
+        }.value
+        guard !missing.isEmpty else { return }
+        for book in books where missing.contains(book.fileName) && book.hasLocalArchive {
+            book.hasLocalArchive = false
+        }
+        try? context.save()
     }
 
     /// Removes a book and its on-disk files.

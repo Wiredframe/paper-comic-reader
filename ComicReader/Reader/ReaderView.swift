@@ -119,7 +119,7 @@ struct ReaderView: View {
     @State private var paperVersion = 0
     @State private var jumpTarget: Int?
     @State private var showGrid = false
-    /// The reader settings popover is open, which holds off the auto-hide like the page grid.
+    /// The reader settings menu is open, which holds off the auto-hide like the page grid.
     @State private var showSettings = false
     /// The bookmark whose story is being picked from the reader (the bookmark button's long-press
     /// menu). Holds off the auto-hide like the page grid.
@@ -285,7 +285,7 @@ struct ReaderView: View {
             if isOpen { cancelAutoHide() } else if chromeVisible { armAutoHide() }
         }
         .onChange(of: showSettings) { _, isOpen in
-            // Same for the settings popover: the chrome it hangs off must not fade under it.
+            // Same for the settings menu: the chrome it hangs off must not fade under it.
             if isOpen { cancelAutoHide() } else if chromeVisible { armAutoHide() }
         }
         .onChange(of: storyBookmark == nil) { _, isClosed in
@@ -362,33 +362,18 @@ struct ReaderView: View {
     /// Top-right overlay: the GLOBAL reader toggles (paper effect + double page),
     /// changed right here with the page as a live preview.
     ///
-    /// A popover rather than a menu, because a menu can't tell anyone it is open: the chrome
-    /// faded away underneath it after the usual 2 seconds. The popover's flag pauses the
-    /// auto-hide like the page grid's does, and it stays up while both toggles are tried.
+    /// A UIKit menu button rather than a SwiftUI `Menu`, because the reader has to know while the
+    /// menu is up: the chrome faded away underneath it after the usual 2 seconds. Its open state
+    /// pauses the auto-hide like the page grid's does.
     private var settingsMenu: some View {
-        @Bindable var paper = paper
-        @Bindable var settings = settings
-        return Button { showSettings = true } label: {
-            Image(systemName: "slider.horizontal.3")
-                .font(.headline)
-                .frame(width: 44, height: 44)   // ≥ 44pt touch target
-                .glassEffect(in: Circle())
-                .opacity(chromeVisible ? 1 : 0)   // per-island fade — see `chrome`
-        }
-        .accessibilityLabel("Reader settings")
-        .popover(isPresented: $showSettings) {
-            VStack(spacing: 16) {
-                Toggle(isOn: $paper.isEnabled) {
-                    Label("Paper Effect", systemImage: "doc.plaintext")
-                }
-                Toggle(isOn: $settings.doublePage) {
-                    Label("Double Page", systemImage: "book.pages")
-                }
-            }
-            .padding(20)
-            .frame(width: 280)
-            .presentationCompactAdaptation(.popover)   // a popover on iPhone too, not a sheet
-        }
+        SettingsMenuButton(isPaperOn: paper.isEnabled,
+                           isDoublePage: settings.doublePage,
+                           onPaper: { paper.isEnabled.toggle() },
+                           onDoublePage: { settings.doublePage.toggle() },
+                           onMenuPresented: { showSettings = $0 })
+            .frame(width: 44, height: 44)   // ≥ 44pt touch target
+            .glassEffect(in: Circle())
+            .opacity(chromeVisible ? 1 : 0)   // per-island fade — see `chrome`
     }
 
     private var bottomBar: some View {
@@ -830,6 +815,51 @@ private struct BookmarkBarButton: UIViewRepresentable {
                 }
             ]
         }
+    }
+}
+
+/// The top bar's settings button: a tap opens the Paper Effect / Double Page menu. UIKit for the
+/// same reason as `BookmarkBarButton`: a SwiftUI `Menu` doesn't report opening or closing, and the
+/// reader must hold the chrome's auto-hide while it is up.
+private struct SettingsMenuButton: UIViewRepresentable {
+    let isPaperOn: Bool
+    let isDoublePage: Bool
+    let onPaper: () -> Void
+    let onDoublePage: () -> Void
+    let onMenuPresented: (Bool) -> Void
+
+    final class Coordinator {
+        var parent: SettingsMenuButton
+        init(_ parent: SettingsMenuButton) { self.parent = parent }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> BookmarkBarButton.MenuButton {
+        let button = BookmarkBarButton.MenuButton(type: .system)
+        let coordinator = context.coordinator
+        button.showsMenuAsPrimaryAction = true
+        button.onMenuPresented = { coordinator.parent.onMenuPresented($0) }
+        button.setImage(UIImage(systemName: "slider.horizontal.3",
+                                withConfiguration: UIImage.SymbolConfiguration(textStyle: .headline)),
+                        for: .normal)
+        button.tintColor = .label
+        button.accessibilityLabel = String(localized: "Reader settings")
+        // Built on every open, so the checkmarks always show the current state.
+        button.menu = UIMenu(children: [UIDeferredMenuElement.uncached { completion in
+            let parent = coordinator.parent
+            completion([
+                UIAction(title: String(localized: "Paper Effect"), image: UIImage(systemName: "doc.plaintext"),
+                         state: parent.isPaperOn ? .on : .off) { _ in coordinator.parent.onPaper() },
+                UIAction(title: String(localized: "Double Page"), image: UIImage(systemName: "book.pages"),
+                         state: parent.isDoublePage ? .on : .off) { _ in coordinator.parent.onDoublePage() },
+            ])
+        }])
+        return button
+    }
+
+    func updateUIView(_ button: BookmarkBarButton.MenuButton, context: Context) {
+        context.coordinator.parent = self
     }
 }
 

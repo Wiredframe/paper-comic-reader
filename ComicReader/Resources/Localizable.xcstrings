@@ -1449,6 +1449,22 @@
         }
       }
     },
+    "Download Again": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut laden"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scarica di nuovo"
+          }
+        }
+      }
+    },
     "Downloading": {
       "localizations": {
         "de": {

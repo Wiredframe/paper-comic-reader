@@ -152,8 +152,9 @@ struct ReaderView: View {
                            onRequestClose: close)
                     .ignoresSafeArea()
             } else if store != nil {
-                // Archive couldn't be opened (missing / corrupt after import).
-                ReaderUnavailableView()
+                // Archive couldn't be opened (missing / corrupt after import). A folder comic's
+                // bytes can simply be fetched again, so it gets the way out a hand import can't.
+                ReaderUnavailableView(onDownloadAgain: book.sourceRelativePath != nil ? downloadAgain : nil)
             } else if resolveRequest != nil {
                 // Fetch failed — the resolve dialog below drives the choice; this is what sits
                 // behind it (and what remains if the user dismisses without choosing), with the
@@ -503,6 +504,14 @@ struct ReaderView: View {
         Task { await ensureLocalThenOpen() }
     }
 
+    /// Throws away a folder comic's local copy that won't open and fetches a fresh one. `store` goes
+    /// back to nil first, or the unreadable copy's screen would stay up over the download's ring.
+    private func downloadAgain() {
+        Importer.evictDownload(book, from: context)
+        store = nil
+        retryFetch()
+    }
+
     /// Opens the (now-local) archive and settles the reader on it. The open runs OFF the main
     /// actor (`PageImageStore.open`); everything that needs a real page count waits for it.
     private func openStore() async {
@@ -608,12 +617,19 @@ struct ReaderView: View {
 /// Shown when a comic's archive can't be opened — moved, deleted, or corrupted after import.
 /// Reachable via the reader's Close button in the chrome above.
 private struct ReaderUnavailableView: View {
+    /// Set for a comic from the library folder, whose local copy can be replaced from there.
+    var onDownloadAgain: (() -> Void)?
+
     var body: some View {
-        ContentUnavailableView(
-            "Couldn't open this comic",
-            systemImage: "exclamationmark.triangle",
-            description: Text("The file may have been moved, or is no longer a readable CBZ archive.")
-        )
+        ContentUnavailableView {
+            Label("Couldn't open this comic", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text("The file may have been moved, or is no longer a readable CBZ archive.")
+        } actions: {
+            if let onDownloadAgain {
+                Button("Download Again", action: onDownloadAgain).buttonStyle(.borderedProminent)
+            }
+        }
     }
 }
 

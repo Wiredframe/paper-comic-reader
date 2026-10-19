@@ -138,10 +138,15 @@ private struct ComicResolveModifier: ViewModifier {
         isCopying = true
         Task {
             do {
-                let newRelativePath = try await Task.detached(priority: .userInitiated) {
+                let relinked = try await Task.detached(priority: .userInitiated) {
                     try Importer.relink(from: url, into: dest)
                 }.value
-                if let newRelativePath { book.sourceRelativePath = newRelativePath }
+                if let path = relinked.relativePath { book.sourceRelativePath = path }
+                // The pick may not be page for page the file it replaces: follow its length, keep
+                // the resume page inside it, and drop the page-grid thumbnails of the old file.
+                book.pageCount = relinked.pageCount
+                book.lastReadPage = min(book.lastReadPage, max(relinked.pageCount - 1, 0))
+                try? Storage.fm.removeItem(at: Storage.pageThumbs(for: book.id))
                 book.hasLocalArchive = true
                 try? context.save()
                 isCopying = false

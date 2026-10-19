@@ -267,12 +267,21 @@ enum Importer {
     // twice into the same temp file. Downloads are `DownloadManager`'s job now, and every caller
     // goes through it.
 
+    /// What a relink brought in: where the pick sits in the library folder, if it does, and how
+    /// many pages it has. The replacement need not be the same file as before (a re-scan, a
+    /// different edition), so the entry's page count has to follow it.
+    struct Relinked: Sendable {
+        let relativePath: String?
+        let pageCount: Int
+    }
+
     /// Copies a user-picked replacement archive into `destURL` (a comic's `archiveURL`) so a
-    /// comic whose source went missing opens right away. Returns the pick's path relative to the
-    /// library folder when it sits inside it — the caller stores that as the entry's new permanent
-    /// source — or nil when the pick was a one-off rescue from elsewhere and the old source stands.
-    /// Off-main (copy I/O); throws `LibrarySource.SourceError` on failure.
-    static func relink(from pickedURL: URL, into destURL: URL) throws -> String? {
+    /// comic whose source went missing opens right away. `relativePath` is the pick's path relative
+    /// to the library folder when it sits inside it (the caller stores that as the entry's new
+    /// permanent source), or nil when the pick was a one-off rescue from elsewhere and the old
+    /// source stands. Off-main (copy I/O); throws `LibrarySource.SourceError` on failure, including
+    /// for a pick that won't open as a comic.
+    static func relink(from pickedURL: URL, into destURL: URL) throws -> Relinked {
         let scoped = pickedURL.startAccessingSecurityScopedResource()
         defer { if scoped { pickedURL.stopAccessingSecurityScopedResource() } }
         guard ComicArchive.looksLikeComic(at: pickedURL) else {
@@ -283,6 +292,11 @@ enum Importer {
         try? Storage.fm.removeItem(at: temp)
         do { try Storage.fm.copyItem(at: pickedURL, to: temp) }
         catch { try? Storage.fm.removeItem(at: temp); throw LibrarySource.SourceError.copyFailed }
+        let pageCount = (try? ComicArchive(url: temp))?.pageCount ?? 0
+        guard pageCount > 0 else {
+            try? Storage.fm.removeItem(at: temp)
+            throw LibrarySource.SourceError.copyFailed
+        }
         if Storage.fm.fileExists(atPath: destURL.path) { try? Storage.fm.removeItem(at: destURL) }
         do { try Storage.fm.moveItem(at: temp, to: destURL) }
         catch { try? Storage.fm.removeItem(at: temp); throw LibrarySource.SourceError.copyFailed }
@@ -291,10 +305,11 @@ enum Importer {
             let f = folder.startAccessingSecurityScopedResource()
             defer { if f { folder.stopAccessingSecurityScopedResource() } }
             if LibrarySource.contains(pickedURL, in: folder) {
-                return LibrarySource.relativePath(of: pickedURL, in: folder)
+                return Relinked(relativePath: LibrarySource.relativePath(of: pickedURL, in: folder),
+                                pageCount: pageCount)
             }
         }
-        return nil
+        return Relinked(relativePath: nil, pageCount: pageCount)
     }
 
     // MARK: Folder scan

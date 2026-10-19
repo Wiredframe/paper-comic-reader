@@ -305,4 +305,26 @@ final class LibraryStabilityTests: XCTestCase {
 
         XCTAssertNil(ComicInfoParser.parse(Data("&not xml at all".utf8)))
     }
+    // MARK: Choose Another File
+
+    /// A replacement pick reports its own page count, so the entry can follow a file that isn't
+    /// page for page the one it replaces; a pick that won't open as a comic is refused.
+    func testRelinkReportsTheReplacementsPageCount() throws {
+        let picked = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).cbz")
+        try writeArchive(to: picked, entries: ["1.jpg": Data("a".utf8), "2.jpg": Data("b".utf8)])
+        let dest = Storage.comicURL("\(UUID().uuidString).cbz")
+        tempFiles.append(dest)
+
+        let relinked = try Importer.relink(from: picked, into: dest)
+        XCTAssertEqual(relinked.pageCount, 2)
+        XCTAssertNil(relinked.relativePath, "a pick outside the library folder keeps the old source")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.path))
+
+        let garbage = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).cbz")
+        FileManager.default.createFile(atPath: garbage.path, contents: Data("not a zip".utf8))
+        tempFiles.append(garbage)
+        XCTAssertThrowsError(try Importer.relink(from: garbage, into: dest))
+    }
 }

@@ -190,6 +190,11 @@ enum Importer {
         let temp = dest.appendingPathExtension("\(UUID().uuidString).part")
         do {
             try copyWithProgress(from: source, to: temp, onProgress: onProgress)
+            // A ZIP keeps its directory at the very end, so a copy that came up short can't open.
+            // Checked before the move: a file that reads as downloaded is never fetched again.
+            guard let archive = try? ComicArchive(url: temp), archive.pageCount > 0 else {
+                throw LibrarySource.SourceError.copyFailed
+            }
         } catch is CancellationError {
             try? Storage.fm.removeItem(at: temp)
             throw LibrarySource.SourceError.cancelled
@@ -227,13 +232,22 @@ enum Importer {
         var written: Int64 = 0
         while true {
             try Task.checkCancellation()
-            let data = (try? reader.read(upToCount: chunk)) ?? Data()
+            // A read that throws is a share that dropped mid-copy, not the end of the file. Taking
+            // it for the end would install the first part of the comic as if it were all of it.
+            let data: Data
+            do { data = try reader.read(upToCount: chunk) ?? Data() }
+            catch { throw LibrarySource.SourceError.copyFailed }
             if data.isEmpty { break }
             do { try writer.write(contentsOf: data) }
             catch { throw LibrarySource.SourceError.copyFailed }
             written += Int64(data.count)
             if total > 0 { onProgress(min(1, Double(written) / Double(total))) }
         }
+        // Ran out before the size the source reported: cut short, whatever the read said.
+        if total > 0 && written != total { throw LibrarySource.SourceError.copyFailed }
+        // Flushed now, so a full disk shows up here rather than as a short file later.
+        do { try writer.synchronize() }
+        catch { throw LibrarySource.SourceError.copyFailed }
         onProgress(1)
     }
 
@@ -582,8 +596,10 @@ enum Importer {
 
         let chunk = 1 << 20   // 1 MB
         while true {
-            let dataA = (try? handleA.read(upToCount: chunk)) ?? Data()
-            let dataB = (try? handleB.read(upToCount: chunk)) ?? Data()
+            // A read that fails proves nothing either way, so it doesn't count as a match: two
+            // reads failing together would otherwise compare as two empty, identical ends.
+            guard let dataA = try? handleA.read(upToCount: chunk) ?? Data(),
+                  let dataB = try? handleB.read(upToCount: chunk) ?? Data() else { return false }
             if dataA != dataB { return false }
             if dataA.isEmpty { return true }   // both ran out together — identical
         }

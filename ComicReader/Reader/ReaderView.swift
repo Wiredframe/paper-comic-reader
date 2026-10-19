@@ -121,6 +121,12 @@ struct ReaderView: View {
     @State private var showGrid = false
     /// The reader settings popover is open, which holds off the auto-hide like the page grid.
     @State private var showSettings = false
+    /// The bookmark whose story is being picked from the reader (the bookmark button's long-press
+    /// menu). Holds off the auto-hide like the page grid.
+    @State private var storyBookmark: Bookmark?
+    /// The bookmark button's long-press menu is on screen. The chrome it hangs off must not fade
+    /// under it.
+    @State private var bookmarkMenuOpen = false
     @State private var bookmarkTick = 0   // nudges the view when bookmarks change
     @State private var bookmarkingPages: Set<Int> = []   // pages with an add in flight — guards double-taps
     /// One open = one count. @State is per-presentation, which is exactly the semantics
@@ -163,10 +169,11 @@ struct ReaderView: View {
     @State private var didStopFetch = false
 
     private var pageCount: Int { store?.pageCount ?? book.pageCount }
-    private var isBookmarked: Bool {
+    private var currentBookmark: Bookmark? {
         _ = bookmarkTick
-        return book.bookmarks.contains { $0.pageIndex == currentPage }
+        return book.bookmarks.first { $0.pageIndex == currentPage }
     }
+    private var isBookmarked: Bool { currentBookmark != nil }
 
     var body: some View {
         ZStack {
@@ -281,6 +288,16 @@ struct ReaderView: View {
             // Same for the settings popover: the chrome it hangs off must not fade under it.
             if isOpen { cancelAutoHide() } else if chromeVisible { armAutoHide() }
         }
+        .onChange(of: storyBookmark == nil) { _, isClosed in
+            // Same for the story picker. Its choice changes the menu's wording, hence the nudge.
+            if isClosed {
+                bookmarkTick += 1
+                if chromeVisible { armAutoHide() }
+            } else {
+                cancelAutoHide()
+            }
+        }
+        .sheet(item: $storyBookmark) { StoryPickerView(bookmark: $0) }
         .sheet(isPresented: $showGrid) {
             if let store {
                 PageGridView(store: store, pageCount: store.pageCount, current: currentPage) { page in
@@ -376,11 +393,13 @@ struct ReaderView: View {
 
     private var bottomBar: some View {
         HStack(spacing: 26) {
-            barButton(isBookmarked ? "bookmark.fill" : "bookmark",
-                      label: isBookmarked ? "Remove bookmark" : "Add bookmark",
-                      tint: isBookmarked ? .accentColor : .primary) {
-                toggleBookmark()
-            }
+            // A plain tap toggles the bookmark as before; a long press offers the story picker.
+            BookmarkBarButton(isBookmarked: isBookmarked,
+                              hasStory: currentBookmark?.hasStory ?? false,
+                              onTap: toggleBookmark,
+                              onAssignStory: assignStoryToCurrentPage,
+                              onMenuPresented: bookmarkMenuPresented)
+                .frame(width: 44, height: 44)
             barButton("square.grid.2x2", label: "Page grid") { showGrid = true }
             barButton("rectangle.landscape.rotate",
                       label: holdsLandscape ? "Follow device orientation" : "Read in landscape",
@@ -463,7 +482,8 @@ struct ReaderView: View {
     /// Never under VoiceOver: the controls would vanish while they are being read out.
     private func armAutoHide() {
         cancelAutoHide()
-        guard !showGrid, !showSettings, !voiceOverEnabled else { return }
+        guard !showGrid, !showSettings, storyBookmark == nil, !bookmarkMenuOpen,
+              !voiceOverEnabled else { return }
         autoHideTask = Task {
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
@@ -677,35 +697,138 @@ struct ReaderView: View {
             try? context.save()
             bookmarkTick += 1
         } else {
-            let page = currentPage
-            // Adding is async (a thumbnail decode) and isBookmarked stays false until it
-            // commits, so a second tap in that window would insert a duplicate bookmark for
-            // the same page. Guard the page until this add resolves.
-            guard !bookmarkingPages.contains(page) else { return }
-            bookmarkingPages.insert(page)
-            // Bookmark cards render at the same full-width size as covers, so match
-            // the cover resolution rather than a small thumbnail.
-            Task { @MainActor in
-                defer { bookmarkingPages.remove(page) }
-                guard let image = await store?.thumbnail(at: page, maxPixel: ImageDownsampler.libraryCardPixel) else { return }
-                let name = "\(UUID().uuidString).jpg"
-                // Encode and write off the main actor: a full-size JPEG encode is a dropped frame
-                // or two right as the bookmark button animates.
-                let url = Storage.bookmarkThumbURL(name)
-                let written = await Task.detached(priority: .userInitiated) {
-                    ImageDownsampler.writeJPEG(image, to: url)
-                }.value
-                guard written else { return }
-                // The page's shape, free — the carousel needs it to size an uncropped card, and
-                // the decoded image is right here. Older bookmarks get it backfilled from the
-                // thumbnail's header instead.
-                let aspect: Double? = image.size.height > 0
-                    ? Double(image.size.width / image.size.height) : nil
-                context.insert(Bookmark(pageIndex: page, thumbName: name,
-                                        pageAspect: aspect, book: book))
-                try? context.save()
-                bookmarkTick += 1
-            }
+            addBookmark()
+        }
+    }
+
+    /// "Assign to Story…" from the bookmark button's menu. A page that isn't bookmarked yet is
+    /// bookmarked first: a story belongs to a bookmark, and asking for one says the page matters.
+    private func assignStoryToCurrentPage() {
+        if let existing = book.bookmarks.first(where: { $0.pageIndex == currentPage }) {
+            storyBookmark = existing
+        } else {
+            addBookmark { storyBookmark = $0 }
+        }
+    }
+
+    /// The bookmark button's long-press menu opened or closed: hold the auto-hide while it is up,
+    /// restart the clock once it is gone (unless it opened the picker, which holds it in turn).
+    private func bookmarkMenuPresented(_ isOpen: Bool) {
+        bookmarkMenuOpen = isOpen
+        if isOpen { cancelAutoHide() } else if chromeVisible { armAutoHide() }
+    }
+
+    /// Bookmarks the current page, then hands the new bookmark to `completion` once it is saved.
+    private func addBookmark(then completion: ((Bookmark) -> Void)? = nil) {
+        let page = currentPage
+        // Adding is async (a thumbnail decode) and isBookmarked stays false until it
+        // commits, so a second tap in that window would insert a duplicate bookmark for
+        // the same page. Guard the page until this add resolves.
+        guard !bookmarkingPages.contains(page) else { return }
+        bookmarkingPages.insert(page)
+        // Bookmark cards render at the same full-width size as covers, so match
+        // the cover resolution rather than a small thumbnail.
+        Task { @MainActor in
+            defer { bookmarkingPages.remove(page) }
+            guard let image = await store?.thumbnail(at: page, maxPixel: ImageDownsampler.libraryCardPixel) else { return }
+            let name = "\(UUID().uuidString).jpg"
+            // Encode and write off the main actor: a full-size JPEG encode is a dropped frame
+            // or two right as the bookmark button animates.
+            let url = Storage.bookmarkThumbURL(name)
+            let written = await Task.detached(priority: .userInitiated) {
+                ImageDownsampler.writeJPEG(image, to: url)
+            }.value
+            guard written else { return }
+            // The page's shape, free — the carousel needs it to size an uncropped card, and
+            // the decoded image is right here. Older bookmarks get it backfilled from the
+            // thumbnail's header instead.
+            let aspect: Double? = image.size.height > 0
+                ? Double(image.size.width / image.size.height) : nil
+            let mark = Bookmark(pageIndex: page, thumbName: name,
+                                pageAspect: aspect, book: book)
+            context.insert(mark)
+            try? context.save()
+            bookmarkTick += 1
+            completion?(mark)
+        }
+    }
+}
+
+/// The bottom bar's bookmark button: a tap toggles the bookmark, a long press offers "Assign to
+/// Story…". UIKit rather than a SwiftUI Button because the reader has to know while that menu is
+/// up, so the chrome's auto-hide can wait for it, and neither a SwiftUI `Menu` nor `.contextMenu`
+/// reports opening or closing. A UIButton with a menu that isn't its primary action keeps the tap
+/// on touch-up exactly as before and opens the menu only on a long press. It sits in the chrome,
+/// above the page view, so the reader's own edge taps never see these touches.
+private struct BookmarkBarButton: UIViewRepresentable {
+    let isBookmarked: Bool
+    let hasStory: Bool
+    let onTap: () -> Void
+    let onAssignStory: () -> Void
+    let onMenuPresented: (Bool) -> Void
+
+    final class Coordinator {
+        var parent: BookmarkBarButton
+        init(_ parent: BookmarkBarButton) { self.parent = parent }
+    }
+
+    /// Tells its owner when the long-press menu appears and goes. UIControl is the delegate of
+    /// the button's own context menu interaction, so these overrides see exactly that menu.
+    final class MenuButton: UIButton {
+        var onMenuPresented: ((Bool) -> Void)?
+
+        override func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                             willDisplayMenuFor configuration: UIContextMenuConfiguration,
+                                             animator: (any UIContextMenuInteractionAnimating)?) {
+            super.contextMenuInteraction(interaction, willDisplayMenuFor: configuration, animator: animator)
+            onMenuPresented?(true)
+        }
+
+        override func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                             willEndFor configuration: UIContextMenuConfiguration,
+                                             animator: (any UIContextMenuInteractionAnimating)?) {
+            super.contextMenuInteraction(interaction, willEndFor: configuration, animator: animator)
+            onMenuPresented?(false)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> MenuButton {
+        let button = MenuButton(type: .system)
+        let coordinator = context.coordinator
+        button.addAction(UIAction { _ in coordinator.parent.onTap() }, for: .primaryActionTriggered)
+        button.showsMenuAsPrimaryAction = false
+        button.onMenuPresented = { coordinator.parent.onMenuPresented($0) }
+        return button
+    }
+
+    func updateUIView(_ button: MenuButton, context: Context) {
+        context.coordinator.parent = self
+        // The same symbol, size and colours the SwiftUI bar buttons beside it use.
+        let symbol = UIImage.SymbolConfiguration(textStyle: .title3)
+        button.setImage(UIImage(systemName: isBookmarked ? "bookmark.fill" : "bookmark",
+                                withConfiguration: symbol), for: .normal)
+        button.tintColor = isBookmarked ? UIColor(Color.accentColor) : .label
+        button.accessibilityLabel = isBookmarked ? String(localized: "Remove bookmark")
+                                                 : String(localized: "Add bookmark")
+
+        let title = hasStory ? String(localized: "Change Story…") : String(localized: "Assign to Story…")
+        // Rebuilt only when the wording changes, never under an open menu for no reason.
+        if button.menu?.children.first?.title != title {
+            let coordinator = context.coordinator
+            button.menu = UIMenu(children: [
+                UIAction(title: title, image: UIImage(systemName: "text.book.closed")) { _ in
+                    coordinator.parent.onAssignStory()
+                }
+            ])
+            // VoiceOver can't long-press its way to the menu, so the same choice is an action.
+            button.accessibilityCustomActions = [
+                UIAccessibilityCustomAction(name: title) { _ in
+                    coordinator.parent.onAssignStory()
+                    return true
+                }
+            ]
         }
     }
 }

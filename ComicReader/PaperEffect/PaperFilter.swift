@@ -30,8 +30,9 @@ public final class PaperFilter {
 
 	public init() {
 		// NSNull working space => filters operate directly on the (sRGB encoded)
-		// pixel values, giving intuitive "levels"-style tonal math.
-		let options: [CIContextOption: Any] = [.workingColorSpace: NSNull()]
+		// pixel values, giving intuitive "levels"-style tonal math. Each page is a distinct
+		// image rendered once, so cached intermediates would never be reused, only held.
+		let options: [CIContextOption: Any] = [.workingColorSpace: NSNull(), .cacheIntermediates: false]
 		if let device = MTLCreateSystemDefaultDevice() {
 			context = CIContext(mtlDevice: device, options: options)
 		} else {

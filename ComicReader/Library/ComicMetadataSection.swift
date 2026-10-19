@@ -246,12 +246,22 @@ private struct LabeledField: View {
     let label: String
     let value: String
 
+    /// The label column grows with Dynamic Type, so a longer German or Italian label still fits.
+    @ScaledMetric(relativeTo: .subheadline) private var labelWidth = 74.0
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        // At the accessibility sizes even a scaled column leaves the value too little room, so
+        // the label goes above it instead.
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let layout = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
+        layout {
             Text(label)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .frame(width: 74, alignment: .leading)
+                .frame(width: stacked ? nil : labelWidth, alignment: .leading)
             Text(value)
                 .font(.subheadline)
                 .foregroundStyle(.primary)

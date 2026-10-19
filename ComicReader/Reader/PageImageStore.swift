@@ -38,6 +38,10 @@ final class PageImageStore: @unchecked Sendable {
     private var paperEnabled: Bool
     private var paperParams: PaperParams
 
+    /// Counts the paper changes (`setPaper`), so a reader cell can tell its images were rendered
+    /// with an older setting and fetch them again. Main actor only, like `setPaper`.
+    private(set) var paperGeneration = 0
+
     /// The page the reader is on, set from the controller. Read on the decode queue so a
     /// prefetch that the reader has already scrolled far past can skip its (paper-heavy)
     /// render instead of holding up the page actually being turned to. Guarded by a lock
@@ -221,6 +225,7 @@ final class PageImageStore: @unchecked Sendable {
         // reads them, and this call is enqueued before any reload's render, so re-decodes
         // pick up the new params.
         cache.removeAllObjects()
+        paperGeneration += 1
         work.async { [weak self] in
             self?.paperEnabled = enabled
             self?.paperParams = params

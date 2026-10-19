@@ -159,6 +159,9 @@ final class ReaderPageCell: UICollectionViewCell {
     private var loadToken = 0
     /// The image requests still queued for this slot, cancelled when the cell moves on.
     private var imageRequests: [CancelFlag] = []
+    private weak var store: PageImageStore?
+    /// The store's `paperGeneration` the images were requested under, see `refreshImages`.
+    private var paperGeneration = 0
     private var fit: Fit = .fitWidth
     /// The slot was opened at the bottom of its focused page (`Opening.page(atEnd: true)`, a
     /// backward page change), so `placeFocus` rests it there instead of at the top. Deliberately
@@ -300,6 +303,23 @@ final class ReaderPageCell: UICollectionViewCell {
         self.lastLaidOutBounds = .zero
         pageViews[1].isHidden = pageIndices.count < 2
 
+        self.store = store
+        loadImages(from: store)
+    }
+
+    /// The paper effect changed since this slot's images were requested: request them again and
+    /// swap each one in as it arrives. The old picture stays up meanwhile (a reload would blank
+    /// the slot until the new render lands), and so do the fit, the scroll position and the
+    /// focused half, since a page keeps its shape. Called for the slots on screen right away and
+    /// for any other from `prepareForDisplay`.
+    func refreshImages() {
+        guard let store, paperGeneration != store.paperGeneration else { return }
+        cancelLiveTextAnalysis()
+        loadImages(from: store)
+    }
+
+    private func loadImages(from store: PageImageStore) {
+        paperGeneration = store.paperGeneration
         loadToken += 1
         cancelImageRequests()
         let token = loadToken
@@ -308,8 +328,15 @@ final class ReaderPageCell: UICollectionViewCell {
             let request = store.requestImage(at: page) { [weak self] index, image in
                 guard let self, self.loadToken == token, index == page,
                       pos < self.images.count, let image else { return }
+                let replacing = self.images[pos] != nil
                 self.images[pos] = image
                 self.pageViews[pos].image = image
+                if replacing {
+                    // Same page, new paper: the old text analysis no longer matches the pixels.
+                    self.liveText[pos].analysis = nil
+                    self.setupLiveText(pos, image)
+                    return
+                }
                 self.pageViews[pos].isHidden = false
                 self.setupLiveText(pos, image)
                 self.lastLaidOutBounds = .zero          // re-fit now that a page arrived
@@ -342,6 +369,7 @@ final class ReaderPageCell: UICollectionViewCell {
     /// slot's resting position, which is what an arriving slot wants; nothing is animated, and a
     /// slot whose images haven't arrived is skipped by `layoutSubviews` and re-fitted when they do.
     func prepareForDisplay(_ opening: Opening) {
+        refreshImages()
         apply(opening)
         setNeedsLayout()
         layoutIfNeeded()

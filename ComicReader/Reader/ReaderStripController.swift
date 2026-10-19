@@ -254,10 +254,11 @@ final class ReaderStripController: UIViewController,
         collectionView?.backgroundColor = color
     }
 
-    /// Rebuilds the visible pages (the paper effect changed). The widths don't depend on it, so
-    /// the band stays exactly where it is.
+    /// Re-renders the visible pages in place (the paper effect changed), without a reload, which
+    /// would blank them until the new render lands. The widths don't depend on it, so the band
+    /// stays exactly where it is. Cells not on screen catch up as they are shown (`willDisplay`).
     func reloadCurrent() {
-        collectionView.reloadData()
+        for case let cell as StripPageCell in collectionView.visibleCells { cell.refreshImage() }
     }
 
     /// Page grid / bookmark jump: the page's left edge to the screen's left edge.
@@ -638,6 +639,12 @@ final class ReaderStripController: UIViewController,
         }
     }
 
+    /// A cell built before a paper change is brought up to date as it comes on screen.
+    func collectionView(_ cv: UICollectionView, willDisplay cell: UICollectionViewCell,
+                        forItemAt indexPath: IndexPath) {
+        (cell as? StripPageCell)?.refreshImage()
+    }
+
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         layoutBandShadow()
         trackCurrentPage()
@@ -738,6 +745,12 @@ final class StripPageCell: UICollectionViewCell {
     private var loadToken = 0
     /// The image request still queued for this cell, cancelled when it moves on to another page.
     private var imageRequest: CancelFlag?
+    private var page = -1
+    private weak var store: PageImageStore?
+    private var settings: ReaderSettings?
+    private var onShape: ((Int, CGFloat) -> Void)?
+    /// The store's `paperGeneration` the image was requested under, see `refreshImage`.
+    private var paperGeneration = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -765,6 +778,11 @@ final class StripPageCell: UICollectionViewCell {
 
     func configure(page: Int, store: PageImageStore, settings: ReaderSettings,
                    onShape: @escaping (Int, CGFloat) -> Void) {
+        self.page = page
+        self.store = store
+        self.settings = settings
+        self.onShape = onShape
+        paperGeneration = store.paperGeneration
         loadToken += 1
         imageRequest?.cancel()
         let token = loadToken
@@ -772,6 +790,26 @@ final class StripPageCell: UICollectionViewCell {
             guard let self, self.loadToken == token, index == page, let image else { return }
             self.imageView.image = image
             if image.size.height > 0 { onShape(page, image.size.width / image.size.height) }
+            if settings.liveText { self.setupLiveText(image) }
+        }
+    }
+
+    /// The paper effect changed since this page was requested: request it again and swap it in
+    /// when it arrives, keeping the old picture up meanwhile instead of blanking the page.
+    func refreshImage() {
+        guard let store, let settings, paperGeneration != store.paperGeneration else { return }
+        paperGeneration = store.paperGeneration
+        loadToken += 1
+        imageRequest?.cancel()
+        let token = loadToken
+        let page = page
+        let onShape = onShape
+        imageRequest = store.requestImage(at: page) { [weak self] index, image in
+            guard let self, self.loadToken == token, index == page, let image else { return }
+            self.imageView.image = image
+            // The first request may have been the one cancelled here, before its shape came in.
+            if image.size.height > 0 { onShape?(page, image.size.width / image.size.height) }
+            self.liveText.analysis = nil   // the old text analysis no longer matches the pixels
             if settings.liveText { self.setupLiveText(image) }
         }
     }

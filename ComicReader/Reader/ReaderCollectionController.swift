@@ -251,14 +251,11 @@ final class ReaderCollectionController: UIViewController,
         syncSidewaysNavigation()
     }
 
-    /// Rebuilds visible pages (e.g. after the paper effect toggled).
+    /// Re-renders the pages on screen in place (the paper effect changed), without a reload,
+    /// which would blank them until the new render lands. Slots not on screen catch up as they
+    /// are shown (see `ReaderPageCell.prepareForDisplay`).
     func reloadCurrent() {
-        let page = currentPage
-        collectionView.reloadData()
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let offset = self.offset(forSlot: self.paging.slot(forPage: page)) else { return }
-            self.collectionView.setContentOffset(offset, animated: false)
-        }
+        for case let cell as ReaderPageCell in collectionView.visibleCells { cell.refreshImages() }
     }
 
     /// Jumps to a page (page grid / bookmarks) instantly.

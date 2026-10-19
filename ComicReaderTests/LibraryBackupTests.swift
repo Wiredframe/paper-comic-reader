@@ -303,6 +303,24 @@ final class LibraryBackupTests: XCTestCase {
         XCTAssertTrue(mine.bookmarks.isEmpty, "a page this copy doesn't have can't be bookmarked")
     }
 
+    // MARK: Failing loudly
+
+    /// An archive that is there but can't be packed must fail the export. The document already
+    /// claims it, so a backup without it would look finished and lose an owned comic.
+    func testAnArchiveThatWontPackFailsTheExport() throws {
+        let source = try makeContext()
+        let book = insertOwned(source)
+        let path = book.archiveURL.path
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path) }
+
+        let backup = LibraryBackupStore.capture(from: [book])
+        XCTAssertTrue(backup.comics[0].archiveIncluded)
+        XCTAssertThrowsError(try LibraryBackupArchive.write(backup) { _, _ in }) { error in
+            XCTAssertEqual(error as? LibraryBackupArchive.BackupError, .writeFailed)
+        }
+    }
+
     // MARK: Rejecting the wrong file
 
     func testACbzIsNotABackup() throws {

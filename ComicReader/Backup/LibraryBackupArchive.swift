@@ -30,6 +30,7 @@ enum LibraryBackupArchive {
         case unreadable
         case fromNewerVersion
         case writeFailed
+        case notEnoughSpace
 
         var errorDescription: String? {
             switch self {
@@ -37,6 +38,7 @@ enum LibraryBackupArchive {
             case .unreadable:       return String(localized: "The backup couldn't be read. It may be incomplete.")
             case .fromNewerVersion: return String(localized: "That backup was made by a newer version of the app.")
             case .writeFailed:      return String(localized: "The backup couldn't be written.")
+            case .notEnoughSpace:   return String(localized: "There isn't enough free space on this device for the backup. Free up some space and try again.")
             }
         }
     }
@@ -71,11 +73,6 @@ enum LibraryBackupArchive {
         }
         sweepOldExports(in: base, keeping: workspace)
 
-        let destination = workspace.appendingPathComponent(fileName(at: backup.createdAt))
-        guard let archive = try? Archive(url: destination, accessMode: .create) else {
-            throw BackupError.writeFailed
-        }
-
         // What goes in, worked out up front so the progress total is honest rather than a guess
         // that grows as it runs.
         var payload: [(path: String, file: URL)] = []
@@ -91,6 +88,25 @@ enum LibraryBackupArchive {
             if comic.archiveIncluded {
                 payload.append(("\(comicsFolder)/\(comic.fileName)", Storage.comicURL(comic.fileName)))
             }
+        }
+
+        // The zip is a full second copy of every owned archive, so a device without room for that
+        // finds out now, not as a backup that looks finished and is missing comics.
+        let needed = payload.reduce(Int64(0)) { sum, item in
+            sum + Int64((try? item.file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+        }
+        if let free = freeSpace(at: workspace), free < needed + 10 * 1024 * 1024 {
+            try? Storage.fm.removeItem(at: workspace)
+            throw BackupError.notEnoughSpace
+        }
+
+        let destination = workspace.appendingPathComponent(fileName(at: backup.createdAt))
+        let archive: Archive
+        do {
+            archive = try Archive(url: destination, accessMode: .create)
+        } catch {
+            try? Storage.fm.removeItem(at: workspace)
+            throw BackupError.writeFailed
         }
 
         let total = payload.count + 1
@@ -109,7 +125,7 @@ enum LibraryBackupArchive {
                 data.subdata(in: Int(position)..<Int(position) + size)
             }
         } catch {
-            throw BackupError.writeFailed
+            throw writeFailure(error, discarding: workspace)
         }
         report(1)
 
@@ -117,14 +133,31 @@ enum LibraryBackupArchive {
             // A file that has gone missing since the document was built is skipped rather than
             // fatal. The entry still restores; it just comes back without that one picture, which
             // is a far better outcome than refusing to back up the library at all.
+            //
+            // A file that is there and still won't go in is fatal. The document already says the
+            // backup carries it, and for an owned copy that may be the only copy there is.
             if Storage.fm.fileExists(atPath: item.file.path) {
-                // `.none`: JPEGs and CBZs are already compressed, so deflating them again spends
-                // real time on a library of any size and saves close to nothing.
-                try? archive.addEntry(with: item.path, fileURL: item.file, compressionMethod: .none)
+                do {
+                    // `.none`: JPEGs and CBZs are already compressed, so deflating them again
+                    // spends real time on a library of any size and saves close to nothing.
+                    try archive.addEntry(with: item.path, fileURL: item.file, compressionMethod: .none)
+                } catch {
+                    throw writeFailure(error, discarding: workspace)
+                }
             }
             report(index + 2)
         }
         return destination
+    }
+
+    /// Bins a half-written export and says why it failed, telling a full disk apart from the rest.
+    private static func writeFailure(_ error: Error, discarding workspace: URL) -> BackupError {
+        try? Storage.fm.removeItem(at: workspace)
+        if isOutOfSpace(error) { return .notEnoughSpace }
+        if let free = freeSpace(at: workspace.deletingLastPathComponent()), free < 10 * 1024 * 1024 {
+            return .notEnoughSpace
+        }
+        return .writeFailed
     }
 
     /// Removes previous exports, so they don't sit in temp for the life of the install. Best effort:
@@ -210,6 +243,31 @@ enum LibraryBackupArchive {
             throw BackupError.fromNewerVersion
         }
         return Unpacked(backup: backup, root: root)
+    }
+}
+
+// MARK: - Free space
+
+extension LibraryBackupArchive {
+
+    /// Bytes free on the volume holding `url`, or nil when the system won't say.
+    static func freeSpace(at url: URL) -> Int64? {
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey,
+                                                       .volumeAvailableCapacityKey])
+        if let important = values?.volumeAvailableCapacityForImportantUsage, important > 0 {
+            return important
+        }
+        return values?.volumeAvailableCapacity.map(Int64.init)
+    }
+
+    static func isOutOfSpace(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == NSCocoaErrorDomain, error.code == NSFileWriteOutOfSpaceError { return true }
+        if error.domain == NSPOSIXErrorDomain, error.code == Int(ENOSPC) { return true }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? Error {
+            return isOutOfSpace(underlying)
+        }
+        return false
     }
 }
 

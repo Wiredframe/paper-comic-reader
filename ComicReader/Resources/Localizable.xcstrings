@@ -3708,6 +3708,22 @@
         }
       }
     },
+    "There isn't enough free space on this device for the backup. Free up some space and try again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf diesem Gerät ist nicht genug Platz für das Backup. Schaff etwas Platz und versuch es noch einmal."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Su questo dispositivo non c’è abbastanza spazio libero per il backup. Libera un po’ di spazio e riprova."
+          }
+        }
+      }
+    },
     "This comic": {
       "localizations": {
         "de": {

@@ -27,6 +27,35 @@ struct ReaderTarget: Identifiable {
     var sourceID: UUID?
 }
 
+/// Whether a reader session has become reading progress yet.
+///
+/// A comic opened on a page of its own (a bookmark, or "Comic" from the start) is often only a
+/// look: closing it again must leave the resume page and the read mark as they were. Once the
+/// reader moves off the page it opened on, the usual checkpoints apply. A comic opened on its
+/// resume page counts from the start, as it always has.
+///
+/// A class, not view state, because the reader reports a page and then, in the same breath, that
+/// the end was reached, and the second report has to see the first.
+@MainActor
+final class ReadingProgressGate {
+    private var openedPage: Int?
+    private(set) var movedSinceOpen = false
+
+    /// The page the reader opened on. Reports of that same page are not a move.
+    func opened(at page: Int) { openedPage = page }
+
+    /// The reader reports the page it is on.
+    func reached(_ page: Int) {
+        if let openedPage, page != openedPage { movedSinceOpen = true }
+    }
+
+    /// A move the reader doesn't report itself (a page-grid jump).
+    func moved() { movedSinceOpen = true }
+
+    /// `peek`: the comic was opened on a page of its own rather than its resume page.
+    func countsAsProgress(peek: Bool) -> Bool { !peek || movedSinceOpen }
+}
+
 struct ReaderView: View {
     let book: ComicBook
     /// Page to open on (e.g. a bookmark jump); falls back to the resume page.
@@ -109,6 +138,8 @@ struct ReaderView: View {
     @State private var holdsLandscape = false
     /// Reaches the live reader for a VoiceOver page step.
     @State private var readerHandle = ReaderHandle()
+    /// Keeps a look at a bookmark from overwriting the resume page, see `ReadingProgressGate`.
+    @State private var progressGate = ReadingProgressGate()
 
     // MARK: Folder-backed fetch (only used when this comic's bytes aren't local)
     //
@@ -155,6 +186,7 @@ struct ReaderView: View {
                            onToggleChrome: toggleChrome,
                            onReachedEnd: markRead,
                            onRequestClose: close,
+                           onPageReported: progressGate.reached,
                            handle: readerHandle)
                     .ignoresSafeArea()
                 if voiceOverEnabled { voiceOverPage(count: store.pageCount) }
@@ -250,6 +282,7 @@ struct ReaderView: View {
                     // The scroll itself is driven by jumpTarget inside updateUIViewController,
                     // where a state change wouldn't reliably fire onChange.
                     currentPage = page
+                    progressGate.moved()
                     persistProgress()
                     jumpTarget = page
                     showGrid = false
@@ -555,6 +588,7 @@ struct ReaderView: View {
                                                paperEnabled: paper.isEnabled, paperParams: paper.params)
         store = opened
         currentPage = clampedStart(opened.pageCount)
+        progressGate.opened(at: currentPage)
         // First reveal auto-hides after the idle too, same as a tap-triggered reveal, but only
         // once there are pages to read (a failed open keeps the Close button up).
         if opened.pageCount > 0 { armAutoHide() }
@@ -562,7 +596,8 @@ struct ReaderView: View {
         // Auto-mark read when opening already on the last page — `.onChange(of: currentPage)`
         // only fires on a change, so a 1-page comic (or resuming on the final page) would
         // otherwise never be marked read despite reaching the end. Guard on pageCount so a
-        // comic whose archive failed to open (pageCount 0) isn't marked read.
+        // comic whose archive failed to open (pageCount 0) isn't marked read. Not for a comic
+        // opened on a page of its own, though (see `markRead`).
         if opened.pageCount > 0, currentPage >= opened.pageCount - 1 { markRead() }
         // Count the open once per presentation, riding the save below. openStore() is written to
         // be re-runnable (re-setting a date is idempotent) — incrementing a counter is not,
@@ -594,18 +629,21 @@ struct ReaderView: View {
     /// Writes the resume page at durable checkpoints (close, backgrounding, a page-grid
     /// jump) rather than on every page turn: a per-turn `save()` republishes the library
     /// @Query (which re-sorts in its body), and reading progress only needs to survive
-    /// leaving the reader.
+    /// leaving the reader. Not before the reader has moved, when the comic was opened on a page of
+    /// its own (see `ReadingProgressGate`).
     private func persistProgress() {
-        guard book.lastReadPage != currentPage else { return }
+        guard progressGate.countsAsProgress(peek: initialPage != nil),
+              book.lastReadPage != currentPage else { return }
         book.lastReadPage = currentPage
         try? context.save()
         RecentComicSync.refresh(in: context)
     }
 
     /// Mark the comic read once the last page is reached. Never un-marks automatically —
-    /// that stays a manual choice in the cover menu. Bookmarks are untouched.
+    /// that stays a manual choice in the cover menu. Bookmarks are untouched. A bookmark on the
+    /// last page only counts once the reader has moved, like the resume page.
     private func markRead() {
-        guard !book.isRead else { return }
+        guard !book.isRead, progressGate.countsAsProgress(peek: initialPage != nil) else { return }
         book.isRead = true
         try? context.save()
         RecentComicSync.refresh(in: context)

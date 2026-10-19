@@ -54,12 +54,16 @@ struct ReaderHost: UIViewControllerRepresentable {
     var onToggleChrome: () -> Void
     var onReachedEnd: () -> Void
     var onRequestClose: () -> Void
+    /// Every page the reader reports, as it reports it (before the end-reached call that may
+    /// follow), unlike the binding, which SwiftUI hands on later.
+    var onPageReported: ((Int) -> Void)? = nil
     var handle: ReaderHandle? = nil
 
     func makeUIViewController(context: Context) -> UIViewController {
         let controller = ReaderContainerController(store: store, settings: settings, startIndex: startIndex,
                                                    backgroundColor: backgroundColor)
         controller.onPageChanged = { index in
+            onPageReported?(index)
             if currentPage != index { currentPage = index }
         }
         controller.onToggleChrome = onToggleChrome

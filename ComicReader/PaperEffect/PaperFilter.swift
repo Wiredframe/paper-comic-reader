@@ -113,7 +113,7 @@ public final class PaperFilter {
 
 	// MARK: - Tonal endpoints
 
-	/// Interpolates the tonal endpoints between a neutral grey paper (warmth 0)
+	/// Interpolates the tonal endpoints between white paper (warmth 0)
 	/// and a warm cream stock (warmth 1); `blackLift` scales how far pure black
 	/// is raised.
 	private func tones(warmth: CGFloat, blackLift: CGFloat)

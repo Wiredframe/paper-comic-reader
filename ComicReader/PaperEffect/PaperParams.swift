@@ -19,7 +19,7 @@ public struct PaperParams: Equatable, Sendable {
 	public var showThrough: CGFloat
 	/// Paper tooth on the light stock (multiply). 0…0.4
 	public var grain: CGFloat
-	/// 0 = neutral grey paper, 1 = warm cream.
+	/// 0 = white paper, 1 = warm cream.
 	public var warmth: CGFloat
 	/// 0 = pure black / high contrast, 1 = fully softened black.
 	public var blackLift: CGFloat

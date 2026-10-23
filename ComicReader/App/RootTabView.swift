@@ -12,6 +12,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct RootTabView: View {
     /// Not called `Tab`: that would shadow SwiftUI's `Tab` inside the builder below.

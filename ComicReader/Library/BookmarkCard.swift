@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct BookmarkCard: View {
     let bookmark: Bookmark

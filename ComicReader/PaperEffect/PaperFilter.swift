@@ -65,10 +65,13 @@ public final class PaperFilter {
 			"inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
 			"inputBiasVector": CIVector(x: t.floor.x, y: t.floor.y, z: t.floor.z, w: 0),
 		])
-		// 2. Gentle desaturation + soft contrast for a matte, printed feel.
+		// 2. Gentle desaturation + soft contrast for a matte, printed feel. Scaled by how strong
+		// the effect is set, so with every slider at zero the page is left untouched instead of
+		// always coming out a little grey and flat.
+		let strength = Self.strength(of: params)
 		toned = toned.applyingFilter("CIColorControls", parameters: [
-			kCIInputSaturationKey: 0.92,
-			kCIInputContrastKey: 0.96,
+			kCIInputSaturationKey: 1 - 0.08 * strength,
+			kCIInputContrastKey: 1 - 0.04 * strength,
 		])
 
 		// 3. Organic paper texture (Metal), with a Core Image fallback.
@@ -103,6 +106,11 @@ public final class PaperFilter {
 	}
 	#endif
 
+	/// 0 when every slider is at zero (the effect does nothing), 1 at full strength anywhere.
+	static func strength(of params: PaperParams) -> CGFloat {
+		min(1, max(params.showThrough / 0.8, params.grain / 0.4, params.warmth, params.blackLift))
+	}
+
 	// MARK: - Tonal endpoints
 
 	/// Interpolates the tonal endpoints between a neutral grey paper (warmth 0)
@@ -116,7 +124,9 @@ public final class PaperFilter {
 			return (a.0 + (b.0 - a.0) * tt, a.1 + (b.1 - a.1) * tt, a.2 + (b.2 - a.2) * tt)
 		}
 		let neutralFloor = (0.145, 0.145, 0.145), warmFloor = (0.16, 0.14, 0.11)
-		let neutralCeil  = (0.93, 0.93, 0.93),    warmCeil  = (0.96, 0.92, 0.82)
+		// The neutral end is white paper, not 93 % grey: warmth alone takes the stock towards
+		// cream, so warmth 0 keeps the page's whites white.
+		let neutralCeil  = (1.0, 1.0, 1.0),       warmCeil  = (0.96, 0.92, 0.82)
 		let neutralTint  = (0.92, 0.92, 0.92),    warmTint  = (0.95, 0.90, 0.78)
 
 		let fl = lerp(neutralFloor, warmFloor, warmth)

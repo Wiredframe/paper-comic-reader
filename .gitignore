@@ -26,3 +26,4 @@ scripts/refresh.env
 
 # Release notes the release workflow generates at build time (see .github/workflows/release.yml)
 RELEASE_NOTES.md
+build-appstore/

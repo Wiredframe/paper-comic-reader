@@ -2,7 +2,7 @@
 //  SampleLibrary.swift
 //  Comic Reader
 //
-//  First-launch sample content. Imports the four bundled demo comics into an empty
+//  First-launch sample content. Imports the six bundled demo comics into an empty
 //  library exactly once, so a fresh install — and the App Review — opens on a
 //  populated shelf instead of an empty state. A few of them get a recent open date, a
 //  resume page and a bookmark, so Recents, the progress pies and the Bookmarks tab all
@@ -11,7 +11,7 @@
 //
 //  NOT gated on DEBUG — this ships. It reuses `Importer.importComic` (main-actor,
 //  synchronous), which is fine here for the same reason it's fine for screenshot
-//  seeding: four tiny archives, once, at launch.
+//  seeding: six small archives, once, at launch.
 //
 
 import Foundation
@@ -35,10 +35,13 @@ enum SampleLibrary {
     }
 
     private static let samples: [Sample] = [
-        Sample(resource: "SolarFlare",   lastReadPage: 6,  openedHoursAgo: 2,   openCount: 5, bookmarks: [4, 9]),
-        Sample(resource: "DeepBlue",     lastReadPage: 11, openedHoursAgo: 26,  openCount: 3, bookmarks: [7]),
-        Sample(resource: "CrimsonAlley", lastReadPage: 3,  openedHoursAgo: 74,  openCount: 2, bookmarks: [3]),
-        Sample(resource: "JadeCircuit",  lastReadPage: 0,  openedHoursAgo: nil, openCount: 0, bookmarks: []),
+        // Drawn by Tools/gendemo.swift (the same six as the Mac app), entirely original.
+        Sample(resource: "Crimson Alley 3", lastReadPage: 7,  openedHoursAgo: 2,   openCount: 3, bookmarks: [5]),
+        Sample(resource: "Deep Blue 2",     lastReadPage: 12, openedHoursAgo: 26,  openCount: 5, bookmarks: [9]),
+        Sample(resource: "Kite Season 2",   lastReadPage: 3,  openedHoursAgo: 50,  openCount: 1, bookmarks: []),
+        Sample(resource: "Night Ferry 4",   lastReadPage: 9,  openedHoursAgo: 140, openCount: 4, bookmarks: [4]),
+        Sample(resource: "Solar Flare 1",   lastReadPage: 0,  openedHoursAgo: nil, openCount: 0, bookmarks: []),
+        Sample(resource: "Jade Circuit 1",  lastReadPage: 0,  openedHoursAgo: nil, openCount: 0, bookmarks: []),
     ]
 
     @MainActor

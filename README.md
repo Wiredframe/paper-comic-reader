@@ -4,7 +4,7 @@
 
 # Paper Comic Reader
 
-A lean, native comic reader for iPhone and iPad that makes pages read like ink on paper instead of a backlit screen. **[Download on the App Store](https://apps.apple.com/app/paper-comic-reader/id6788421253)** · **[Landing page](https://wiredframe.github.io/paper-comic-reader-landingpage/)**.
+A lean, native comic reader for iPhone and iPad that makes pages read like ink on paper instead of a backlit screen. **[Download on the App Store](https://apps.apple.com/app/paper-comic-reader/id6788421253)** · **[Landing page](https://wiredframe.github.io/paper-comic-reader-landingpage/)** · **[Mac version](https://github.com/Wiredframe/paper-comic-reader-mac)**.
 
 [![App Store](https://img.shields.io/badge/App_Store-Download-0D96F6?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/paper-comic-reader/id6788421253) [![Sideload](https://img.shields.io/badge/Sideload-.ipa-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![Platform](https://img.shields.io/badge/iOS-26%2B-1d4ed8?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Wiredframe/paper-comic-reader/releases) [![License](https://img.shields.io/badge/License-MIT-64748b?style=for-the-badge)](LICENSE)
 
@@ -30,6 +30,8 @@ Built with SwiftUI and a UIKit reader core, Core Image and Metal for the paper e
 - **[Sideloadly](https://sideloadly.io)** — connect the device to a Mac or PC and load the `.ipa`. Same 7-day limit on a free Apple ID.
 
 Either way, Paper Comic Reader requires **iOS 26 or later**.
+
+**On the Mac:** the same App Store download includes the Mac app (macOS 14 or later), which is also available through Homebrew. Source and install notes: [Wiredframe/paper-comic-reader-mac](https://github.com/Wiredframe/paper-comic-reader-mac). A library moves between Mac, iPhone and iPad as one export file, with progress, favorites and bookmarks.
 
 
 ## Project setup

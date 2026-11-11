@@ -170,8 +170,38 @@ enum Importer {
     /// NOT main-actor and not detached: `DownloadManager` awaits it from a task it holds, so it
     /// runs off-main AND inherits that task's cancellation (cancelling the download stops the copy).
     /// Throws `LibrarySource.SourceError` on any failure.
+    ///
+    /// Retries before giving up. A file server the Files app hasn't connected to yet is only
+    /// mounted BY the first access, so that access fails (the bookmark won't resolve, or the file
+    /// reads as absent) while the very next one works: users met the "couldn't load" dialog on
+    /// every first open and the download went through on the second tap. Doing that second try
+    /// here, after a short pause, makes the mount invisible. A share that is really offline still
+    /// ends in the dialog, a couple of seconds later. The ring keeps spinning meanwhile.
     static func downloadArchive(relativePath: String, into dest: URL,
                                 onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let retryDelays: [Duration] = [.milliseconds(700), .milliseconds(1800)]
+        var attempt = 0
+        while true {
+            do {
+                return try downloadArchiveOnce(relativePath: relativePath, into: dest,
+                                               onProgress: onProgress)
+            } catch let error as LibrarySource.SourceError
+                        where error != .cancelled && error != .notConfigured
+                              && attempt < retryDelays.count {
+                do {
+                    try await Task.sleep(for: retryDelays[attempt])
+                } catch {
+                    throw LibrarySource.SourceError.cancelled
+                }
+                attempt += 1
+                onProgress(0)
+            }
+        }
+    }
+
+    /// One attempt of `downloadArchive`, without the retries.
+    private static func downloadArchiveOnce(relativePath: String, into dest: URL,
+                                            onProgress: @escaping @Sendable (Double) -> Void) throws {
         let folder = try LibrarySource.resolveFolder()
         let scoped = folder.startAccessingSecurityScopedResource()
         defer { if scoped { folder.stopAccessingSecurityScopedResource() } }

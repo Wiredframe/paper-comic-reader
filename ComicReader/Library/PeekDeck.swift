@@ -53,6 +53,10 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
     /// sheet sliding up over it. It also buys the presentation a native interactive dismiss —
     /// the same drag-it-back-down the system uses everywhere else.
     var transitionNamespace: Namespace.ID? = nil
+    /// Told when the deck starts and stops moving (drag, deceleration, or an animated snap), so a
+    /// caller can hold heavy work until it's at rest instead of guessing with a timer. Called
+    /// only on a change, never per frame.
+    var onScrollingChange: ((Bool) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Points → pixels, so a slot decodes its art at exactly its on-screen size (see `image`).
@@ -134,6 +138,10 @@ struct PeekDeck<Item: Identifiable>: View where Item.ID == UUID {
         // every card one full inset to the right.
         .contentMargins(.horizontal, max(0, (size.width - slotW) / 2), for: .scrollContent)
         .scrollPosition(id: $centeredID)
+        .onScrollPhaseChange { old, new in
+            guard let onScrollingChange, old.isScrolling != new.isScrolling else { return }
+            onScrollingChange(new.isScrolling)
+        }
         .sensoryFeedback(.selection, trigger: centeredID)
     }
 

@@ -87,6 +87,16 @@ enum DiscoveryFilter: String, CaseIterable, Identifiable {
 @Observable final class DeckCenter {
     var id: UUID?
     var settledID: UUID?
+    /// Whether the deck is moving: dragged, decelerating, or gliding into its snap. Written by the
+    /// deck's scroll phase and read only on the settle paths, never in a body, so observation
+    /// ignores it — flipping it re-renders nothing.
+    @ObservationIgnored var isScrolling = false
+
+    /// Publishes the live centre as the settled one. Guarded so landing on the same comic again
+    /// (a drag that snaps back) doesn't rebuild the detail page for nothing.
+    func settle() {
+        if settledID != id { settledID = id }
+    }
 }
 
 struct PeekCarouselView: View {
@@ -238,7 +248,13 @@ struct PeekCarouselView: View {
             } else {
                 PeekDeck(items: visibleBooks, centeredID: centerBinding, art: art,
                          onOpen: { onOpen($0, nil) },
-                         transitionNamespace: transitionNamespace)
+                         transitionNamespace: transitionNamespace,
+                         onScrollingChange: { [center] scrolling in
+                             // The settle waits for the deck to come to rest, so the detail page
+                             // and the panel's hint rebuild after the snap, never during it.
+                             center.isScrolling = scrolling
+                             if !scrolling { center.settle() }
+                         })
             }
 
             // Pinned: it doesn't travel with the cards, only its contents change as you swipe.
@@ -526,39 +542,40 @@ private struct CarouselDetailPage: View {
     private static let bookmarkColumns = [GridItem(.adaptive(minimum: 170),
                                                    spacing: LibraryGridMetrics.spacing)]
 
-    /// The settled comic, if it has a second page's worth to say. Nil for a comic with neither,
-    /// which is what keeps the deck a plain deck.
-    private func detailBook() -> ComicBook? {
-        guard let book = peekCentered(in: books, id: center.settledID),
-              !book.bookmarks.isEmpty || book.hasMetadata else { return nil }
-        return book
-    }
-
     var body: some View {
         Group {
-            if let book = detailBook() {
-                content(book)
+            // Nothing at all for a comic with neither bookmarks nor metadata — which is what
+            // keeps the deck a plain deck. Each input is read ONCE per settle: the bookmarks
+            // fault a relationship, and `hasMetadata` can decode the whole story index.
+            if let book = peekCentered(in: books, id: center.settledID) {
+                let marks = bookmarks(of: book)
+                let hasMetadata = book.hasMetadata
+                if !marks.isEmpty || hasMetadata {
+                    content(book, marks: marks, hasMetadata: hasMetadata)
+                }
             }
         }
         // Show the detail immediately on open rather than after the first debounce.
         .onAppear { if center.settledID == nil { center.settledID = center.id } }
-        // Debounce: while the deck is gliding, `center.id` changes fast and each change cancels
-        // this before the sleep finishes, so `settledID` — and the heavy grid + metadata keyed
-        // off it — only updates once the swipe has held still.
+        // Fallback settle for centre changes the deck's scroll phase doesn't report (a filter
+        // switch, a delete). A swipe is settled by the deck itself when it comes to rest — see
+        // `onScrollingChange` — so while it moves this stands down. The cancellation check
+        // matters: `try?` swallows the CancellationError a superseded sleep throws, and without
+        // the guard every card flown past would settle at once, rebuilding this page per card.
         .task(id: center.id) {
             try? await Task.sleep(for: .milliseconds(200))
-            center.settledID = center.id
+            guard !Task.isCancelled, !center.isScrolling else { return }
+            center.settle()
         }
     }
 
     /// Bookmarks first, then what the comic's ComicInfo.xml says. That order because the
     /// bookmarks are yours — pages you chose — while the metadata is reference: you scroll
     /// past your own marks to reach the facts, not the other way round.
-    private func content(_ book: ComicBook) -> some View {
-        let marks = bookmarks(of: book)
-        return VStack(alignment: .leading, spacing: 32) {
+    private func content(_ book: ComicBook, marks: [Bookmark], hasMetadata: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 32) {
             if !marks.isEmpty { bookmarkBlock(book, marks: marks) }
-            if book.hasMetadata { ComicMetadataSection(book: book) }
+            if hasMetadata { ComicMetadataSection(book: book) }
         }
         .padding(.horizontal)
         .padding(.top, 24)

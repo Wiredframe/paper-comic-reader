@@ -24,18 +24,20 @@ struct ComicMetadataSection: View {
     var showsHeading: Bool = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        // Read once: `stories` is decoded in full on every access to the attribute.
+        let stories = book.stories
+        return VStack(alignment: .leading, spacing: 22) {
             if showsHeading { heading }
 
-            if !book.stories.isEmpty {
-                storyList
+            if !stories.isEmpty {
+                storyList(stories)
             } else if let summary = book.summary?.nonEmpty {
                 block("Summary", text: summary)
             }
 
             // With a story list these say the same thing the per-story credits do, only
             // without saying who did what — so they'd be a worse duplicate.
-            if book.stories.isEmpty { credits }
+            if stories.isEmpty { credits }
 
             if let characters = book.characters?.nonEmpty {
                 block("Characters", text: characters)
@@ -60,7 +62,7 @@ struct ComicMetadataSection: View {
 
     // MARK: Stories
 
-    private var storyList: some View {
+    private func storyList(_ stories: [ComicStory]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let count = book.storyCountLabel {
                 sectionTitle(verbatim: count)
@@ -71,7 +73,7 @@ struct ComicMetadataSection: View {
                 // Identify by position, not story.number: the number is parsed free-text and a
                 // tagger can repeat it (restarted numbering, two "0." rows), which would collapse
                 // rows under a duplicate id. The list is static, so positional identity is safe.
-                ForEach(Array(book.stories.enumerated()), id: \.offset) { index, story in
+                ForEach(Array(stories.enumerated()), id: \.offset) { index, story in
                     if index > 0 { Divider().padding(.leading, 30) }
                     StoryRow(story: story)
                 }

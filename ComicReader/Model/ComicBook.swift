@@ -189,9 +189,11 @@ final class ComicBook {
     }
 
     /// Whether this comic has anything to fill a detail view with.
+    /// Cheap scalars first, the story index last: `stories` is a Codable attribute that SwiftData
+    /// decodes in full on every read, and almost every tagged comic answers before reaching it.
     var hasMetadata: Bool {
-        !stories.isEmpty || summary?.nonEmpty != nil || series?.nonEmpty != nil
-            || publisher?.nonEmpty != nil || characters?.nonEmpty != nil || year != nil
+        year != nil || series?.nonEmpty != nil || publisher?.nonEmpty != nil
+            || summary?.nonEmpty != nil || characters?.nonEmpty != nil || !stories.isEmpty
     }
 
     /// "26 April 1992" / "April 1992" / "1992" — as much of the cover date as the tagger gave
